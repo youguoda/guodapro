@@ -140,6 +140,27 @@ public sealed class TrayIcon : IDisposable
         }
     }
 
+    /// <summary>
+    /// Shows a balloon from the tray icon. Shiyu has no window to put a message
+    /// in, so this is the only way it can say anything to the user.
+    /// </summary>
+    public void ShowNotification(string title, string message)
+    {
+        if (!_added)
+        {
+            return;
+        }
+
+        // A copy, so NIF_INFO does not stay set on the stored data and make
+        // every later update pop a balloon of its own.
+        var notification = _data;
+        notification.uFlags = NativeMethods.NifInfo;
+        notification.szInfoTitle = Truncate(title, 63);
+        notification.szInfo = Truncate(message, 255);
+
+        NativeMethods.Shell_NotifyIconW(NativeMethods.NimModify, ref notification);
+    }
+
     /// <summary>Collapses newlines and clips, so one entry stays one menu row.</summary>
     private static string MenuLabel(string text)
     {

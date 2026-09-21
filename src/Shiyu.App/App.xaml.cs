@@ -13,6 +13,7 @@ public partial class App : Application
     private EntryStore? _store;
     private ClipboardPipeline? _pipeline;
     private TrayIcon? _tray;
+    private SingleInstance? _singleInstance;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -34,6 +35,16 @@ public partial class App : Application
 
     private void Start()
     {
+        _singleInstance = SingleInstance.Acquire("Shiyu");
+        if (!_singleInstance.IsOnlyInstance)
+        {
+            // Before anything else touches the clipboard or the history: a
+            // rejected second instance must leave no trace behind it.
+            _singleInstance.NotifyExistingInstance();
+            Shutdown();
+            return;
+        }
+
         _store = EntryStore.Open(AppPaths.DatabaseFile);
 
         // One hidden window serves both the clipboard notifications and the
@@ -47,6 +58,10 @@ public partial class App : Application
             RecentItems = () => _store.Recent(limit: 10).Select(entry => entry.Text).ToList(),
         };
         _tray.QuitRequested += Shutdown;
+
+        _singleInstance.WatchForOtherInstances(_messageWindow);
+        _singleInstance.AnotherInstanceStarted += ()
+            => _tray.ShowNotification("拾语", "拾语已经在运行了，就在托盘里。");
     }
 
     private static void RecordStartupFailure(Exception exception)
@@ -76,6 +91,7 @@ public partial class App : Application
         _clipboard?.Dispose();
         _messageWindow?.Dispose();
         _store?.Dispose();
+        _singleInstance?.Dispose();
 
         base.OnExit(e);
     }

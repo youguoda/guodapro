@@ -35,6 +35,10 @@ internal static class NativeMethods
     internal const uint NifMessage = 0x00000001;
     internal const uint NifIcon = 0x00000002;
     internal const uint NifTip = 0x00000004;
+    internal const uint NifInfo = 0x00000010;
+
+    /// <summary>Reaches every top-level window, which is why the hidden window is one.</summary>
+    internal static readonly IntPtr HwndBroadcast = new(0xFFFF);
 
     internal const uint MfString = 0x00000000;
     internal const uint MfSeparator = 0x00000800;
