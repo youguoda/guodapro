@@ -15,6 +15,8 @@ public partial class App : Application
     private TrayIcon? _tray;
     private SingleInstance? _singleInstance;
     private ExclusionPolicy? _exclusions;
+    private WindowsClipboardWriter? _writer;
+    private LibraryWindow? _library;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -60,10 +62,45 @@ public partial class App : Application
             RecentItems = () => _store.Recent(limit: 10).Select(entry => entry.Text).ToList(),
         };
         _tray.QuitRequested += Shutdown;
+        _tray.OpenLibraryRequested += ShowLibrary;
+
+        _writer = new WindowsClipboardWriter(_messageWindow);
 
         _singleInstance.WatchForOtherInstances(_messageWindow);
-        _singleInstance.AnotherInstanceStarted += ()
-            => _tray.ShowNotification("拾语", "拾语已经在运行了，就在托盘里。");
+
+        // Starting Shiyu again is how a user who forgot it was running asks to
+        // see it, so bring the library up rather than only saying "already
+        // running" and leaving them no further along.
+        _singleInstance.AnotherInstanceStarted += ShowLibrary;
+    }
+
+    /// <summary>
+    /// One library window, reused. Opening a second copy of the same history
+    /// would be two views that immediately disagree with each other.
+    /// </summary>
+    private void ShowLibrary()
+    {
+        if (_store is null || _writer is null)
+        {
+            return;
+        }
+
+        if (_library is null)
+        {
+            _library = new LibraryWindow(_store, _writer);
+            _library.Closed += (_, _) => _library = null;
+            _library.Show();
+        }
+        else
+        {
+            _library.Reload();
+            if (_library.WindowState == WindowState.Minimized)
+            {
+                _library.WindowState = WindowState.Normal;
+            }
+
+            _library.Activate();
+        }
     }
 
     private static void RecordStartupFailure(Exception exception)

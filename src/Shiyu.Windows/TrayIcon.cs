@@ -12,6 +12,7 @@ namespace Shiyu.Windows;
 public sealed class TrayIcon : IDisposable
 {
     private const uint QuitCommandId = 1;
+    private const uint OpenLibraryCommandId = 2;
     private const uint FirstEntryCommandId = 100;
 
     /// <summary>
@@ -31,6 +32,9 @@ public sealed class TrayIcon : IDisposable
     public Func<IReadOnlyList<string>>? RecentItems { get; set; }
 
     public event Action? QuitRequested;
+
+    /// <summary>Raised on a left click, and from the menu item of the same name.</summary>
+    public event Action? OpenLibraryRequested;
 
     public TrayIcon(MessageWindow window, string tooltip)
     {
@@ -73,10 +77,19 @@ public sealed class TrayIcon : IDisposable
         }
 
         var trigger = (uint)(message.LParam.ToInt64() & 0xFFFF);
-        if (trigger is NativeMethods.WmRightButtonUp or NativeMethods.WmLeftButtonUp)
+        switch (trigger)
         {
-            message.Handle();
-            ShowMenu();
+            // Left click goes straight to the library — the thing the user most
+            // often wants — while the menu stays one right click away.
+            case NativeMethods.WmLeftButtonUp:
+                message.Handle();
+                OpenLibraryRequested?.Invoke();
+                break;
+
+            case NativeMethods.WmRightButtonUp:
+                message.Handle();
+                ShowMenu();
+                break;
         }
     }
 
@@ -110,6 +123,8 @@ public sealed class TrayIcon : IDisposable
             }
 
             NativeMethods.AppendMenuW(menu, NativeMethods.MfSeparator, UIntPtr.Zero, null);
+            NativeMethods.AppendMenuW(
+                menu, NativeMethods.MfString, new UIntPtr(OpenLibraryCommandId), "打开管理窗口");
             NativeMethods.AppendMenuW(menu, NativeMethods.MfString, new UIntPtr(QuitCommandId), "退出拾语");
 
             if (!NativeMethods.GetCursorPos(out var cursor))
@@ -129,9 +144,14 @@ public sealed class TrayIcon : IDisposable
 
             NativeMethods.PostMessageW(_window.Handle, NativeMethods.WmNull, IntPtr.Zero, IntPtr.Zero);
 
-            if (command == QuitCommandId)
+            switch ((uint)command)
             {
-                QuitRequested?.Invoke();
+                case QuitCommandId:
+                    QuitRequested?.Invoke();
+                    break;
+                case OpenLibraryCommandId:
+                    OpenLibraryRequested?.Invoke();
+                    break;
             }
         }
         finally

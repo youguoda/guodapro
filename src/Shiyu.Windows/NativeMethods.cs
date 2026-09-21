@@ -179,4 +179,19 @@ internal static class NativeMethods
     [DllImport("kernel32.dll", SetLastError = true)]
     internal static extern UIntPtr GlobalSize(IntPtr handle);
 
+
+    [DllImport("user32.dll", SetLastError = true)]
+    internal static extern IntPtr GetClipboardOwner();
+
+    [DllImport("user32.dll", SetLastError = true)]
+    internal static extern bool EmptyClipboard();
+
+    [DllImport("user32.dll", SetLastError = true)]
+    internal static extern IntPtr SetClipboardData(uint format, IntPtr data);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    internal static extern IntPtr GlobalAlloc(uint flags, UIntPtr bytes);
+
+    internal const uint GmemMoveable = 0x0002;
+
 }

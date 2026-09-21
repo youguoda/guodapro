@@ -65,6 +65,16 @@ public sealed class WindowsClipboardMonitor : IClipboardMonitor, IDisposable
 
         message.Handle();
 
+        // Self-suppression. Shiyu writes to the clipboard itself — re-copying
+        // an entry from the library, and restoring what a capture borrowed —
+        // and each of those writes comes back as a change notification. Owning
+        // the clipboard is the exact test for "this one was mine", so Shiyu
+        // never records its own hand.
+        if (NativeMethods.GetClipboardOwner() == _window.Handle)
+        {
+            return;
+        }
+
         // The foreground window is read first: opening the clipboard can take
         // several attempts, by which time focus may have moved on.
         var sourceApp = ForegroundProcessName();

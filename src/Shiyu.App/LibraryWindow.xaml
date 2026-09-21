@@ -1,0 +1,76 @@
+<Window x:Class="Shiyu.App.LibraryWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="拾语 · 历史" Height="620" Width="900"
+        WindowStartupLocation="CenterScreen"
+        FontSize="13">
+    <Window.Resources>
+        <Style x:Key="Toolbutton" TargetType="Button">
+            <Setter Property="Padding" Value="12,5" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+            <Setter Property="MinWidth" Value="76" />
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0" Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <Grid Grid.Column="0">
+                <TextBox x:Name="SearchBox" Padding="7,6" VerticalContentAlignment="Center"
+                         TextChanged="OnSearchTextChanged" />
+                <TextBlock x:Name="SearchPlaceholder" Text="搜索历史…" Margin="10,0,0,0"
+                           Opacity="0.45" IsHitTestVisible="False" VerticalAlignment="Center" />
+            </Grid>
+
+            <TextBlock x:Name="CountLabel" Grid.Column="1" Margin="12,0,2,0"
+                       VerticalAlignment="Center" Opacity="0.6" />
+        </Grid>
+
+        <ListBox x:Name="EntryList" Grid.Row="1"
+                 HorizontalContentAlignment="Stretch"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                 VirtualizingPanel.IsVirtualizing="True"
+                 VirtualizingPanel.VirtualizationMode="Recycling"
+                 ScrollViewer.ScrollChanged="OnListScrolled"
+                 MouseDoubleClick="OnCopySelected">
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <StackPanel Margin="3,5">
+                        <TextBlock Text="{Binding Preview}" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding Meta}" FontSize="11" Opacity="0.55" Margin="0,3,0,0" />
+                    </StackPanel>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+        <TextBlock x:Name="EmptyLabel" Grid.Row="1" Text="还没有记录"
+                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                   Opacity="0.45" Visibility="Collapsed" />
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,12,0,0">
+            <Button Content="复制" Style="{StaticResource Toolbutton}" Click="OnCopySelected" />
+            <Button Content="删除" Style="{StaticResource Toolbutton}" Click="OnDeleteSelected" />
+            <Button Content="清空全部历史" Style="{StaticResource Toolbutton}" Click="OnClearAll" />
+        </StackPanel>
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,10,0,0">
+            <TextBlock Text="按时间段删除：" VerticalAlignment="Center" Opacity="0.7" />
+            <DatePicker x:Name="RangeFrom" Width="130" Margin="6,0" />
+            <TextBlock Text="至" VerticalAlignment="Center" />
+            <DatePicker x:Name="RangeTo" Width="130" Margin="6,0" />
+            <Button Content="删除该时间段" Style="{StaticResource Toolbutton}" Click="OnDeleteRange" />
+            <TextBlock x:Name="StatusLabel" VerticalAlignment="Center" Margin="10,0,0,0" Opacity="0.6" />
+        </StackPanel>
+    </Grid>
+</Window>
