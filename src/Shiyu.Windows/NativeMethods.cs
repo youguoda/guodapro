@@ -11,9 +11,8 @@ internal delegate IntPtr WindowProcedure(IntPtr hWnd, uint message, IntPtr wPara
 internal static class NativeMethods
 {
     /// <summary>
-    /// Clipboard format listener notifications never arrive at message-only
-    /// (HWND_MESSAGE) windows, so the hidden window is an ordinary top-level
-    /// window that is simply never shown.
+    /// The hidden window is an ordinary top-level window that is simply never
+    /// shown, rather than a message-only one — see MessageWindow for why.
     /// </summary>
     internal const uint WsOverlapped = 0x00000000;
     internal const uint WsExToolWindow = 0x00000080;
@@ -169,5 +168,15 @@ internal static class NativeMethods
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     internal static extern uint RegisterWindowMessageW(string message);
+
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    internal static extern uint RegisterClipboardFormatW(string format);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    internal static extern bool IsClipboardFormatAvailable(uint format);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    internal static extern UIntPtr GlobalSize(IntPtr handle);
 
 }

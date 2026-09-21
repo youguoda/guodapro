@@ -12,5 +12,9 @@ public sealed class FakeClipboardMonitor : IClipboardMonitor
     public event Action<ClipboardSnapshot>? Changed;
 
     public void Emit(string text, string? sourceApp = null)
-        => Changed?.Invoke(new ClipboardSnapshot(text, sourceApp));
+        => Changed?.Invoke(new ClipboardSnapshot(text, sourceApp, ExcludedByMarker: false));
+
+    /// <summary>Mimics an application that asked clipboard tools to leave it alone.</summary>
+    public void EmitExcluded(string text, string? sourceApp = null)
+        => Changed?.Invoke(new ClipboardSnapshot(text, sourceApp, ExcludedByMarker: true));
 }

@@ -11,7 +11,7 @@ public class ClipboardPipelineTests
         using var database = new TempDatabase();
         var clipboard = new FakeClipboardMonitor();
         using var store = EntryStore.Open(database.FilePath);
-        using var pipeline = new ClipboardPipeline(clipboard, store, TimeProvider.System);
+        using var pipeline = new ClipboardPipeline(clipboard, store, TimeProvider.System, new ExclusionPolicy());
 
         clipboard.Emit("hello", sourceApp: "notepad");
 
@@ -33,7 +33,7 @@ public class ClipboardRecordingTests
         var clipboard = new FakeClipboardMonitor();
         var clock = new TestClock(Noon);
         using var store = EntryStore.Open(database.FilePath);
-        using var pipeline = new ClipboardPipeline(clipboard, store, clock);
+        using var pipeline = new ClipboardPipeline(clipboard, store, clock, new ExclusionPolicy());
 
         clipboard.Emit("hello");
 
@@ -49,7 +49,7 @@ public class ClipboardRecordingTests
         using (var store = EntryStore.Open(database.FilePath))
         {
             var clipboard = new FakeClipboardMonitor();
-            using var pipeline = new ClipboardPipeline(clipboard, store, new TestClock(Noon));
+            using var pipeline = new ClipboardPipeline(clipboard, store, new TestClock(Noon), new ExclusionPolicy());
             clipboard.Emit("written before the restart");
         }
 
@@ -66,7 +66,7 @@ public class ClipboardRecordingTests
         var clipboard = new FakeClipboardMonitor();
         var clock = new TestClock(Noon);
         using var store = EntryStore.Open(database.FilePath);
-        using var pipeline = new ClipboardPipeline(clipboard, store, clock);
+        using var pipeline = new ClipboardPipeline(clipboard, store, clock, new ExclusionPolicy());
 
         foreach (var text in new[] { "first", "second", "third" })
         {
@@ -85,7 +85,7 @@ public class ClipboardRecordingTests
         using var database = new TempDatabase();
         var clipboard = new FakeClipboardMonitor();
         using var store = EntryStore.Open(database.FilePath);
-        using var pipeline = new ClipboardPipeline(clipboard, store, new TestClock(Noon));
+        using var pipeline = new ClipboardPipeline(clipboard, store, new TestClock(Noon), new ExclusionPolicy());
 
         // The clock never advances: bursts of copies must not collapse just
         // because two of them share a timestamp.
@@ -104,7 +104,7 @@ public class ClipboardRecordingTests
         var clipboard = new FakeClipboardMonitor();
         var clock = new TestClock(Noon);
         using var store = EntryStore.Open(database.FilePath);
-        using var pipeline = new ClipboardPipeline(clipboard, store, clock);
+        using var pipeline = new ClipboardPipeline(clipboard, store, clock, new ExclusionPolicy());
 
         clipboard.Emit("same text");
         clock.Advance(TimeSpan.FromMinutes(1));
@@ -121,7 +121,7 @@ public class ClipboardRecordingTests
         var clipboard = new FakeClipboardMonitor();
         var clock = new TestClock(Noon);
         using var store = EntryStore.Open(database.FilePath);
-        using var pipeline = new ClipboardPipeline(clipboard, store, clock);
+        using var pipeline = new ClipboardPipeline(clipboard, store, clock, new ExclusionPolicy());
 
         foreach (var text in new[] { "alpha", "beta", "alpha" })
         {

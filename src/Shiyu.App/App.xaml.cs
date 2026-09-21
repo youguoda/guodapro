@@ -14,6 +14,7 @@ public partial class App : Application
     private ClipboardPipeline? _pipeline;
     private TrayIcon? _tray;
     private SingleInstance? _singleInstance;
+    private ExclusionPolicy? _exclusions;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -51,7 +52,8 @@ public partial class App : Application
         // tray icon's callbacks — and, later, the global hotkeys.
         _messageWindow = new MessageWindow();
         _clipboard = new WindowsClipboardMonitor(_messageWindow);
-        _pipeline = new ClipboardPipeline(_clipboard, _store, TimeProvider.System);
+        _exclusions = ExclusionPolicy.WithPresets();
+        _pipeline = new ClipboardPipeline(_clipboard, _store, TimeProvider.System, _exclusions);
 
         _tray = new TrayIcon(_messageWindow, "拾语")
         {

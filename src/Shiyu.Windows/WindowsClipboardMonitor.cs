@@ -17,6 +17,25 @@ public sealed class WindowsClipboardMonitor : IClipboardMonitor, IDisposable
     private const int OpenAttempts = 8;
     private static readonly TimeSpan RetryDelay = TimeSpan.FromMilliseconds(15);
 
+    /// <summary>
+    /// The registered formats an application uses to ask that its clipboard
+    /// content be left out of clipboard history. Documented under "Cloud
+    /// Clipboard and Clipboard History Formats"; honouring them is a
+    /// convention rather than something Windows enforces, so it is Shiyu's
+    /// own decision to respect them — and with an unencrypted history, not
+    /// respecting them is not a defensible option.
+    /// </summary>
+    private static readonly uint ExcludeFromMonitorsFormat =
+        NativeMethods.RegisterClipboardFormatW("ExcludeClipboardContentFromMonitorProcessing");
+
+    private static readonly uint CanIncludeInHistoryFormat =
+        NativeMethods.RegisterClipboardFormatW("CanIncludeInClipboardHistory");
+
+    // CanUploadToCloudClipboard is deliberately not consulted: it governs
+    // synchronisation to the user's other devices, which Shiyu never does.
+    // Treating it as a request for local secrecy would punch holes in the
+    // history for content the user has every reason to expect to find there.
+
     private readonly MessageWindow _window;
     private bool _listening;
     private bool _disposed;
@@ -50,18 +69,20 @@ public sealed class WindowsClipboardMonitor : IClipboardMonitor, IDisposable
         // several attempts, by which time focus may have moved on.
         var sourceApp = ForegroundProcessName();
 
-        if (ReadClipboardText() is { Length: > 0 } text)
+        if (ReadClipboard() is { Text.Length: > 0 } reading)
         {
-            Changed?.Invoke(new ClipboardSnapshot(text, sourceApp));
+            Changed?.Invoke(new ClipboardSnapshot(reading.Text, sourceApp, reading.Excluded));
         }
     }
 
+    private readonly record struct Reading(string Text, bool Excluded);
+
     /// <summary>
-    /// Reads the clipboard as text, retrying while another process holds it.
-    /// Only one process may have the clipboard open at a time, so a failure
-    /// here is ordinary contention rather than an error.
+    /// Reads the text and the exclusion markers in a single open, retrying
+    /// while another process holds the clipboard. Only one process may have it
+    /// open at a time, so a failure here is ordinary contention, not an error.
     /// </summary>
-    private string? ReadClipboardText()
+    private Reading? ReadClipboard()
     {
         for (var attempt = 0; attempt < OpenAttempts; attempt++)
         {
@@ -73,26 +94,12 @@ public sealed class WindowsClipboardMonitor : IClipboardMonitor, IDisposable
 
             try
             {
-                var handle = NativeMethods.GetClipboardData(NativeMethods.CfUnicodeText);
-                if (handle == IntPtr.Zero)
-                {
-                    return null;
-                }
+                var excluded = IsExcludedByMarker();
 
-                var pointer = NativeMethods.GlobalLock(handle);
-                if (pointer == IntPtr.Zero)
-                {
-                    return null;
-                }
-
-                try
-                {
-                    return Marshal.PtrToStringUni(pointer);
-                }
-                finally
-                {
-                    NativeMethods.GlobalUnlock(handle);
-                }
+                // Read the markers even when there is no text: an application
+                // that marked its content deserves the same answer either way.
+                var text = ReadUnicodeText();
+                return text is null ? null : new Reading(text, excluded);
             }
             finally
             {
@@ -101,6 +108,74 @@ public sealed class WindowsClipboardMonitor : IClipboardMonitor, IDisposable
         }
 
         return null;
+    }
+
+    /// <summary>Requires the clipboard to already be open.</summary>
+    private static bool IsExcludedByMarker()
+    {
+        if (NativeMethods.IsClipboardFormatAvailable(ExcludeFromMonitorsFormat))
+        {
+            return true;
+        }
+
+        // Documented as a serialized DWORD: zero means keep it out of history,
+        // one means the application explicitly wants it kept.
+        return ReadDword(CanIncludeInHistoryFormat) == 0;
+    }
+
+    /// <summary>Requires the clipboard to already be open.</summary>
+    private static uint? ReadDword(uint format)
+    {
+        if (!NativeMethods.IsClipboardFormatAvailable(format))
+        {
+            return null;
+        }
+
+        var handle = NativeMethods.GetClipboardData(format);
+        if (handle == IntPtr.Zero || (ulong)NativeMethods.GlobalSize(handle) < sizeof(uint))
+        {
+            return null;
+        }
+
+        var pointer = NativeMethods.GlobalLock(handle);
+        if (pointer == IntPtr.Zero)
+        {
+            return null;
+        }
+
+        try
+        {
+            return unchecked((uint)Marshal.ReadInt32(pointer));
+        }
+        finally
+        {
+            NativeMethods.GlobalUnlock(handle);
+        }
+    }
+
+    /// <summary>Requires the clipboard to already be open.</summary>
+    private static string? ReadUnicodeText()
+    {
+        var handle = NativeMethods.GetClipboardData(NativeMethods.CfUnicodeText);
+        if (handle == IntPtr.Zero)
+        {
+            return null;
+        }
+
+        var pointer = NativeMethods.GlobalLock(handle);
+        if (pointer == IntPtr.Zero)
+        {
+            return null;
+        }
+
+        try
+        {
+            return Marshal.PtrToStringUni(pointer);
+        }
+        finally
+        {
+            NativeMethods.GlobalUnlock(handle);
+        }
     }
 
     private static string? ForegroundProcessName()
