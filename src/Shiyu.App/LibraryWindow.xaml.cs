@@ -1,3 +1,8 @@
+using System.Collections.Specialized;
+using System.IO;
+using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -23,16 +28,18 @@ public partial class LibraryWindow : Window
 
     private readonly EntryStore _store;
     private readonly WindowsClipboardWriter _clipboard;
+    private readonly ImageArchive _images;
     private readonly HistoryBrowser _browser;
     private readonly ObservableCollection<EntryItem> _items = [];
     private readonly DispatcherTimer _searchDebounce;
 
-    public LibraryWindow(EntryStore store, WindowsClipboardWriter clipboard)
+    public LibraryWindow(EntryStore store, WindowsClipboardWriter clipboard, ImageArchive images)
     {
         InitializeComponent();
 
         _store = store;
         _clipboard = clipboard;
+        _images = images;
         _browser = new HistoryBrowser(store);
 
         _searchDebounce = new DispatcherTimer { Interval = SearchDelay };
@@ -108,10 +115,46 @@ public partial class LibraryWindow : Window
         }
     }
 
+    /// <summary>
+    /// Starts a file drag for an image entry, so it can be dropped straight
+    /// into Explorer or another application.
+    ///
+    /// The original is already a real file on disk, so this is an ordinary file
+    /// drag — no virtual-file plumbing needed.
+    /// </summary>
+    private void OnListMouseMove(object sender, MouseEventArgs e)
+    {
+        if (e.LeftButton != MouseButtonState.Pressed
+            || EntryList.SelectedItem is not EntryItem item)
+        {
+            return;
+        }
+
+        if (!item.CanDrag)
+        {
+            return;
+        }
+
+        var files = new StringCollection { item.OriginalPath! };
+        var payload = new DataObject();
+        payload.SetFileDropList(files);
+
+        DragDrop.DoDragDrop(EntryList, payload, DragDropEffects.Copy);
+    }
+
     private void OnCopySelected(object sender, RoutedEventArgs e)
     {
         if (EntryList.SelectedItem is not EntryItem item)
         {
+            return;
+        }
+
+        if (item.Thumbnail is not null)
+        {
+            // The clipboard writer handles text; putting a bitmap back would be
+            // a separate piece of interop this feature does not need. Dragging
+            // the file out covers what the user actually wants to do with it.
+            Status("图片条目请直接拖出到文件夹另存");
             return;
         }
 
@@ -136,6 +179,14 @@ public partial class LibraryWindow : Window
         }
 
         var index = EntryList.SelectedIndex;
+
+        // The original goes with the entry. Leaving it behind would accumulate
+        // files nothing references and nothing will ever clean up.
+        if (item.OriginalPath is { Length: > 0 } original)
+        {
+            _images.Delete(original);
+        }
+
         _store.Delete(item.Id);
         _browser.Forget(item.Id);
         _items.Remove(item);
@@ -169,6 +220,7 @@ public partial class LibraryWindow : Window
             return;
         }
 
+        DeleteOriginalsOf(_store.ImagesWithOriginals());
         var removed = _store.DeleteAll();
         Reload();
         Status($"已清空 {removed} 条");
@@ -205,29 +257,86 @@ public partial class LibraryWindow : Window
             return;
         }
 
+        DeleteOriginalsOf(_store.ImagesCreatedBetween(start, end));
         var removed = _store.DeleteCreatedBetween(start, end);
         Reload();
         Status($"已删除 {removed} 条");
     }
 
+    /// <summary>Removes the files behind image entries that are about to go.</summary>
+    private void DeleteOriginalsOf(IEnumerable<Entry> entries)
+    {
+        foreach (var entry in entries)
+        {
+            if (entry.OriginalPath is { Length: > 0 } path)
+            {
+                _images.Delete(path);
+            }
+        }
+    }
+
     private void Status(string message) => StatusLabel.Text = message;
 
-    private sealed record EntryItem(long Id, string Text, string Preview, string Meta)
+    private sealed record EntryItem(
+        long Id,
+        string Text,
+        string Preview,
+        string Meta,
+        ImageSource? Thumbnail,
+        string? OriginalPath)
     {
+        public Visibility ThumbnailVisibility =>
+            Thumbnail is null ? Visibility.Collapsed : Visibility.Visible;
+
+        /// <summary>True while the full-size image is still on disk.</summary>
+        public bool CanDrag => OriginalPath is { Length: > 0 } path && File.Exists(path);
+
         public static EntryItem From(Entry entry)
         {
             var collapsed = string.Join(' ', entry.Text.Split(
                 ['\r', '\n', '\t'],
-                System.StringSplitOptions.RemoveEmptyEntries | System.StringSplitOptions.TrimEntries));
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
 
             var preview = collapsed.Length > 300 ? collapsed[..300] + "…" : collapsed;
             var source = string.IsNullOrEmpty(entry.SourceApp) ? "未知来源" : entry.SourceApp;
+
+            var tail = entry.Kind == EntryKind.Image
+                ? entry.HasOriginal ? "可拖出另存" : "原图已过期清理"
+                : $"{entry.Text.Length} 字";
 
             return new EntryItem(
                 entry.Id,
                 entry.Text,
                 preview,
-                $"{entry.CreatedAt.ToLocalTime():yyyy-MM-dd HH:mm}  ·  {source}  ·  {entry.Text.Length} 字");
+                $"{entry.CreatedAt.ToLocalTime():yyyy-MM-dd HH:mm}  ·  {source}  ·  {tail}",
+                Decode(entry.ThumbnailPng),
+                entry.OriginalPath);
+        }
+
+        private static ImageSource? Decode(byte[]? png)
+        {
+            if (png is null or { Length: 0 })
+            {
+                return null;
+            }
+
+            try
+            {
+                var bitmap = new BitmapImage();
+                bitmap.BeginInit();
+                bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                bitmap.StreamSource = new MemoryStream(png);
+                bitmap.EndInit();
+
+                // Frozen so the list can recycle rows across threads freely.
+                bitmap.Freeze();
+                return bitmap;
+            }
+            catch (NotSupportedException)
+            {
+                // A thumbnail that will not decode is not worth a broken window.
+                return null;
+            }
         }
     }
 }

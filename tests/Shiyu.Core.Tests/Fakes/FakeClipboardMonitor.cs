@@ -17,4 +17,8 @@ public sealed class FakeClipboardMonitor : IClipboardMonitor
     /// <summary>Mimics an application that asked clipboard tools to leave it alone.</summary>
     public void EmitExcluded(string text, string? sourceApp = null)
         => Changed?.Invoke(new ClipboardSnapshot(text, sourceApp, ExcludedByMarker: true));
+
+    /// <summary>Mimics a copied image.</summary>
+    public void EmitImage(IClipboardImage image, string? sourceApp = null, bool excluded = false)
+        => Changed?.Invoke(new ClipboardSnapshot(string.Empty, sourceApp, excluded) { Image = image });
 }

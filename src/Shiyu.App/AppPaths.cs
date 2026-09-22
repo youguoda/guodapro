@@ -18,4 +18,6 @@ internal static class AppPaths
     internal static string DatabaseFile { get; } = Path.Combine(DataDirectory, "history.db");
 
     internal static string SettingsFile { get; } = Path.Combine(DataDirectory, "settings.json");
+
+    internal static string ImageDirectory { get; } = Path.Combine(DataDirectory, "images");
 }

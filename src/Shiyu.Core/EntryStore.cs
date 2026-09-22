@@ -33,6 +33,11 @@ public sealed class EntryStore : IDisposable
         return store;
     }
 
+    /// <summary>
+    /// The shape the code expects. Bumped whenever a migration is added below.
+    /// </summary>
+    private const int SchemaVersion = 2;
+
     private void CreateSchema()
     {
         // WAL keeps readers from blocking the writer and leaves the database
@@ -47,6 +52,53 @@ public sealed class EntryStore : IDisposable
             );
             """);
         Execute("CREATE INDEX IF NOT EXISTS idx_entries_created_at ON entries (created_at DESC);");
+
+        Migrate();
+    }
+
+    /// <summary>
+    /// Brings an older database up to date in place.
+    ///
+    /// The history is the point of this application, so migrations only ever
+    /// add: a user who upgrades must find everything they had, not an empty
+    /// list and no explanation.
+    /// </summary>
+    private void Migrate()
+    {
+        var from = ReadSchemaVersion();
+
+        if (from < 2)
+        {
+            // Text entries predate images, so they default to kind 0 and carry
+            // no thumbnail or original — exactly what an existing row means.
+            Execute("ALTER TABLE entries ADD COLUMN kind INTEGER NOT NULL DEFAULT 0;");
+            Execute("ALTER TABLE entries ADD COLUMN thumbnail BLOB NULL;");
+            Execute("ALTER TABLE entries ADD COLUMN original_path TEXT NULL;");
+        }
+
+        if (from != SchemaVersion)
+        {
+            Execute($"PRAGMA user_version = {SchemaVersion};");
+        }
+    }
+
+    private int ReadSchemaVersion()
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = "PRAGMA user_version;";
+        var version = Convert.ToInt32(command.ExecuteScalar());
+
+        // A database created before versioning began still has the original
+        // three columns and reports zero; treat it as version 1.
+        return version == 0 && HasColumn("kind") ? SchemaVersion : Math.Max(version, 1);
+    }
+
+    private bool HasColumn(string name)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM pragma_table_info('entries') WHERE name = $name;";
+        command.Parameters.AddWithValue("$name", name);
+        return Convert.ToInt32(command.ExecuteScalar()) > 0;
     }
 
     public Entry Append(string text, string? sourceApp, DateTimeOffset createdAt)
@@ -63,6 +115,103 @@ public sealed class EntryStore : IDisposable
 
         var id = (long)command.ExecuteScalar()!;
         return new Entry(id, text, sourceApp, createdAt);
+    }
+
+    /// <summary>
+    /// Records a copied image: the thumbnail goes in the database and stays
+    /// there, the full-size original goes on disk and is subject to retention.
+    /// </summary>
+    public Entry AppendImage(
+        string label,
+        byte[] thumbnailPng,
+        string originalPath,
+        string? sourceApp,
+        DateTimeOffset createdAt)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO entries (text, source_app, created_at, kind, thumbnail, original_path)
+            VALUES ($text, $sourceApp, $createdAt, $kind, $thumbnail, $originalPath)
+            RETURNING id;
+            """;
+        command.Parameters.AddWithValue("$text", label);
+        command.Parameters.AddWithValue("$sourceApp", (object?)sourceApp ?? DBNull.Value);
+        command.Parameters.AddWithValue("$createdAt", createdAt.ToUnixTimeMilliseconds());
+        command.Parameters.AddWithValue("$kind", (int)EntryKind.Image);
+        command.Parameters.AddWithValue("$thumbnail", thumbnailPng);
+        command.Parameters.AddWithValue("$originalPath", originalPath);
+
+        var id = (long)command.ExecuteScalar()!;
+        return new Entry(id, label, sourceApp, createdAt)
+        {
+            Kind = EntryKind.Image,
+            ThumbnailPng = thumbnailPng,
+            OriginalPath = originalPath,
+        };
+    }
+
+    /// <summary>
+    /// Forgets where an original used to be, once retention has deleted it.
+    /// The entry and its thumbnail are untouched.
+    /// </summary>
+    public void ClearOriginal(long id)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = "UPDATE entries SET original_path = NULL WHERE id = $id;";
+        command.Parameters.AddWithValue("$id", id);
+        command.ExecuteNonQuery();
+    }
+
+    /// <summary>Every image entry that still has an original on disk.</summary>
+    public IReadOnlyList<Entry> ImagesWithOriginals()
+        => ImagesWhere("original_path IS NOT NULL");
+
+    /// <summary>Image entries with originals, created within the range.</summary>
+    public IReadOnlyList<Entry> ImagesCreatedBetween(DateTimeOffset from, DateTimeOffset to)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = """
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path
+            FROM entries
+            WHERE kind = $kind AND original_path IS NOT NULL
+              AND created_at BETWEEN $from AND $to;
+            """;
+        command.Parameters.AddWithValue("$kind", (int)EntryKind.Image);
+        command.Parameters.AddWithValue("$from", from.ToUnixTimeMilliseconds());
+        command.Parameters.AddWithValue("$to", to.ToUnixTimeMilliseconds());
+
+        return ReadEntries(command);
+    }
+
+    private IReadOnlyList<Entry> ImagesWhere(string condition)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path
+            FROM entries
+            WHERE kind = $kind AND {condition};
+            """;
+        command.Parameters.AddWithValue("$kind", (int)EntryKind.Image);
+
+        return ReadEntries(command);
+    }
+
+    /// <summary>Image entries whose original is older than the cutoff.</summary>
+    public IReadOnlyList<Entry> ImagesWithOriginalsBefore(DateTimeOffset cutoff, int limit)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = """
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path
+            FROM entries
+            WHERE kind = $kind AND original_path IS NOT NULL AND created_at < $cutoff
+            ORDER BY created_at ASC
+            LIMIT $limit;
+            """;
+        command.Parameters.AddWithValue("$kind", (int)EntryKind.Image);
+        command.Parameters.AddWithValue("$cutoff", cutoff.ToUnixTimeMilliseconds());
+        command.Parameters.AddWithValue("$limit", limit);
+
+        return ReadEntries(command);
     }
 
     /// <summary>
@@ -114,7 +263,7 @@ public sealed class EntryStore : IDisposable
 
         using var command = _connection.CreateCommand();
         command.CommandText = """
-            SELECT id, text, source_app, created_at
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path
             FROM entries
             WHERE text LIKE $pattern ESCAPE '\'
             ORDER BY created_at DESC, id DESC
@@ -136,7 +285,7 @@ public sealed class EntryStore : IDisposable
     {
         using var command = _connection.CreateCommand();
         command.CommandText = """
-            SELECT id, text, source_app, created_at
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path
             FROM entries
             ORDER BY created_at DESC, id DESC
             LIMIT $limit OFFSET $offset;
@@ -207,7 +356,7 @@ public sealed class EntryStore : IDisposable
     {
         using var command = _connection.CreateCommand();
         command.CommandText = """
-            SELECT id, text, source_app, created_at
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path
             FROM entries
             ORDER BY created_at DESC, id DESC
             LIMIT $limit;
@@ -227,7 +376,12 @@ public sealed class EntryStore : IDisposable
                 reader.GetInt64(0),
                 reader.GetString(1),
                 reader.IsDBNull(2) ? null : reader.GetString(2),
-                DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(3))));
+                DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(3)))
+            {
+                Kind = (EntryKind)reader.GetInt32(4),
+                ThumbnailPng = reader.IsDBNull(5) ? null : (byte[])reader[5],
+                OriginalPath = reader.IsDBNull(6) ? null : reader.GetString(6),
+            });
         }
 
         return entries;

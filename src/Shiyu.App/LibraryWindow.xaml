@@ -43,12 +43,19 @@
                  VirtualizingPanel.IsVirtualizing="True"
                  VirtualizingPanel.VirtualizationMode="Recycling"
                  ScrollViewer.ScrollChanged="OnListScrolled"
-                 MouseDoubleClick="OnCopySelected">
+                 MouseDoubleClick="OnCopySelected"
+                 PreviewMouseMove="OnListMouseMove">
             <ListBox.ItemTemplate>
                 <DataTemplate>
-                    <StackPanel Margin="3,5">
-                        <TextBlock Text="{Binding Preview}" TextTrimming="CharacterEllipsis" />
-                        <TextBlock Text="{Binding Meta}" FontSize="11" Opacity="0.55" Margin="0,3,0,0" />
+                    <StackPanel Orientation="Horizontal" Margin="3,5">
+                        <Border Width="88" Height="56" Margin="0,0,10,0" CornerRadius="3"
+                                Background="#14000000" Visibility="{Binding ThumbnailVisibility}">
+                            <Image Source="{Binding Thumbnail}" Stretch="Uniform" />
+                        </Border>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Preview}" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="{Binding Meta}" FontSize="11" Opacity="0.55" Margin="0,3,0,0" />
+                        </StackPanel>
                     </StackPanel>
                 </DataTemplate>
             </ListBox.ItemTemplate>

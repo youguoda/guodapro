@@ -16,10 +16,7 @@ public sealed class WindowsCapturePlatform(MessageWindow window, WindowsClipboar
     private static readonly ushort[] ModifiersThatMustNotLeak =
         [NativeMethods.VkShift, NativeMethods.VkMenu, NativeMethods.VkLWin, NativeMethods.VkRWin];
 
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern uint GetClipboardSequenceNumber();
-
-    public uint ClipboardSequenceNumber() => GetClipboardSequenceNumber();
+    public uint ClipboardSequenceNumber() => NativeMethods.GetClipboardSequenceNumber();
 
     public string? ReadClipboardText()
     {

@@ -39,6 +39,7 @@ public sealed class WindowsClipboardMonitor : IClipboardMonitor, IDisposable
     private readonly MessageWindow _window;
     private bool _listening;
     private bool _disposed;
+    private long? _lastImageFingerprint;
 
     public event Action<ClipboardSnapshot>? Changed;
 
@@ -79,13 +80,45 @@ public sealed class WindowsClipboardMonitor : IClipboardMonitor, IDisposable
         // several attempts, by which time focus may have moved on.
         var sourceApp = ForegroundProcessName();
 
-        if (ReadClipboard() is { Text.Length: > 0 } reading)
+        var reading = ReadClipboard();
+
+        if (reading is { Text.Length: > 0 })
         {
-            Changed?.Invoke(new ClipboardSnapshot(reading.Text, sourceApp, reading.Excluded));
+            // Text supersedes whatever image came before it, so the next image
+            // is judged fresh rather than against something long gone.
+            _lastImageFingerprint = null;
+            Changed?.Invoke(new ClipboardSnapshot(reading.Value.Text, sourceApp, reading.Value.Excluded));
+            return;
         }
+
+        // No usable text. An image is the other thing worth keeping, and is
+        // grabbed now rather than later: the clipboard is about to change again
+        // and there is no second chance at it.
+        if (WindowsClipboardImage.FromClipboard() is not { } image)
+        {
+            return;
+        }
+
+        // The same copy arrives more than once: an application publishes its
+        // bitmap in several clipboard formats in turn, and each publication
+        // raises its own notification with its own sequence number. Collapsing
+        // a repeat of the previous image mirrors what the text path already
+        // does; without it every copied image is recorded twice and written to
+        // disk twice.
+        var fingerprint = image.ContentFingerprint;
+        if (fingerprint == _lastImageFingerprint)
+        {
+            return;
+        }
+
+        _lastImageFingerprint = fingerprint;
+        Changed?.Invoke(new ClipboardSnapshot(string.Empty, sourceApp, IsExcluded(reading)) { Image = image });
     }
 
     private readonly record struct Reading(string Text, bool Excluded);
+
+    /// <summary>An exclusion marker applies to the whole clipboard, images included.</summary>
+    private static bool IsExcluded(Reading? reading) => reading?.Excluded ?? false;
 
     /// <summary>
     /// Reads the text and the exclusion markers in a single open, retrying
@@ -106,10 +139,11 @@ public sealed class WindowsClipboardMonitor : IClipboardMonitor, IDisposable
             {
                 var excluded = IsExcludedByMarker();
 
-                // Read the markers even when there is no text: an application
-                // that marked its content deserves the same answer either way.
-                var text = ReadUnicodeText();
-                return text is null ? null : new Reading(text, excluded);
+                // Returned even when there is no text, so the marker survives
+                // for an image-only clipboard. Dropping the reading here would
+                // quietly reopen the hole exclusion exists to close: an image
+                // copied from a password manager would be recorded.
+                return new Reading(ReadUnicodeText() ?? string.Empty, excluded);
             }
             finally
             {

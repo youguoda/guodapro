@@ -307,4 +307,8 @@ internal static class NativeMethods
     [DllImport("user32.dll", SetLastError = true, EntryPoint = "SetWindowLongPtrW")]
     internal static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int index, IntPtr value);
 
+
+    [DllImport("user32.dll")]
+    internal static extern uint GetClipboardSequenceNumber();
+
 }

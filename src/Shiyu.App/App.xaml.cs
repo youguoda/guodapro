@@ -24,6 +24,7 @@ public partial class App : Application
     private AppSettings _settings = new();
     private WindowsCapturePlatform? _capturePlatform;
     private QuickBarWindow? _quickBar;
+    private ImageArchive? _images;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -63,7 +64,11 @@ public partial class App : Application
         _messageWindow = new MessageWindow();
         _clipboard = new WindowsClipboardMonitor(_messageWindow);
         _exclusions = _settings.BuildExclusionPolicy();
-        _pipeline = new ClipboardPipeline(_clipboard, _store, TimeProvider.System, _exclusions);
+        _images = new ImageArchive(AppPaths.ImageDirectory);
+        _pipeline = new ClipboardPipeline(
+            _clipboard, _store, TimeProvider.System, _exclusions, _images);
+        _pipeline.ImageFailed += reason
+            => _tray?.ShowNotification("拾语", $"复制的图片没能保存：{reason}");
 
         _tray = new TrayIcon(_messageWindow, "拾语")
         {
@@ -141,14 +146,14 @@ public partial class App : Application
     /// </summary>
     private void ShowLibrary()
     {
-        if (_store is null || _writer is null)
+        if (_store is null || _writer is null || _images is null)
         {
             return;
         }
 
         if (_library is null)
         {
-            _library = new LibraryWindow(_store, _writer);
+            _library = new LibraryWindow(_store, _writer, _images!);
             _library.Closed += (_, _) => _library = null;
             _library.Show();
         }
