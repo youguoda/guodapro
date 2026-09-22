@@ -46,8 +46,7 @@ public partial class LibraryWindow : Window
         _searchDebounce.Tick += (_, _) =>
         {
             _searchDebounce.Stop();
-            _browser.Query = SearchBox.Text;
-            Rebuild();
+            ApplyFilter();
         };
 
         EntryList.ItemsSource = _items;
@@ -80,6 +79,54 @@ public partial class LibraryWindow : Window
     {
         CountLabel.Text = $"共 {_store.Count()} 条";
         EmptyLabel.Visibility = _items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        EmptyLabel.Text = _browser.Filter.IsEmpty ? "还没有记录" : "没有符合筛选条件的记录";
+    }
+
+    /// <summary>
+    /// Rebuilds the filter from every control at once. Assembled in one place
+    /// because the parts combine — narrowing by type and by date together is
+    /// the whole point — and reading them piecemeal invites them to drift.
+    /// </summary>
+    private void ApplyFilter()
+    {
+        _browser.Filter = new HistoryFilter
+        {
+            Query = SearchBox.Text,
+            Kind = KindFilter.SelectedIndex switch
+            {
+                1 => EntryKind.Text,
+                2 => EntryKind.Image,
+                _ => null,
+            },
+            From = FilterFrom.SelectedDate is { } from
+                ? new DateTimeOffset(from.Date, DateTimeOffset.Now.Offset)
+                : null,
+
+            // Whole days: a user picking today means all of today, not the
+            // instant midnight began.
+            To = FilterTo.SelectedDate is { } to
+                ? new DateTimeOffset(to.Date.AddDays(1).AddTicks(-1), DateTimeOffset.Now.Offset)
+                : null,
+        };
+
+        Rebuild();
+    }
+
+    private void OnFilterChanged(object sender, RoutedEventArgs e)
+    {
+        if (IsLoaded)
+        {
+            ApplyFilter();
+        }
+    }
+
+    private void OnClearFilters(object sender, RoutedEventArgs e)
+    {
+        SearchBox.Text = string.Empty;
+        KindFilter.SelectedIndex = 0;
+        FilterFrom.SelectedDate = null;
+        FilterTo.SelectedDate = null;
+        ApplyFilter();
     }
 
     private void OnSearchTextChanged(object sender, TextChangedEventArgs e)

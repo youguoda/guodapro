@@ -277,6 +277,58 @@ public sealed class EntryStore : IDisposable
     }
 
     /// <summary>
+    /// Finds entries matching every part of the filter, newest first.
+    ///
+    /// One query rather than filtering a search in memory: combining a keyword
+    /// with a date range has to narrow the whole history, not just whatever
+    /// the keyword happened to return first.
+    /// </summary>
+    public IReadOnlyList<Entry> Find(HistoryFilter filter, int limit, int offset = 0)
+    {
+        var conditions = new List<string>();
+
+        using var command = _connection.CreateCommand();
+
+        if (!string.IsNullOrWhiteSpace(filter.Query))
+        {
+            conditions.Add(@"text LIKE $pattern ESCAPE '\'");
+            command.Parameters.AddWithValue("$pattern", $"%{EscapeForLike(filter.Query)}%");
+        }
+
+        if (filter.From is { } from)
+        {
+            conditions.Add("created_at >= $from");
+            command.Parameters.AddWithValue("$from", from.ToUnixTimeMilliseconds());
+        }
+
+        if (filter.To is { } to)
+        {
+            conditions.Add("created_at <= $to");
+            command.Parameters.AddWithValue("$to", to.ToUnixTimeMilliseconds());
+        }
+
+        if (filter.Kind is { } kind)
+        {
+            conditions.Add("kind = $kind");
+            command.Parameters.AddWithValue("$kind", (int)kind);
+        }
+
+        var where = conditions.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", conditions);
+
+        command.CommandText = $"""
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path
+            FROM entries
+            {where}
+            ORDER BY created_at DESC, id DESC
+            LIMIT $limit OFFSET $offset;
+            """;
+        command.Parameters.AddWithValue("$limit", limit);
+        command.Parameters.AddWithValue("$offset", offset);
+
+        return ReadEntries(command);
+    }
+
+    /// <summary>
     /// A window onto the history, newest first. Every read path takes a limit:
     /// the history is never loaded into memory in one piece, however large it
     /// grows.

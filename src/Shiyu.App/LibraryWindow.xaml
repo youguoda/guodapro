@@ -14,13 +14,13 @@
 
     <Grid Margin="14">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
+            <RowDefinition Height="84" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <Grid Grid.Row="0" Margin="0,0,0,10">
+        <Grid Grid.Row="0" Margin="0,0,0,10" VerticalAlignment="Top">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
@@ -36,6 +36,27 @@
             <TextBlock x:Name="CountLabel" Grid.Column="1" Margin="12,0,2,0"
                        VerticalAlignment="Center" Opacity="0.6" />
         </Grid>
+
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,44,0,10"
+                    VerticalAlignment="Top">
+            <TextBlock Text="类型" VerticalAlignment="Center" Opacity="0.6" FontSize="12" />
+            <ComboBox x:Name="KindFilter" Width="92" Margin="6,0,14,0" SelectedIndex="0"
+                      SelectionChanged="OnFilterChanged">
+                <ComboBoxItem Content="全部" />
+                <ComboBoxItem Content="文本" />
+                <ComboBoxItem Content="图片" />
+            </ComboBox>
+
+            <TextBlock Text="日期" VerticalAlignment="Center" Opacity="0.6" FontSize="12" />
+            <DatePicker x:Name="FilterFrom" Width="124" Margin="6,0"
+                        SelectedDateChanged="OnFilterChanged" />
+            <TextBlock Text="至" VerticalAlignment="Center" Opacity="0.6" FontSize="12" />
+            <DatePicker x:Name="FilterTo" Width="124" Margin="6,0"
+                        SelectedDateChanged="OnFilterChanged" />
+
+            <Button Content="清除筛选" FontSize="11" Padding="9,3" Margin="6,0,0,0"
+                    Cursor="Hand" Click="OnClearFilters" />
+        </StackPanel>
 
         <ListBox x:Name="EntryList" Grid.Row="1"
                  HorizontalContentAlignment="Stretch"

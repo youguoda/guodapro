@@ -10,7 +10,7 @@ namespace Shiyu.Core;
 public sealed class HistoryBrowser(EntryStore store, int pageSize = 100)
 {
     private readonly List<Entry> _loaded = [];
-    private string _query = string.Empty;
+    private HistoryFilter _filter = HistoryFilter.None;
 
     /// <summary>What has been read so far, newest first.</summary>
     public IReadOnlyList<Entry> Loaded => _loaded;
@@ -19,23 +19,30 @@ public sealed class HistoryBrowser(EntryStore store, int pageSize = 100)
     public bool HasMore { get; private set; } = true;
 
     /// <summary>
-    /// The current search. Blank browses the whole history. Assigning starts
-    /// again from the top: results for the previous query mean nothing now.
+    /// What the history is narrowed to. Assigning starts again from the top:
+    /// results for the previous filter mean nothing now.
     /// </summary>
-    public string Query
+    public HistoryFilter Filter
     {
-        get => _query;
+        get => _filter;
         set
         {
-            var incoming = value ?? string.Empty;
-            if (incoming == _query)
+            var incoming = value ?? HistoryFilter.None;
+            if (incoming == _filter)
             {
                 return;
             }
 
-            _query = incoming;
+            _filter = incoming;
             Reset();
         }
+    }
+
+    /// <summary>Shorthand for the keyword alone, leaving other parts as they are.</summary>
+    public string Query
+    {
+        get => _filter.Query ?? string.Empty;
+        set => Filter = _filter with { Query = value };
     }
 
     /// <summary>Discards what was read and loads the first page again.</summary>
@@ -54,9 +61,7 @@ public sealed class HistoryBrowser(EntryStore store, int pageSize = 100)
             return 0;
         }
 
-        var page = string.IsNullOrWhiteSpace(_query)
-            ? store.Page(pageSize, _loaded.Count)
-            : store.Search(_query, pageSize, _loaded.Count);
+        var page = store.Find(_filter, pageSize, _loaded.Count);
 
         _loaded.AddRange(page);
 
