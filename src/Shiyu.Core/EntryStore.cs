@@ -7,7 +7,7 @@ namespace Shiyu.Core;
 /// behind a port: search, filtering and retention are exactly the logic a fake
 /// store would stop testing.
 /// </summary>
-public sealed class EntryStore : IDisposable
+public sealed partial class EntryStore : IDisposable
 {
     private readonly SqliteConnection _connection;
 
@@ -36,13 +36,23 @@ public sealed class EntryStore : IDisposable
     /// <summary>
     /// The shape the code expects. Bumped whenever a migration is added below.
     /// </summary>
-    private const int SchemaVersion = 2;
+    private const int SchemaVersion = 3;
+
+    /// <summary>
+    /// Joins tag names into one column. A unit separator, because it cannot
+    /// occur in a tag the user typed — a comma very much can.
+    /// </summary>
+    private const char TagSeparator = '';
 
     private void CreateSchema()
     {
         // WAL keeps readers from blocking the writer and leaves the database
         // consistent if the process is killed — the history must survive that.
         Execute("PRAGMA journal_mode = WAL;");
+
+        // Off by default in SQLite, and without it the cascade that removes an
+        // entry's tags when the entry goes would silently not happen.
+        Execute("PRAGMA foreign_keys = ON;");
         Execute("""
             CREATE TABLE IF NOT EXISTS entries (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -76,6 +86,29 @@ public sealed class EntryStore : IDisposable
             Execute("ALTER TABLE entries ADD COLUMN original_path TEXT NULL;");
         }
 
+        if (from < 3)
+        {
+            Execute("ALTER TABLE entries ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;");
+
+            // Tags are their own rows rather than a comma-separated column, so
+            // renaming one is a single update and filtering by one is an index
+            // lookup instead of a scan with string matching.
+            Execute("""
+                CREATE TABLE IF NOT EXISTS tags (
+                    id   INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL COLLATE NOCASE UNIQUE
+                );
+                """);
+            Execute("""
+                CREATE TABLE IF NOT EXISTS entry_tags (
+                    entry_id INTEGER NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+                    tag_id   INTEGER NOT NULL REFERENCES tags(id)    ON DELETE CASCADE,
+                    PRIMARY KEY (entry_id, tag_id)
+                );
+                """);
+            Execute("CREATE INDEX IF NOT EXISTS idx_entry_tags_tag ON entry_tags (tag_id);");
+        }
+
         if (from != SchemaVersion)
         {
             Execute($"PRAGMA user_version = {SchemaVersion};");
@@ -90,7 +123,7 @@ public sealed class EntryStore : IDisposable
 
         // A database created before versioning began still has the original
         // three columns and reports zero; treat it as version 1.
-        return version == 0 && HasColumn("kind") ? SchemaVersion : Math.Max(version, 1);
+        return version == 0 && HasColumn("kind") ? 2 : Math.Max(version, 1);
     }
 
     private bool HasColumn(string name)
@@ -171,7 +204,9 @@ public sealed class EntryStore : IDisposable
     {
         using var command = _connection.CreateCommand();
         command.CommandText = """
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned,
+                   (SELECT group_concat(t.name, char(31)) FROM tags t
+                      JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
             WHERE kind = $kind AND original_path IS NOT NULL
               AND created_at BETWEEN $from AND $to;
@@ -187,7 +222,9 @@ public sealed class EntryStore : IDisposable
     {
         using var command = _connection.CreateCommand();
         command.CommandText = $"""
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned,
+                   (SELECT group_concat(t.name, char(31)) FROM tags t
+                      JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
             WHERE kind = $kind AND {condition};
             """;
@@ -201,7 +238,9 @@ public sealed class EntryStore : IDisposable
     {
         using var command = _connection.CreateCommand();
         command.CommandText = """
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned,
+                   (SELECT group_concat(t.name, char(31)) FROM tags t
+                      JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
             WHERE kind = $kind AND original_path IS NOT NULL AND created_at < $cutoff
             ORDER BY created_at ASC
@@ -263,10 +302,12 @@ public sealed class EntryStore : IDisposable
 
         using var command = _connection.CreateCommand();
         command.CommandText = """
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned,
+                   (SELECT group_concat(t.name, char(31)) FROM tags t
+                      JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
             WHERE text LIKE $pattern ESCAPE '\'
-            ORDER BY created_at DESC, id DESC
+            ORDER BY pinned DESC, created_at DESC, id DESC
             LIMIT $limit OFFSET $offset;
             """;
         command.Parameters.AddWithValue("$pattern", $"%{EscapeForLike(query)}%");
@@ -313,13 +354,25 @@ public sealed class EntryStore : IDisposable
             command.Parameters.AddWithValue("$kind", (int)kind);
         }
 
+        if (!string.IsNullOrWhiteSpace(filter.Tag))
+        {
+            conditions.Add("""
+                id IN (SELECT et.entry_id FROM entry_tags et
+                         JOIN tags t ON t.id = et.tag_id
+                        WHERE t.name = $tag)
+                """);
+            command.Parameters.AddWithValue("$tag", filter.Tag.Trim());
+        }
+
         var where = conditions.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", conditions);
 
         command.CommandText = $"""
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned,
+                   (SELECT group_concat(t.name, char(31)) FROM tags t
+                      JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
             {where}
-            ORDER BY created_at DESC, id DESC
+            ORDER BY pinned DESC, created_at DESC, id DESC
             LIMIT $limit OFFSET $offset;
             """;
         command.Parameters.AddWithValue("$limit", limit);
@@ -337,9 +390,11 @@ public sealed class EntryStore : IDisposable
     {
         using var command = _connection.CreateCommand();
         command.CommandText = """
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned,
+                   (SELECT group_concat(t.name, char(31)) FROM tags t
+                      JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
-            ORDER BY created_at DESC, id DESC
+            ORDER BY pinned DESC, created_at DESC, id DESC
             LIMIT $limit OFFSET $offset;
             """;
         command.Parameters.AddWithValue("$limit", limit);
@@ -408,9 +463,11 @@ public sealed class EntryStore : IDisposable
     {
         using var command = _connection.CreateCommand();
         command.CommandText = """
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned,
+                   (SELECT group_concat(t.name, char(31)) FROM tags t
+                      JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
-            ORDER BY created_at DESC, id DESC
+            ORDER BY pinned DESC, created_at DESC, id DESC
             LIMIT $limit;
             """;
         command.Parameters.AddWithValue("$limit", limit);
@@ -433,6 +490,13 @@ public sealed class EntryStore : IDisposable
                 Kind = (EntryKind)reader.GetInt32(4),
                 ThumbnailPng = reader.IsDBNull(5) ? null : (byte[])reader[5],
                 OriginalPath = reader.IsDBNull(6) ? null : reader.GetString(6),
+                IsPinned = reader.GetInt32(7) != 0,
+
+                // Joined in rather than fetched per row: a list of a hundred
+                // entries would otherwise be a hundred extra queries.
+                Tags = reader.IsDBNull(8)
+                    ? []
+                    : reader.GetString(8).Split(TagSeparator, StringSplitOptions.RemoveEmptyEntries),
             });
         }
 

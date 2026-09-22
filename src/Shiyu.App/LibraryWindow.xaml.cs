@@ -33,6 +33,11 @@ public partial class LibraryWindow : Window
     private readonly ObservableCollection<EntryItem> _items = [];
     private readonly DispatcherTimer _searchDebounce;
 
+    /// <summary>The "no tag filter" choice, shown as the first item.</summary>
+    private const string AnyTag = "全部";
+
+    private bool _refillingTags;
+
     public LibraryWindow(EntryStore store, WindowsClipboardWriter clipboard, ImageArchive images)
     {
         InitializeComponent();
@@ -50,6 +55,7 @@ public partial class LibraryWindow : Window
         };
 
         EntryList.ItemsSource = _items;
+        RefreshTagChoices();
         Reload();
     }
 
@@ -92,6 +98,7 @@ public partial class LibraryWindow : Window
         _browser.Filter = new HistoryFilter
         {
             Query = SearchBox.Text,
+            Tag = TagFilter.SelectedItem as string is { } tag && tag != AnyTag ? tag : null,
             Kind = KindFilter.SelectedIndex switch
             {
                 1 => EntryKind.Text,
@@ -114,16 +121,104 @@ public partial class LibraryWindow : Window
 
     private void OnFilterChanged(object sender, RoutedEventArgs e)
     {
-        if (IsLoaded)
+        // Refilling the tag list raises a selection change of its own; acting
+        // on it would reset the very filter the user just set.
+        if (IsLoaded && !_refillingTags)
         {
             ApplyFilter();
         }
+    }
+
+    /// <summary>Refills the tag list, keeping the current choice if it survives.</summary>
+    private void RefreshTagChoices()
+    {
+        var chosen = TagFilter.SelectedItem as string;
+        _refillingTags = true;
+
+        TagFilter.Items.Clear();
+        TagFilter.Items.Add(AnyTag);
+        foreach (var tag in _store.AllTags())
+        {
+            TagFilter.Items.Add(tag);
+        }
+
+        TagFilter.SelectedItem = chosen is not null && TagFilter.Items.Contains(chosen)
+            ? chosen
+            : AnyTag;
+
+        _refillingTags = false;
+    }
+
+    /// <summary>
+    /// Keeps the pin button honest about what it will do. A button that always
+    /// reads "置顶" while pointing at a pinned entry invites the wrong click.
+    /// </summary>
+    private void OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+        => PinButton.Content = EntryList.SelectedItem is EntryItem { IsPinned: true }
+            ? "取消置顶"
+            : "置顶";
+
+    private void OnTogglePin(object sender, RoutedEventArgs e)
+    {
+        if (EntryList.SelectedItem is not EntryItem item)
+        {
+            return;
+        }
+
+        _store.SetPinned(item.Id, !item.IsPinned);
+
+        // Reloaded rather than patched in place: pinning changes where the
+        // entry belongs in the list, not just how it looks.
+        Reload();
+        Status(item.IsPinned ? "已取消置顶" : "已置顶");
+    }
+
+    private void OnTagBoxKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            e.Handled = true;
+            OnAddTag(sender, e);
+        }
+    }
+
+    private void OnAddTag(object sender, RoutedEventArgs e)
+    {
+        if (EntryList.SelectedItem is not EntryItem item || TagBox.Text.Trim().Length == 0)
+        {
+            return;
+        }
+
+        _store.AddTag(item.Id, TagBox.Text);
+        var added = TagBox.Text.Trim();
+        TagBox.Text = string.Empty;
+
+        RefreshTagChoices();
+        Reload();
+        Status($"已加标签「{added}」");
+    }
+
+    private void OnRemoveTag(object sender, RoutedEventArgs e)
+    {
+        if (EntryList.SelectedItem is not EntryItem item || TagBox.Text.Trim().Length == 0)
+        {
+            return;
+        }
+
+        _store.RemoveTag(item.Id, TagBox.Text);
+        var removed = TagBox.Text.Trim();
+        TagBox.Text = string.Empty;
+
+        RefreshTagChoices();
+        Reload();
+        Status($"已去掉标签「{removed}」");
     }
 
     private void OnClearFilters(object sender, RoutedEventArgs e)
     {
         SearchBox.Text = string.Empty;
         KindFilter.SelectedIndex = 0;
+        TagFilter.SelectedItem = AnyTag;
         FilterFrom.SelectedDate = null;
         FilterTo.SelectedDate = null;
         ApplyFilter();
@@ -330,8 +425,11 @@ public partial class LibraryWindow : Window
         string Preview,
         string Meta,
         ImageSource? Thumbnail,
-        string? OriginalPath)
+        string? OriginalPath,
+        bool IsPinned)
     {
+        public Visibility PinVisibility => IsPinned ? Visibility.Visible : Visibility.Collapsed;
+
         public Visibility ThumbnailVisibility =>
             Thumbnail is null ? Visibility.Collapsed : Visibility.Visible;
 
@@ -347,6 +445,8 @@ public partial class LibraryWindow : Window
             var preview = collapsed.Length > 300 ? collapsed[..300] + "…" : collapsed;
             var source = string.IsNullOrEmpty(entry.SourceApp) ? "未知来源" : entry.SourceApp;
 
+            var tags = entry.Tags.Count == 0 ? string.Empty : "  ·  " + string.Join(" ", entry.Tags.Select(t => "#" + t));
+
             var tail = entry.Kind == EntryKind.Image
                 ? entry.HasOriginal ? "可拖出另存" : "原图已过期清理"
                 : $"{entry.Text.Length} 字";
@@ -355,9 +455,10 @@ public partial class LibraryWindow : Window
                 entry.Id,
                 entry.Text,
                 preview,
-                $"{entry.CreatedAt.ToLocalTime():yyyy-MM-dd HH:mm}  ·  {source}  ·  {tail}",
+                $"{entry.CreatedAt.ToLocalTime():yyyy-MM-dd HH:mm}  ·  {source}  ·  {tail}{tags}",
                 Decode(entry.ThumbnailPng),
-                entry.OriginalPath);
+                entry.OriginalPath,
+                entry.IsPinned);
         }
 
         private static ImageSource? Decode(byte[]? png)

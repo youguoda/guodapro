@@ -31,6 +31,11 @@ public sealed record Entry(
 
     public string? OriginalPath { get; init; }
 
+    /// <summary>Pinned entries sort ahead of everything else.</summary>
+    public bool IsPinned { get; init; }
+
+    public IReadOnlyList<string> Tags { get; init; } = [];
+
     /// <summary>False once retention has removed the original from disk.</summary>
     public bool HasOriginal => OriginalPath is { Length: > 0 } path && File.Exists(path);
 }
