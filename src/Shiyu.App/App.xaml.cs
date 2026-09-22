@@ -199,7 +199,8 @@ public partial class App : Application
 
         if (_library is null)
         {
-            _library = new LibraryWindow(_store, _writer, _images!);
+            _library = new LibraryWindow(
+                _store, _writer, _images!, () => new OpenAiCompatibleBackend(_settings.Backend));
             _library.Closed += (_, _) => _library = null;
             _library.Show();
         }

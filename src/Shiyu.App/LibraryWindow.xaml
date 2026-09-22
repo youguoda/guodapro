@@ -18,6 +18,7 @@
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <Grid Grid.Row="0" Margin="0,0,0,10" VerticalAlignment="Top">
@@ -63,6 +64,7 @@
         </StackPanel>
 
         <ListBox x:Name="EntryList" Grid.Row="1"
+                 SelectionMode="Extended"
                  HorizontalContentAlignment="Stretch"
                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                  VirtualizingPanel.IsVirtualizing="True"
@@ -107,6 +109,15 @@
             <Button Content="去标签" Style="{StaticResource Toolbutton}" Click="OnRemoveTag" />
         </StackPanel>
 
+        <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,10,0,0"
+                    HorizontalAlignment="Right">
+            <TextBlock Text="对所选条目：" VerticalAlignment="Center" Opacity="0.6" FontSize="12" />
+            <Button Content="总结" Tag="Summarise" Style="{StaticResource Toolbutton}" Click="OnRunAgentAction" />
+            <Button Content="合并成笔记" Tag="MergeIntoNote" Style="{StaticResource Toolbutton}" Click="OnRunAgentAction" />
+            <Button Content="改写" Tag="Rewrite" Style="{StaticResource Toolbutton}" Click="OnRunAgentAction" />
+            <Button Content="建议标签" Tag="SuggestTags" Style="{StaticResource Toolbutton}" Click="OnRunAgentAction" />
+        </StackPanel>
+
         <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,10,0,0">
             <TextBlock Text="按时间段删除：" VerticalAlignment="Center" Opacity="0.7" />
             <DatePicker x:Name="RangeFrom" Width="130" Margin="6,0" />
@@ -115,5 +126,37 @@
             <Button Content="删除该时间段" Style="{StaticResource Toolbutton}" Click="OnDeleteRange" />
             <TextBlock x:Name="StatusLabel" VerticalAlignment="Center" Margin="10,0,0,0" Opacity="0.6" />
         </StackPanel>
+
+        <Border x:Name="AgentPanel" Grid.Row="4" Margin="0,12,0,0" Padding="11,9"
+                CornerRadius="6" Background="#0D000000" Visibility="Collapsed">
+            <StackPanel>
+                <DockPanel LastChildFill="False" Margin="0,0,0,7">
+                    <TextBlock x:Name="AgentTitle" DockPanel.Dock="Left" FontSize="12"
+                               Opacity="0.7" VerticalAlignment="Center" />
+                    <Button DockPanel.Dock="Right" Content="✕" FontSize="11" Padding="6,1"
+                            BorderThickness="0" Background="Transparent" Cursor="Hand"
+                            Click="OnCloseAgentPanel" />
+                    <Button x:Name="AgentCopyButton" DockPanel.Dock="Right" Content="复制结果"
+                            FontSize="11" Padding="9,2" Margin="0,0,6,0" Cursor="Hand"
+                            Click="OnCopyAgentOutput" />
+                </DockPanel>
+
+                <TextBlock x:Name="AgentOutput" TextWrapping="Wrap" FontSize="12"
+                           MaxHeight="150" LineHeight="19" />
+
+                <ItemsControl x:Name="SuggestedTags" Margin="0,8,0,0">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Button Content="{Binding}" Margin="0,0,6,6" Padding="8,2" FontSize="11"
+                                    Cursor="Hand" Click="OnAcceptSuggestedTag"
+                                    ToolTip="点击把这个标签加到所选条目" />
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </Border>
     </Grid>
 </Window>

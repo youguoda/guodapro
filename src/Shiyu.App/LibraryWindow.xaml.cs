@@ -29,6 +29,7 @@ public partial class LibraryWindow : Window
     private readonly EntryStore _store;
     private readonly WindowsClipboardWriter _clipboard;
     private readonly ImageArchive _images;
+    private readonly Func<IStreamingModel> _model;
     private readonly HistoryBrowser _browser;
     private readonly ObservableCollection<EntryItem> _items = [];
     private readonly DispatcherTimer _searchDebounce;
@@ -37,14 +38,20 @@ public partial class LibraryWindow : Window
     private const string AnyTag = "全部";
 
     private bool _refillingTags;
+    private AgentRun? _agentRun;
 
-    public LibraryWindow(EntryStore store, WindowsClipboardWriter clipboard, ImageArchive images)
+    public LibraryWindow(
+        EntryStore store,
+        WindowsClipboardWriter clipboard,
+        ImageArchive images,
+        Func<IStreamingModel> model)
     {
         InitializeComponent();
 
         _store = store;
         _clipboard = clipboard;
         _images = images;
+        _model = model;
         _browser = new HistoryBrowser(store);
 
         _searchDebounce = new DispatcherTimer { Interval = SearchDelay };
@@ -415,6 +422,101 @@ public partial class LibraryWindow : Window
                 _images.Delete(path);
             }
         }
+    }
+
+    /// <summary>
+    /// Runs an action over exactly what the user selected.
+    ///
+    /// Every path to a model request starts here: a selection the user made
+    /// and a button the user pressed. There is no automatic, background or
+    /// per-entry processing anywhere in Shiyu.
+    /// </summary>
+    private async void OnRunAgentAction(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string name }
+            || !Enum.TryParse<AgentActionKind>(name, out var kind))
+        {
+            return;
+        }
+
+        var selected = EntryList.SelectedItems.OfType<EntryItem>().ToList();
+        if (selected.Count == 0)
+        {
+            Status("请先选中要处理的条目");
+            return;
+        }
+
+        var entries = selected
+            .Select(item => new Entry(item.Id, item.Text, null, DateTimeOffset.UtcNow))
+            .ToList();
+
+        AgentPanel.Visibility = Visibility.Visible;
+        AgentTitle.Text = $"{AgentActions.Label(kind)} · {entries.Count} 条";
+        AgentOutput.Text = "正在处理…";
+        SuggestedTags.ItemsSource = null;
+
+        var run = new AgentRun(_model());
+        _agentRun = run;
+        run.Updated += () => Dispatcher.Invoke(() =>
+        {
+            if (!ReferenceEquals(_agentRun, run))
+            {
+                return;
+            }
+
+            if (run.Output.Length > 0)
+            {
+                AgentOutput.Text = run.Output;
+            }
+
+            if (run.State == TranslationState.Failed)
+            {
+                // An unreachable agent leaves everything else working; the
+                // message says so rather than looking like a broken window.
+                AgentOutput.Text = $"处理失败：{run.Error}";
+            }
+        });
+
+        await run.RunAsync(kind, entries);
+
+        if (kind == AgentActionKind.SuggestTags && run.State == TranslationState.Finished)
+        {
+            SuggestedTags.ItemsSource = AgentActions.ParseSuggestedTags(run.Output);
+            AgentOutput.Text = "点击下面的标签即可加到所选条目：";
+        }
+    }
+
+    private void OnAcceptSuggestedTag(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Content: string tag })
+        {
+            return;
+        }
+
+        var selected = EntryList.SelectedItems.OfType<EntryItem>().ToList();
+        foreach (var item in selected)
+        {
+            _store.AddTag(item.Id, tag);
+        }
+
+        RefreshTagChoices();
+        Reload();
+        Status($"已把「{tag}」加到 {selected.Count} 条");
+    }
+
+    private void OnCopyAgentOutput(object sender, RoutedEventArgs e)
+    {
+        if (_agentRun?.Output is { Length: > 0 } output)
+        {
+            AgentCopyButton.Content = _clipboard.SetText(output) ? "已复制" : "复制失败";
+        }
+    }
+
+    private void OnCloseAgentPanel(object sender, RoutedEventArgs e)
+    {
+        _agentRun = null;
+        AgentPanel.Visibility = Visibility.Collapsed;
+        AgentCopyButton.Content = "复制结果";
     }
 
     private void Status(string message) => StatusLabel.Text = message;

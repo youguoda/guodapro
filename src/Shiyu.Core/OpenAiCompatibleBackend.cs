@@ -28,13 +28,23 @@ public sealed record TranslationBackendOptions(string BaseUrl, string Model, str
 /// </summary>
 public sealed class OpenAiCompatibleBackend(
     TranslationBackendOptions options,
-    HttpClient? httpClient = null) : ITranslationBackend, IDisposable
+    HttpClient? httpClient = null) : ITranslationBackend, IStreamingModel, IDisposable
 {
     private readonly HttpClient _http = httpClient ?? new HttpClient();
     private readonly bool _ownsClient = httpClient is null;
 
-    public async IAsyncEnumerable<string> TranslateAsync(
+    public IAsyncEnumerable<string> TranslateAsync(
         TranslationRequest request,
+        CancellationToken cancellation)
+        => StreamAsync(
+            new ModelRequest(TranslationPrompt.For(request), request.Text), cancellation);
+
+    /// <summary>
+    /// The one transport. Translation and agent actions both come through here
+    /// rather than each having its own way to reach a model.
+    /// </summary>
+    public async IAsyncEnumerable<string> StreamAsync(
+        ModelRequest request,
         [EnumeratorCancellation] CancellationToken cancellation)
     {
         if (!options.IsConfigured)
@@ -82,7 +92,7 @@ public sealed class OpenAiCompatibleBackend(
         }
     }
 
-    private HttpRequestMessage BuildRequest(TranslationRequest request)
+    private HttpRequestMessage BuildRequest(ModelRequest request)
     {
         var body = new JsonObject
         {
@@ -96,12 +106,12 @@ public sealed class OpenAiCompatibleBackend(
                 new JsonObject
                 {
                     ["role"] = "system",
-                    ["content"] = TranslationPrompt.For(request),
+                    ["content"] = request.SystemPrompt,
                 },
                 new JsonObject
                 {
                     ["role"] = "user",
-                    ["content"] = request.Text,
+                    ["content"] = request.UserContent,
                 },
             },
         };
