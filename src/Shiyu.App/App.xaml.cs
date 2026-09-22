@@ -25,6 +25,7 @@ public partial class App : Application
     private WindowsCapturePlatform? _capturePlatform;
     private QuickBarWindow? _quickBar;
     private ImageArchive? _images;
+    private System.Windows.Threading.DispatcherTimer? _retention;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -92,6 +93,51 @@ public partial class App : Application
         // see it, so bring the library up rather than only saying "already
         // running" and leaving them no further along.
         _singleInstance.AnotherInstanceStarted += ShowLibrary;
+
+        StartRetention();
+    }
+
+    /// <summary>
+    /// Sweeps expired image originals now and once a day thereafter.
+    ///
+    /// Run on a background thread: a machine left unused for months has a
+    /// backlog to work through, and doing it on the thread that draws would
+    /// make startup look like a hang.
+    /// </summary>
+    private void StartRetention()
+    {
+        Sweep();
+
+        _retention = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromHours(24),
+        };
+        _retention.Tick += (_, _) => Sweep();
+        _retention.Start();
+
+        void Sweep()
+        {
+            if (_store is null || _images is null)
+            {
+                return;
+            }
+
+            var service = new RetentionService(_store, _images, TimeProvider.System);
+            var days = Math.Max(1, _settings.ImageRetentionDays);
+
+            Task.Run(() =>
+            {
+                try
+                {
+                    service.Sweep(TimeSpan.FromDays(days));
+                }
+                catch (Exception)
+                {
+                    // Housekeeping failing is not worth interrupting the user
+                    // over; the next sweep will try again.
+                }
+            });
+        }
     }
 
     /// <summary>
@@ -191,6 +237,7 @@ public partial class App : Application
     {
         // Reverse order of construction: the tray and the clipboard listener
         // both hold the message window.
+        _retention?.Stop();
         _quickBar?.CloseForGood();
         _panel?.CloseForGood();
         _badge?.CloseForGood();
