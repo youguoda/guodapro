@@ -17,6 +17,8 @@ public partial class App : Application
     private ExclusionPolicy? _exclusions;
     private WindowsClipboardWriter? _writer;
     private LibraryWindow? _library;
+    private SelectionCapture? _capture;
+    private HotkeyRegistry? _hotkeys;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -65,6 +67,22 @@ public partial class App : Application
         _tray.OpenLibraryRequested += ShowLibrary;
 
         _writer = new WindowsClipboardWriter(_messageWindow);
+
+        _capture = new SelectionCapture(new WindowsCapturePlatform(_messageWindow, _writer));
+        _hotkeys = new HotkeyRegistry(_messageWindow);
+
+        // Ctrl+Shift+Z: deliberately a combination whose modifiers the user is
+        // still holding when it fires, so the released-modifier handling in the
+        // capture platform is exercised every single time rather than only in
+        // some configurations.
+        var conflict = _hotkeys.Register(
+            new Hotkey(HotkeyModifiers.Control | HotkeyModifiers.Shift, 'Z', "取词"),
+            CaptureSelection);
+
+        if (conflict is not null)
+        {
+            _tray.ShowNotification("拾语", conflict.Message);
+        }
 
         _singleInstance.WatchForOtherInstances(_messageWindow);
 
@@ -130,8 +148,45 @@ public partial class App : Application
         _clipboard?.Dispose();
         _messageWindow?.Dispose();
         _store?.Dispose();
+        _hotkeys?.Dispose();
         _singleInstance?.Dispose();
 
         base.OnExit(e);
+    }
+
+    /// <summary>
+    /// Captures whatever is selected in the foreground application and, for
+    /// now, simply shows it. Translation hangs off this in issue 06.
+    /// </summary>
+    private void CaptureSelection()
+    {
+        if (_capture is null || _tray is null)
+        {
+            return;
+        }
+
+        var result = _capture.Capture();
+
+        if (!result.ClipboardRestored)
+        {
+            // The one failure worth interrupting the user for: their own
+            // clipboard is gone and they would otherwise find out by pasting
+            // the wrong thing somewhere that matters.
+            _tray.ShowNotification("拾语", "取词后未能还原你原本的剪贴板内容。");
+            return;
+        }
+
+        switch (result.Outcome)
+        {
+            case CaptureOutcome.Captured:
+                _tray.ShowNotification("取到的文字", result.Text!);
+                break;
+            case CaptureOutcome.NothingCaptured:
+                _tray.ShowNotification("拾语", "没有取到文字：可能没有选中内容，或该程序响应太慢。");
+                break;
+            case CaptureOutcome.ClipboardUnavailable:
+                _tray.ShowNotification("拾语", "剪贴板正被其他程序占用，稍后再试。");
+                break;
+        }
     }
 }

@@ -63,6 +63,30 @@ public sealed class WindowsClipboardWriter(MessageWindow window)
         return false;
     }
 
+    /// <summary>Leaves the clipboard empty, as opposed to holding an empty string.</summary>
+    public bool Clear()
+    {
+        for (var attempt = 0; attempt < OpenAttempts; attempt++)
+        {
+            if (!NativeMethods.OpenClipboard(window.Handle))
+            {
+                Thread.Sleep(RetryDelay);
+                continue;
+            }
+
+            try
+            {
+                return NativeMethods.EmptyClipboard();
+            }
+            finally
+            {
+                NativeMethods.CloseClipboard();
+            }
+        }
+
+        return false;
+    }
+
     private static IntPtr AllocateUnicode(string text)
     {
         var bytes = System.Text.Encoding.Unicode.GetBytes(text + '\0');
