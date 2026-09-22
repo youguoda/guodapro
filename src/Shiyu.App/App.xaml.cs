@@ -22,6 +22,7 @@ public partial class App : Application
     private BadgeWindow? _badge;
     private PanelWindow? _panel;
     private AppSettings _settings = new();
+    private WindowsCapturePlatform? _capturePlatform;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -74,21 +75,10 @@ public partial class App : Application
 
         _writer = new WindowsClipboardWriter(_messageWindow);
 
-        _capture = new SelectionCapture(new WindowsCapturePlatform(_messageWindow, _writer));
+        _capturePlatform = new WindowsCapturePlatform(_messageWindow, _writer);
+        _capture = new SelectionCapture(_capturePlatform);
         _hotkeys = new HotkeyRegistry(_messageWindow);
-
-        // Ctrl+Shift+Z: deliberately a combination whose modifiers the user is
-        // still holding when it fires, so the released-modifier handling in the
-        // capture platform is exercised every single time rather than only in
-        // some configurations.
-        var conflict = _hotkeys.Register(
-            new Hotkey(HotkeyModifiers.Control | HotkeyModifiers.Shift, 'Z', "取词"),
-            CaptureSelection);
-
-        if (conflict is not null)
-        {
-            _tray.ShowNotification("拾语", conflict.Message);
-        }
+        RegisterHotkeys();
 
         _singleInstance.WatchForOtherInstances(_messageWindow);
 
@@ -193,11 +183,40 @@ public partial class App : Application
         base.OnExit(e);
     }
 
-    /// <summary>
-    /// Captures whatever is selected in the foreground application and, for
-    /// now, simply shows it. Translation hangs off this in issue 06.
-    /// </summary>
-    private void CaptureSelection()
+    private void RegisterHotkeys()
+    {
+        // Ctrl+Shift+Z: deliberately a combination whose modifiers the user is
+        // still holding when it fires, so the released-modifier handling in the
+        // capture platform is exercised every single time rather than only in
+        // some configurations.
+        var conflicts = new List<HotkeyConflict>();
+
+        Add(new Hotkey(HotkeyModifiers.Control | HotkeyModifiers.Shift, 'Z', "划词翻译"),
+            TranslateSelection);
+
+        // The escape hatch. Without it the user cannot tell a filter that
+        // judged wrongly from a tool that broke, and has no way to insist.
+        Add(new Hotkey(HotkeyModifiers.Control | HotkeyModifiers.Shift, 'X', "翻译剪贴板内容"),
+            TranslateClipboard);
+
+        if (conflicts.Count > 0)
+        {
+            // Reported together rather than one balloon after another, and
+            // never fatal: losing a hotkey to another application is ordinary.
+            _tray?.ShowNotification("拾语", string.Join("\n", conflicts.Select(c => c.Message)));
+        }
+
+        void Add(Hotkey hotkey, Action action)
+        {
+            if (_hotkeys!.Register(hotkey, action) is { } conflict)
+            {
+                conflicts.Add(conflict);
+            }
+        }
+    }
+
+    /// <summary>Captures what is selected in the foreground application and translates it.</summary>
+    private void TranslateSelection()
     {
         if (_capture is null || _tray is null)
         {
@@ -218,14 +237,58 @@ public partial class App : Application
         switch (result.Outcome)
         {
             case CaptureOutcome.Captured:
-                _tray.ShowNotification("取到的文字", result.Text!);
+                ShowPanel(result.Text!);
                 break;
+
             case CaptureOutcome.NothingCaptured:
-                _tray.ShowNotification("拾语", "没有取到文字：可能没有选中内容，或该程序响应太慢。");
+                // All three causes look identical from out here, so the message
+                // names them rather than asserting one. The third is the one a
+                // user would never guess: a window running as administrator
+                // silently discards synthesised keystrokes from a program that
+                // is not, so capture simply never gets an answer.
+                _tray.ShowNotification(
+                    "拾语",
+                    "没有取到文字。可能是没有选中内容、该程序响应太慢，"
+                    + "或它以管理员身份运行——那种窗口会丢弃拾语发出的按键。"
+                    + "可以复制后按翻译剪贴板的快捷键。");
                 break;
+
             case CaptureOutcome.ClipboardUnavailable:
                 _tray.ShowNotification("拾语", "剪贴板正被其他程序占用，稍后再试。");
                 break;
         }
+    }
+
+    /// <summary>
+    /// The escape hatch: translate whatever is on the clipboard right now,
+    /// whether or not the badge ever offered to.
+    /// </summary>
+    private void TranslateClipboard()
+    {
+        if (_capturePlatform is null || _tray is null)
+        {
+            return;
+        }
+
+        string? text;
+        try
+        {
+            text = _capturePlatform.ReadClipboardText();
+        }
+        catch (ClipboardUnavailableException)
+        {
+            _tray.ShowNotification("拾语", "剪贴板正被其他程序占用，稍后再试。");
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            _tray.ShowNotification("拾语", "剪贴板里没有可翻译的文字。");
+            return;
+        }
+
+        // Deliberately not passed through the badge's filter: insisting is the
+        // entire point of this hotkey.
+        ShowPanel(text);
     }
 }
