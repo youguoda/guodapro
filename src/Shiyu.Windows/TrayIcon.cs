@@ -13,6 +13,7 @@ public sealed class TrayIcon : IDisposable
 {
     private const uint QuitCommandId = 1;
     private const uint OpenLibraryCommandId = 2;
+    private const uint OpenSettingsCommandId = 3;
     private const uint FirstEntryCommandId = 100;
 
     /// <summary>
@@ -35,6 +36,8 @@ public sealed class TrayIcon : IDisposable
 
     /// <summary>Raised on a left click, and from the menu item of the same name.</summary>
     public event Action? OpenLibraryRequested;
+
+    public event Action? OpenSettingsRequested;
 
     public TrayIcon(MessageWindow window, string tooltip)
     {
@@ -125,6 +128,8 @@ public sealed class TrayIcon : IDisposable
             NativeMethods.AppendMenuW(menu, NativeMethods.MfSeparator, UIntPtr.Zero, null);
             NativeMethods.AppendMenuW(
                 menu, NativeMethods.MfString, new UIntPtr(OpenLibraryCommandId), "打开管理窗口");
+            NativeMethods.AppendMenuW(
+                menu, NativeMethods.MfString, new UIntPtr(OpenSettingsCommandId), "设置…");
             NativeMethods.AppendMenuW(menu, NativeMethods.MfString, new UIntPtr(QuitCommandId), "退出拾语");
 
             if (!NativeMethods.GetCursorPos(out var cursor))
@@ -151,6 +156,9 @@ public sealed class TrayIcon : IDisposable
                     break;
                 case OpenLibraryCommandId:
                     OpenLibraryRequested?.Invoke();
+                    break;
+                case OpenSettingsCommandId:
+                    OpenSettingsRequested?.Invoke();
                     break;
             }
         }

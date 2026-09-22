@@ -26,6 +26,7 @@ public partial class App : Application
     private QuickBarWindow? _quickBar;
     private ImageArchive? _images;
     private System.Windows.Threading.DispatcherTimer? _retention;
+    private SettingsWindow? _settingsWindow;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -58,6 +59,7 @@ public partial class App : Application
         }
 
         _settings = AppSettings.Load(AppPaths.SettingsFile);
+        AppPaths.UseDirectory(_settings.DataDirectoryOverride);
         _store = EntryStore.Open(AppPaths.DatabaseFile);
 
         // One hidden window serves both the clipboard notifications and the
@@ -79,6 +81,7 @@ public partial class App : Application
 
         _tray.QuitRequested += Shutdown;
         _tray.OpenLibraryRequested += ShowLibrary;
+        _tray.OpenSettingsRequested += ShowSettings;
 
         _writer = new WindowsClipboardWriter(_messageWindow);
 
@@ -95,6 +98,23 @@ public partial class App : Application
         _singleInstance.AnotherInstanceStarted += ShowLibrary;
 
         StartRetention();
+        ApplyStartupPreference();
+    }
+
+    /// <summary>
+    /// Makes Windows agree with the setting. A tray tool nobody starts is a tray
+    /// tool nobody has, so this is on by default — but only ever written when
+    /// it actually differs, so a user who turned it off is not fought with on
+    /// every launch.
+    /// </summary>
+    private void ApplyStartupPreference()
+    {
+        if (StartupRegistration.IsEnabled() == _settings.StartWithWindows)
+        {
+            return;
+        }
+
+        StartupRegistration.Set(_settings.StartWithWindows, Environment.ProcessPath ?? string.Empty);
     }
 
     /// <summary>
@@ -137,6 +157,48 @@ public partial class App : Application
                     // over; the next sweep will try again.
                 }
             });
+        }
+    }
+
+    /// <summary>
+    /// Opens the settings, and applies whatever comes back without a restart —
+    /// except the data location, which by its nature cannot change underneath a
+    /// running database.
+    /// </summary>
+    private void ShowSettings()
+    {
+        if (_settingsWindow is not null)
+        {
+            _settingsWindow.Activate();
+            return;
+        }
+
+        _settingsWindow = new SettingsWindow(_settings, Apply);
+        _settingsWindow.Closed += (_, _) => _settingsWindow = null;
+        _settingsWindow.Show();
+
+        void Apply(AppSettings updated)
+        {
+            var movedData = updated.DataDirectoryOverride != _settings.DataDirectoryOverride;
+
+            _settings = updated;
+            _settings.Save(AppPaths.SettingsFile);
+
+            // Rules are swapped in on the live policy object, so the very next
+            // copy is judged by them.
+            _exclusions = updated.BuildExclusionPolicy();
+            _pipeline?.UseExclusions(_exclusions);
+
+            // Hotkeys are dropped and taken again as a set: working out which
+            // individual ones changed would be more code than redoing all three.
+            _hotkeys?.Dispose();
+            _hotkeys = new HotkeyRegistry(_messageWindow!);
+            RegisterHotkeys();
+
+            if (movedData)
+            {
+                _tray?.ShowNotification("拾语", "数据位置已更改，重启拾语后生效。");
+            }
         }
     }
 
@@ -239,6 +301,7 @@ public partial class App : Application
         // Reverse order of construction: the tray and the clipboard listener
         // both hold the message window.
         _retention?.Stop();
+        _settingsWindow?.Close();
         _quickBar?.CloseForGood();
         _panel?.CloseForGood();
         _badge?.CloseForGood();
@@ -261,17 +324,14 @@ public partial class App : Application
         // some configurations.
         var conflicts = new List<HotkeyConflict>();
 
-        Add(new Hotkey(HotkeyModifiers.Control | HotkeyModifiers.Shift, 'Z', "划词翻译"),
-            TranslateSelection);
+        Add(_settings.CaptureHotkey, "划词翻译", TranslateSelection);
 
         // Ctrl+Shift+V sits next to the paste the user already knows.
-        Add(new Hotkey(HotkeyModifiers.Control | HotkeyModifiers.Shift, 'V', "快速条"),
-            ShowQuickBar);
+        Add(_settings.QuickBarHotkey, "快速条", ShowQuickBar);
 
         // The escape hatch. Without it the user cannot tell a filter that
         // judged wrongly from a tool that broke, and has no way to insist.
-        Add(new Hotkey(HotkeyModifiers.Control | HotkeyModifiers.Shift, 'X', "翻译剪贴板内容"),
-            TranslateClipboard);
+        Add(_settings.ClipboardTranslateHotkey, "翻译剪贴板内容", TranslateClipboard);
 
         if (conflicts.Count > 0)
         {
@@ -280,12 +340,31 @@ public partial class App : Application
             _tray?.ShowNotification("拾语", string.Join("\n", conflicts.Select(c => c.Message)));
         }
 
-        void Add(Hotkey hotkey, Action action)
+        void Add(string spec, string description, Action action)
         {
+            var parsed = HotkeySpec.Parse(spec);
+            if (parsed is null)
+            {
+                // An unreadable setting should cost one feature, not startup.
+                _tray?.ShowNotification("拾语", $"快捷键「{spec}」无法识别，{description} 暂时不可用。");
+                return;
+            }
+
+            var hotkey = new Hotkey(Translate(parsed.Modifiers), parsed.Key, description);
             if (_hotkeys!.Register(hotkey, action) is { } conflict)
             {
                 conflicts.Add(conflict);
             }
+        }
+
+        static HotkeyModifiers Translate(HotkeyModifier modifiers)
+        {
+            var result = HotkeyModifiers.None;
+            if (modifiers.HasFlag(HotkeyModifier.Control)) result |= HotkeyModifiers.Control;
+            if (modifiers.HasFlag(HotkeyModifier.Shift)) result |= HotkeyModifiers.Shift;
+            if (modifiers.HasFlag(HotkeyModifier.Alt)) result |= HotkeyModifiers.Alt;
+            if (modifiers.HasFlag(HotkeyModifier.Windows)) result |= HotkeyModifiers.Windows;
+            return result;
         }
     }
 

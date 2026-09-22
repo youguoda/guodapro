@@ -11,7 +11,7 @@ public sealed class ClipboardPipeline : IDisposable
     private readonly IClipboardMonitor _clipboard;
     private readonly EntryStore _store;
     private readonly TimeProvider _clock;
-    private readonly ExclusionPolicy _exclusions;
+    private ExclusionPolicy _exclusions;
     private readonly ImageArchive? _images;
 
     /// <summary>
@@ -45,6 +45,12 @@ public sealed class ClipboardPipeline : IDisposable
         _images = images;
         _clipboard.Changed += OnClipboardChanged;
     }
+
+    /// <summary>
+    /// Swaps in a new set of rules. Takes effect from the very next copy, so a
+    /// user who adds a rule does not have to restart before it protects them.
+    /// </summary>
+    public void UseExclusions(ExclusionPolicy exclusions) => _exclusions = exclusions;
 
     private void OnClipboardChanged(ClipboardSnapshot snapshot)
     {

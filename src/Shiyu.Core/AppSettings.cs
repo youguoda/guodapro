@@ -32,7 +32,24 @@ public sealed record AppSettings
     /// <summary>How long image originals are kept before being cleaned up.</summary>
     public int ImageRetentionDays { get; init; } = 30;
 
+    /// <summary>
+    /// A tray tool nobody starts is a tray tool nobody has; on by default,
+    /// and the user can switch it off.
+    /// </summary>
     public bool StartWithWindows { get; init; } = true;
+
+    public string CaptureHotkey { get; init; } = "Ctrl+Shift+Z";
+
+    public string ClipboardTranslateHotkey { get; init; } = "Ctrl+Shift+X";
+
+    public string QuickBarHotkey { get; init; } = "Ctrl+Shift+V";
+
+    /// <summary>
+    /// Blank means the default beside the application data. Changing it needs a
+    /// restart, and a synced folder needs a warning first — the history is not
+    /// encrypted, so syncing it puts plaintext on someone else's servers.
+    /// </summary>
+    public string DataDirectoryOverride { get; init; } = string.Empty;
 
     /// <summary>Source-app and content-pattern rules the user added themselves.</summary>
     public IReadOnlyList<StoredExclusionRule> ExclusionRules { get; init; } = [];
