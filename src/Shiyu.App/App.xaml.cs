@@ -23,6 +23,7 @@ public partial class App : Application
     private PanelWindow? _panel;
     private AppSettings _settings = new();
     private WindowsCapturePlatform? _capturePlatform;
+    private QuickBarWindow? _quickBar;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -104,6 +105,21 @@ public partial class App : Application
     }
 
     /// <summary>
+    /// Summons the quick bar. One instance, reused: it appears dozens of times
+    /// a day and building a window each time is work the user would feel.
+    /// </summary>
+    private void ShowQuickBar()
+    {
+        if (_store is null || _capture is null)
+        {
+            return;
+        }
+
+        _quickBar ??= new QuickBarWindow(_store, _capture);
+        _quickBar.Summon();
+    }
+
+    /// <summary>
     /// Opens the panel on the given text. One panel, reused: a second copy
     /// would be two translations of two different things competing for the
     /// same corner of the screen.
@@ -170,6 +186,7 @@ public partial class App : Application
     {
         // Reverse order of construction: the tray and the clipboard listener
         // both hold the message window.
+        _quickBar?.CloseForGood();
         _panel?.CloseForGood();
         _badge?.CloseForGood();
         _tray?.Dispose();
@@ -193,6 +210,10 @@ public partial class App : Application
 
         Add(new Hotkey(HotkeyModifiers.Control | HotkeyModifiers.Shift, 'Z', "划词翻译"),
             TranslateSelection);
+
+        // Ctrl+Shift+V sits next to the paste the user already knows.
+        Add(new Hotkey(HotkeyModifiers.Control | HotkeyModifiers.Shift, 'V', "快速条"),
+            ShowQuickBar);
 
         // The escape hatch. Without it the user cannot tell a filter that
         // judged wrongly from a tool that broke, and has no way to insist.
