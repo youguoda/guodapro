@@ -1,0 +1,19 @@
+<Window x:Class="Shiyu.App.BadgeWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        ShowActivated="False" ShowInTaskbar="False" Topmost="True"
+        ResizeMode="NoResize" SizeToContent="WidthAndHeight"
+        Focusable="False" Opacity="0">
+    <Border x:Name="Pill" CornerRadius="13" Padding="11,5" Cursor="Hand"
+            Background="#EE1F6FEB" MouseLeftButtonUp="OnClicked">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="10" ShadowDepth="1" Opacity="0.35" />
+        </Border.Effect>
+        <StackPanel Orientation="Horizontal">
+            <TextBlock Text="译" Foreground="White" FontSize="13" FontWeight="SemiBold" />
+            <TextBlock Text="翻译这段" Foreground="#DFFFFFFF" FontSize="12" Margin="7,0,0,0"
+                       VerticalAlignment="Center" />
+        </StackPanel>
+    </Border>
+</Window>

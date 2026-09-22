@@ -19,6 +19,7 @@ public partial class App : Application
     private LibraryWindow? _library;
     private SelectionCapture? _capture;
     private HotkeyRegistry? _hotkeys;
+    private BadgeWindow? _badge;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -63,6 +64,8 @@ public partial class App : Application
         {
             RecentItems = () => _store.Recent(limit: 10).Select(entry => entry.Text).ToList(),
         };
+        _pipeline.BadgeDeserved += ShowBadge;
+
         _tray.QuitRequested += Shutdown;
         _tray.OpenLibraryRequested += ShowLibrary;
 
@@ -90,6 +93,16 @@ public partial class App : Application
         // see it, so bring the library up rather than only saying "already
         // running" and leaving them no further along.
         _singleInstance.AnotherInstanceStarted += ShowLibrary;
+    }
+
+    /// <summary>
+    /// One badge window, reused. It appears many times an hour; building a
+    /// window each time is work the user would feel.
+    /// </summary>
+    private void ShowBadge(string text)
+    {
+        _badge ??= new BadgeWindow();
+        _badge.Offer(text);
     }
 
     /// <summary>
@@ -143,6 +156,7 @@ public partial class App : Application
     {
         // Reverse order of construction: the tray and the clipboard listener
         // both hold the message window.
+        _badge?.CloseForGood();
         _tray?.Dispose();
         _pipeline?.Dispose();
         _clipboard?.Dispose();

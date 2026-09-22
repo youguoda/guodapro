@@ -263,4 +263,48 @@ internal static class NativeMethods
     [DllImport("user32.dll", SetLastError = true)]
     internal static extern bool UnregisterHotKey(IntPtr hWnd, int id);
 
+
+    internal const int GwlExStyle = -20;
+    internal const uint WsExNoActivate = 0x08000000;
+    internal const uint WsExTopmost = 0x00000008;
+    internal static readonly IntPtr HwndTopmost = new(-1);
+    internal const uint SwpNoSize = 0x0001;
+    internal const uint SwpNoActivate = 0x0010;
+    internal const uint SwpShowWindow = 0x0040;
+    internal const uint MonitorDefaultToNearest = 2;
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct Rect
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct MonitorInfo
+    {
+        public uint cbSize;
+        public Rect rcMonitor;
+        public Rect rcWork;
+        public uint dwFlags;
+    }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    internal static extern IntPtr MonitorFromPoint(Point point, uint flags);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    internal static extern bool GetMonitorInfoW(IntPtr monitor, ref MonitorInfo info);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    internal static extern bool SetWindowPos(
+        IntPtr hWnd, IntPtr insertAfter, int x, int y, int cx, int cy, uint flags);
+
+    [DllImport("user32.dll", SetLastError = true, EntryPoint = "GetWindowLongPtrW")]
+    internal static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int index);
+
+    [DllImport("user32.dll", SetLastError = true, EntryPoint = "SetWindowLongPtrW")]
+    internal static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int index, IntPtr value);
+
 }

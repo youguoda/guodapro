@@ -13,6 +13,14 @@ public sealed class ClipboardPipeline : IDisposable
     private readonly TimeProvider _clock;
     private readonly ExclusionPolicy _exclusions;
 
+    /// <summary>
+    /// Raised after an entry is recorded, when its content is the kind a user
+    /// might want translated. Raised from here rather than from the window so
+    /// the ordering that matters — excluded content never reaches the badge —
+    /// is settled in one place and can be tested.
+    /// </summary>
+    public event Action<string>? BadgeDeserved;
+
     public ClipboardPipeline(
         IClipboardMonitor clipboard,
         EntryStore store,
@@ -47,10 +55,20 @@ public sealed class ClipboardPipeline : IDisposable
         if (newest is not null && newest.Text == snapshot.Text)
         {
             _store.Touch(newest.Id, now);
+            Offer(snapshot.Text);
             return;
         }
 
         _store.Append(snapshot.Text, snapshot.SourceApp, now);
+        Offer(snapshot.Text);
+    }
+
+    private void Offer(string text)
+    {
+        if (ContentClassifier.DeservesBadge(text))
+        {
+            BadgeDeserved?.Invoke(text);
+        }
     }
 
     public void Dispose() => _clipboard.Changed -= OnClipboardChanged;
