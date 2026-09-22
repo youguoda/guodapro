@@ -30,6 +30,7 @@ public sealed record HotkeyConflict(Hotkey Hotkey, string Message);
 /// </summary>
 public sealed class HotkeyRegistry(MessageWindow window) : IDisposable
 {
+    private readonly MessageWindow _window = window;
     private readonly Dictionary<int, Action> _handlers = [];
     private int _nextId = 1;
     private bool _listening;
@@ -49,7 +50,7 @@ public sealed class HotkeyRegistry(MessageWindow window) : IDisposable
         var id = _nextId++;
         var modifiers = (uint)(hotkey.Modifiers | HotkeyModifiers.NoRepeat);
 
-        if (!NativeMethods.RegisterHotKey(window.Handle, id, modifiers, hotkey.Key))
+        if (!NativeMethods.RegisterHotKey(_window.Handle, id, modifiers, hotkey.Key))
         {
             return new HotkeyConflict(
                 hotkey,
@@ -60,6 +61,47 @@ public sealed class HotkeyRegistry(MessageWindow window) : IDisposable
         return null;
     }
 
+    /// <summary>
+    /// Registers a hotkey only for as long as the returned handle is held, or
+    /// returns null if it is already taken.
+    ///
+    /// Exists for keys Shiyu has no business owning all the time — Escape,
+    /// while a panel is on screen. Disposing must be reliable: an Escape key
+    /// left registered would be swallowed system-wide.
+    /// </summary>
+    public IDisposable? TryRegisterScoped(Hotkey hotkey, Action onPressed)
+    {
+        EnsureListening();
+
+        var id = _nextId++;
+        var modifiers = (uint)(hotkey.Modifiers | HotkeyModifiers.NoRepeat);
+
+        if (!NativeMethods.RegisterHotKey(_window.Handle, id, modifiers, hotkey.Key))
+        {
+            return null;
+        }
+
+        _handlers[id] = onPressed;
+        return new Scope(this, id);
+    }
+
+    private sealed class Scope(HotkeyRegistry registry, int id) : IDisposable
+    {
+        private bool _released;
+
+        public void Dispose()
+        {
+            if (_released)
+            {
+                return;
+            }
+
+            _released = true;
+            NativeMethods.UnregisterHotKey(registry._window.Handle, id);
+            registry._handlers.Remove(id);
+        }
+    }
+
     private void EnsureListening()
     {
         if (_listening)
@@ -67,7 +109,7 @@ public sealed class HotkeyRegistry(MessageWindow window) : IDisposable
             return;
         }
 
-        window.MessageReceived += OnMessage;
+        _window.MessageReceived += OnMessage;
         _listening = true;
     }
 
@@ -96,14 +138,14 @@ public sealed class HotkeyRegistry(MessageWindow window) : IDisposable
 
         foreach (var id in _handlers.Keys)
         {
-            NativeMethods.UnregisterHotKey(window.Handle, id);
+            NativeMethods.UnregisterHotKey(_window.Handle, id);
         }
 
         _handlers.Clear();
 
         if (_listening)
         {
-            window.MessageReceived -= OnMessage;
+            _window.MessageReceived -= OnMessage;
             _listening = false;
         }
     }

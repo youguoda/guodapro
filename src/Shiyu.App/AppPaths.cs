@@ -16,4 +16,6 @@ internal static class AppPaths
         "Shiyu");
 
     internal static string DatabaseFile { get; } = Path.Combine(DataDirectory, "history.db");
+
+    internal static string SettingsFile { get; } = Path.Combine(DataDirectory, "settings.json");
 }

@@ -20,6 +20,8 @@ public partial class App : Application
     private SelectionCapture? _capture;
     private HotkeyRegistry? _hotkeys;
     private BadgeWindow? _badge;
+    private PanelWindow? _panel;
+    private AppSettings _settings = new();
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -51,13 +53,14 @@ public partial class App : Application
             return;
         }
 
+        _settings = AppSettings.Load(AppPaths.SettingsFile);
         _store = EntryStore.Open(AppPaths.DatabaseFile);
 
         // One hidden window serves both the clipboard notifications and the
         // tray icon's callbacks — and, later, the global hotkeys.
         _messageWindow = new MessageWindow();
         _clipboard = new WindowsClipboardMonitor(_messageWindow);
-        _exclusions = ExclusionPolicy.WithPresets();
+        _exclusions = _settings.BuildExclusionPolicy();
         _pipeline = new ClipboardPipeline(_clipboard, _store, TimeProvider.System, _exclusions);
 
         _tray = new TrayIcon(_messageWindow, "拾语")
@@ -101,8 +104,29 @@ public partial class App : Application
     /// </summary>
     private void ShowBadge(string text)
     {
-        _badge ??= new BadgeWindow();
+        if (_badge is null)
+        {
+            _badge = new BadgeWindow();
+            _badge.Accepted += ShowPanel;
+        }
+
         _badge.Offer(text);
+    }
+
+    /// <summary>
+    /// Opens the panel on the given text. One panel, reused: a second copy
+    /// would be two translations of two different things competing for the
+    /// same corner of the screen.
+    /// </summary>
+    private async void ShowPanel(string text)
+    {
+        if (_hotkeys is null || _writer is null)
+        {
+            return;
+        }
+
+        _panel ??= new PanelWindow(_hotkeys, _writer, () => new OpenAiCompatibleBackend(_settings.Backend), _settings);
+        await _panel.TranslateAsync(text);
     }
 
     /// <summary>
@@ -156,6 +180,7 @@ public partial class App : Application
     {
         // Reverse order of construction: the tray and the clipboard listener
         // both hold the message window.
+        _panel?.CloseForGood();
         _badge?.CloseForGood();
         _tray?.Dispose();
         _pipeline?.Dispose();
