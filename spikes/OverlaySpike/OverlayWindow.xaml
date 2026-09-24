@@ -1,0 +1,35 @@
+<Window x:Class="OverlaySpike.OverlayWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        ShowActivated="False" ShowInTaskbar="False" Topmost="True"
+        ResizeMode="NoResize" Title="Shiyu overlay spike">
+    <!--
+      Background="Transparent" is deliberate rather than {x:Null}: WPF still
+      renders it, at alpha 0. The question this spike answers is whether those
+      alpha-0 pixels let a click reach the application underneath.
+    -->
+    <Canvas x:Name="Surface">
+        <Path x:Name="Connector" Stroke="#1F6FEB" StrokeThickness="2"
+              StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+
+        <Ellipse x:Name="SourceDot" Width="8" Height="8"
+                 Fill="White" Stroke="#1F6FEB" StrokeThickness="2.5" />
+        <Ellipse x:Name="PanelDot" Width="8" Height="8"
+                 Fill="White" Stroke="#1F6FEB" StrokeThickness="2.5" />
+
+        <Border x:Name="Panel" Width="260" Height="150" CornerRadius="10"
+                Background="#FAFFFFFF" BorderBrush="#33000000" BorderThickness="1">
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="18" ShadowDepth="2" Opacity="0.25" />
+            </Border.Effect>
+            <StackPanel Margin="14" VerticalAlignment="Center">
+                <TextBlock Text="预览面板" FontSize="14" FontWeight="SemiBold" />
+                <TextBlock x:Name="PanelStatus" Text="点我测试命中" FontSize="12"
+                           Opacity="0.6" Margin="0,6,0,10" TextWrapping="Wrap" />
+                <Button x:Name="PanelButton" Content="这个按钮应该可以点"
+                        Padding="10,5" Click="OnPanelButtonClick" />
+            </StackPanel>
+        </Border>
+    </Canvas>
+</Window>

@@ -1,0 +1,18 @@
+<Window x:Class="OverlaySpike.UnderlayWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Shiyu underlay (stands in for the app below)"
+        Width="420" Height="460" WindowStartupLocation="Manual"
+        Background="#FFF3F4F6">
+    <!--
+      Stands in for "the application underneath". If a click lands here rather
+      than on the overlay, pass-through works.
+    -->
+    <DockPanel Margin="14">
+        <TextBlock DockPanel.Dock="Top" Text="下层应用（模拟）" FontSize="15"
+                   FontWeight="SemiBold" Margin="0,0,0,4" />
+        <TextBlock DockPanel.Dock="Top" x:Name="Status" Text="等待点击…"
+                   FontSize="12" Opacity="0.65" Margin="0,0,0,10" TextWrapping="Wrap" />
+        <ListBox x:Name="Rows" SelectionChanged="OnRowChanged" />
+    </DockPanel>
+</Window>
