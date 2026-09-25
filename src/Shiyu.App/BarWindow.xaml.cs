@@ -1203,6 +1203,246 @@ internal partial class BarWindow : Window
         ApplyFilter();
     }
 
+    // --- card context menu ----------------------------------------------------
+
+    private Popup? _cardMenu;
+
+    private Popup? _cardSubMenu;
+
+    /// <summary>
+    /// The right-click menu is a Popup the app renders itself, not a system
+    /// ContextMenu: a system menu takes focus, and a bar that never activates
+    /// can find itself hidden once the menu closes — the user's action would
+    /// die half-done. A Popup never activates anything.
+    /// </summary>
+    private void OnCardRightClick(object sender, MouseButtonEventArgs e)
+    {
+        if (((FrameworkElement)sender).DataContext is not BarCard card)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        Select(card);
+        CloseCardMenu();
+        OpenCardMenu(card, (FrameworkElement)sender, e.GetPosition((IInputElement)sender));
+    }
+
+    private void OpenCardMenu(BarCard card, FrameworkElement anchor, Point at)
+    {
+        var panel = new StackPanel { MinWidth = 172 };
+
+        foreach (var action in ActionsFor(card))
+        {
+            // 归组 opens its own submenu here — the tray button opens the
+            // chooser popup instead; a menu is where a submenu belongs.
+            if (action == "group")
+            {
+                panel.Children.Add(GroupSubmenuItem(card));
+                continue;
+            }
+
+            var captured = action;
+            panel.Children.Add(MenuRow(
+                HoverActions.Name(action),
+                ShortcutFor(action),
+                HoverActions.IsDestructive(captured),
+                () =>
+                {
+                    CloseCardMenu();
+                    ExecuteAction(captured, card, feedback: null);
+                }));
+        }
+
+        _cardMenu = new Popup
+        {
+            Child = MenuSurface(panel),
+            PlacementTarget = anchor,
+            Placement = PlacementMode.RelativePoint,
+            PlacementRectangle = new Rect(at.X, at.Y, 0, 0),
+            StaysOpen = false,
+            AllowsTransparency = true,
+        };
+        _cardMenu.Opened += (_, _) => FlipIntoWorkArea(_cardMenu);
+        _cardMenu.IsOpen = true;
+    }
+
+    private void CloseCardMenu()
+    {
+        if (_cardSubMenu is not null)
+        {
+            _cardSubMenu.IsOpen = false;
+            _cardSubMenu = null;
+        }
+
+        if (_cardMenu is not null)
+        {
+            _cardMenu.IsOpen = false;
+            _cardMenu = null;
+        }
+    }
+
+    /// <summary>What the menu shows next to an action: the key that runs it.</summary>
+    private static string ShortcutFor(string action) => action switch
+    {
+        "paste" => "Enter",
+        _ => BarKeys.TrayKey(action) ?? string.Empty,
+    };
+
+    private UIElement MenuRow(string label, string shortcut, bool danger, Action run)
+    {
+        var name = new TextBlock { Text = label };
+        if (danger)
+        {
+            name.SetResourceReference(TextBlock.ForegroundProperty, "Brush.Danger");
+        }
+
+        var key = new TextBlock { Text = shortcut, MinWidth = 26, TextAlignment = TextAlignment.Right };
+        key.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextTertiary");
+        DockPanel.SetDock(key, Dock.Right);
+
+        var content = new DockPanel();
+        content.Children.Add(key);
+        content.Children.Add(name);
+
+        var row = new Button
+        {
+            Content = content,
+            Padding = new Thickness(10, 5, 10, 5),
+            Margin = new Thickness(0, 0, 0, 1),
+            Cursor = Cursors.Hand,
+        };
+        row.Click += (_, _) => run();
+        return row;
+    }
+
+    /// <summary>The one second-level menu: filing the card into a group.</summary>
+    private UIElement GroupSubmenuItem(BarCard card)
+    {
+        var label = new TextBlock { Text = "归组" };
+        var arrow = new TextBlock { Text = "▸", MinWidth = 26, TextAlignment = TextAlignment.Right };
+        arrow.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextTertiary");
+        DockPanel.SetDock(arrow, Dock.Right);
+
+        var content = new DockPanel();
+        content.Children.Add(arrow);
+        content.Children.Add(label);
+
+        var row = new Button
+        {
+            Content = content,
+            Padding = new Thickness(10, 5, 10, 5),
+            Margin = new Thickness(0, 0, 0, 1),
+            Cursor = Cursors.Hand,
+        };
+
+        row.MouseEnter += (_, _) =>
+        {
+            if (_cardSubMenu is not null)
+            {
+                _cardSubMenu.IsOpen = false;
+            }
+
+            var list = new StackPanel { MinWidth = 140 };
+            foreach (var group in _store.Groups())
+            {
+                var captured = group;
+                var item = new Button
+                {
+                    Content = $"{group.Icon ?? "组"} {group.Name}",
+                    Padding = new Thickness(10, 5, 10, 5),
+                    Margin = new Thickness(0, 0, 0, 1),
+                    Cursor = Cursors.Hand,
+                };
+                item.Click += (_, _) =>
+                {
+                    CloseCardMenu();
+                    FileCardInto(card, captured.Id);
+                };
+                list.Children.Add(item);
+            }
+
+            var ungrouped = new Button
+            {
+                Content = "未分组",
+                Padding = new Thickness(10, 5, 10, 5),
+                Margin = new Thickness(0, 0, 0, 2),
+                Cursor = Cursors.Hand,
+            };
+            ungrouped.Click += (_, _) =>
+            {
+                CloseCardMenu();
+                FileCardInto(card, null);
+            };
+            list.Children.Add(ungrouped);
+
+            var manage = new Button { Content = "管理分组…", Padding = new Thickness(10, 5, 10, 5), Cursor = Cursors.Hand };
+            manage.Click += (_, _) =>
+            {
+                CloseCardMenu();
+                OnManageGroups(this, new RoutedEventArgs());
+            };
+            list.Children.Add(manage);
+
+            _cardSubMenu = new Popup
+            {
+                Child = MenuSurface(list),
+                PlacementTarget = row,
+                Placement = PlacementMode.Right,
+                StaysOpen = false,
+                AllowsTransparency = true,
+            };
+            _cardSubMenu.IsOpen = true;
+        };
+
+        return row;
+    }
+
+    private static Border MenuSurface(StackPanel panel)
+    {
+        var border = new Border
+        {
+            Child = panel,
+            Padding = new Thickness(4),
+            CornerRadius = new CornerRadius(6),
+        };
+        border.SetResourceReference(BackgroundProperty, "Brush.Surface");
+        border.SetResourceReference(BorderBrushProperty, "Brush.Border");
+        border.BorderThickness = new Thickness(1);
+        return border;
+    }
+
+    /// <summary>
+    /// A menu that would hang off the screen edge is nudged back in — measured
+    /// in physical pixels against the work area of the monitor it is on, and
+    /// shifted in device-independent units.
+    /// </summary>
+    private static void FlipIntoWorkArea(Popup popup)
+    {
+        if (popup.Child is not FrameworkElement content
+            || PresentationSource.FromVisual(content) is not { } source
+            || source.CompositionTarget is not { } transform)
+        {
+            return;
+        }
+
+        var scale = transform.TransformToDevice;
+        var topLeft = content.PointToScreen(new Point(0, 0));
+        var width = content.ActualWidth * scale.M11;
+        var height = content.ActualHeight * scale.M22;
+        var work = ScreenGeometry.WorkAreaAt(new ScreenPoint((int)topLeft.X, (int)topLeft.Y));
+
+        if (topLeft.X + width > work.Right)
+        {
+            popup.HorizontalOffset -= (topLeft.X + width - work.Right) / scale.M11;
+        }
+
+        if (topLeft.Y + height > work.Bottom)
+        {
+            popup.VerticalOffset -= (topLeft.Y + height - work.Bottom) / scale.M22;
+        }
+    }
+
     // --- interaction ---------------------------------------------------------
 
     private void OnCardPressed(object sender, MouseButtonEventArgs e)
@@ -1787,6 +2027,15 @@ internal partial class BarWindow : Window
         {
             case Key.Escape:
                 e.Handled = true;
+
+                // The menu peels off first: closing it must not cost the user
+                // their place — the bar stays, the selection stays.
+                if (_cardMenu is { IsOpen: true } || _cardSubMenu is { IsOpen: true })
+                {
+                    CloseCardMenu();
+                    return;
+                }
+
                 StepEscape();
                 break;
 

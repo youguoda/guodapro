@@ -79,6 +79,7 @@
                     Background="{DynamicResource Brush.Surface}"
                     BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1"
                     Padding="10,8" MouseLeftButtonDown="OnCardPressed"
+                    MouseRightButtonUp="OnCardRightClick"
                     MouseEnter="OnCardMouseEnter" MouseLeave="OnCardMouseLeave"
                     MouseMove="OnCardMouseMove">
                 <Grid>
