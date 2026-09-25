@@ -57,6 +57,7 @@ internal static class SettingsBindings
     public static bool? ReadToggle(string id, AppSettings settings) => id switch
     {
         "action.sound" => settings.ActionSound,
+        "look.lightweight" => settings.LightweightWhenHidden,
         "store.protect" => settings.ProtectEntries,
         "store.protect-favorites" => settings.ProtectFavorites,
         "store.protect-pinned" => settings.ProtectPinned,
@@ -73,6 +74,7 @@ internal static class SettingsBindings
         "bar.actions" => current,
         "theme" => current with { Theme = (AppTheme)choice },
         "action.sound" => current with { ActionSound = AsBool(text) },
+        "look.lightweight" => current with { LightweightWhenHidden = AsBool(text) },
         "store.protect" => current with { ProtectEntries = AsBool(text) },
         "store.protect-favorites" => current with { ProtectFavorites = AsBool(text) },
         "store.protect-pinned" => current with { ProtectPinned = AsBool(text) },

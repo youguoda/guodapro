@@ -539,8 +539,31 @@ internal partial class BarWindow : Window
             Opacity = 1;
             Hide();
             _returnTo.Restore();
+            EnterLightweightIfEnabled();
         };
         BeginAnimation(OpacityProperty, fade);
+    }
+
+    /// <summary>
+    /// While hidden, the realised cards are the whole cost of the window —
+    /// thumbnails decoded, rows laid out — and none of it is doing anything.
+    /// Dropping them and trimming the working set costs a rebuild on the next
+    /// summon, which ReloadIfBehind(force) already does; recording never
+    /// pauses, because the listener and the pipeline do not live here.
+    /// </summary>
+    private void EnterLightweightIfEnabled()
+    {
+        if (!_settings.LightweightWhenHidden || IsVisible)
+        {
+            return;
+        }
+
+        _pinned.Clear();
+        _cards.Clear();
+        _selected = null;
+
+        GC.Collect(2, GCCollectionMode.Forced, blocking: false, compacting: false);
+        MemoryTrim.WorkingSet();
     }
 
     public void Toggle()

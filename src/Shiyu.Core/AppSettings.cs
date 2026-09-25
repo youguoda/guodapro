@@ -49,6 +49,13 @@ public sealed record AppSettings
     public bool ProtectPinned { get; init; } = true;
 
     /// <summary>
+    /// When the bar hides, drop its realised cards and trim the process —
+    /// a resident tray tool should cost pennies while idle. Recording never
+    /// pauses: the listener and pipeline do not live in the window.
+    /// </summary>
+    public bool LightweightWhenHidden { get; init; } = true;
+
+    /// <summary>
     /// A tray tool nobody starts is a tray tool nobody has; on by default,
     /// and the user can switch it off.
     /// </summary>

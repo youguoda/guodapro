@@ -100,7 +100,11 @@ public static class SettingsSchema
                 new SettingsItem(
                     "bar.file-count", "文件条数", SettingsControl.Number, Min: 1, Max: 10,
                     Hint: "文件卡里最多列出的文件行数。",
-                    Keywords: ["文件", "条数", "密度"]))),
+                    Keywords: ["文件", "条数", "密度"]),
+                new SettingsItem(
+                    "look.lightweight", "轻量模式", SettingsControl.Toggle,
+                    Hint: "窄条隐藏后释放界面资源、压缩常驻内存；期间复制的内容照常记录。",
+                    Keywords: ["内存", "占用", "轻量", "后台", "常驻"]))),
 
         new SettingsPage("hotkeys", "快捷键",
             new SettingsSection("hotkeys.all", "全局",
@@ -151,7 +155,11 @@ public static class SettingsSchema
                 new SettingsItem(
                     "store.backup", "备份", SettingsControl.Custom,
                     Hint: "导出全部历史、图片原图与设置；可加密。导入可合并或覆盖。",
-                    Keywords: ["备份", "导出", "导入", "加密"]))),
+                    Keywords: ["备份", "导出", "导入", "加密"]),
+                new SettingsItem(
+                    "store.usage", "磁盘占用", SettingsControl.Custom,
+                    Hint: "数据库、图片原图与合计占用；可一键打开数据所在文件夹。",
+                    Keywords: ["占用", "磁盘", "大小", "空间", "多少"]))),
 
         new SettingsPage("about", "关于",
             new SettingsSection("about.app", "拾语",
