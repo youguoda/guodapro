@@ -27,6 +27,7 @@ public partial class App : Application
     private ImageArchive? _images;
     private System.Windows.Threading.DispatcherTimer? _retention;
     private SettingsWindow? _settingsWindow;
+    private ThemeManager? _theme;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -61,6 +62,11 @@ public partial class App : Application
         _settings = AppSettings.Load(AppPaths.SettingsFile);
         AppPaths.UseDirectory(_settings.DataDirectoryOverride);
         _store = EntryStore.Open(AppPaths.DatabaseFile);
+
+        // Before any window exists: the first frame a window ever shows must
+        // already be in the right theme.
+        _theme = new ThemeManager();
+        _theme.Apply(_settings.Theme);
 
         // One hidden window serves both the clipboard notifications and the
         // tray icon's callbacks — and, later, the global hotkeys.
@@ -184,6 +190,10 @@ public partial class App : Application
             _settings = updated;
             _settings.Save(AppPaths.SettingsFile);
 
+            // Applied immediately, no restart: swapping the token dictionary
+            // re-resolves every DynamicResource in every open window.
+            _theme?.Apply(updated.Theme);
+
             // Rules are swapped in on the live policy object, so the very next
             // copy is judged by them.
             _exclusions = updated.BuildExclusionPolicy();
@@ -301,6 +311,7 @@ public partial class App : Application
         // Reverse order of construction: the tray and the clipboard listener
         // both hold the message window.
         _retention?.Stop();
+        _theme?.Dispose();
         _settingsWindow?.Close();
         _quickBar?.CloseForGood();
         _panel?.CloseForGood();

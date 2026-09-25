@@ -5,34 +5,39 @@
         ShowInTaskbar="False" Topmost="True" ResizeMode="NoResize"
         SizeToContent="Height" Width="460"
         Deactivated="OnDeactivated" PreviewKeyDown="OnPreviewKeyDown">
-    <Border CornerRadius="9" Background="#FCFFFFFF" BorderBrush="#26000000" BorderThickness="1">
+    <Border CornerRadius="{DynamicResource Radius.Card}" Background="{DynamicResource Brush.Surface}"
+            BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1">
         <Border.Effect>
-            <DropShadowEffect BlurRadius="16" ShadowDepth="2" Opacity="0.28" />
+            <StaticResource ResourceKey="Shadow.Floating"/>
         </Border.Effect>
 
-        <StackPanel Margin="9,8">
-            <TextBox x:Name="FilterBox" FontSize="13" Padding="7,5" BorderThickness="0"
-                     Background="#12000000" TextChanged="OnFilterChanged" />
+        <StackPanel Margin="10,8">
+            <TextBox x:Name="FilterBox" FontSize="{DynamicResource Size.Body}" Padding="8,6"
+                     BorderThickness="0" TextChanged="OnFilterChanged" />
 
-            <ListBox x:Name="Items" Margin="0,7,0,0" MaxHeight="260" BorderThickness="0"
+            <ListBox x:Name="Items" Margin="0,8,0,0" MaxHeight="260" BorderThickness="0"
                      Background="Transparent" HorizontalContentAlignment="Stretch"
                      VirtualizingPanel.IsVirtualizing="True"
                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                      MouseDoubleClick="OnItemActivated">
                 <ListBox.ItemTemplate>
                     <DataTemplate>
-                        <StackPanel Margin="2,3">
+                        <StackPanel Margin="2,4">
                             <TextBlock Text="{Binding Preview}" TextTrimming="CharacterEllipsis" />
-                            <TextBlock Text="{Binding Meta}" FontSize="10" Opacity="0.5" Margin="0,2,0,0" />
+                            <TextBlock Text="{Binding Meta}" FontSize="{DynamicResource Size.Caption}"
+                                       Foreground="{DynamicResource Brush.TextSecondary}"
+                                       Margin="0,2,0,0" />
                         </StackPanel>
                     </DataTemplate>
                 </ListBox.ItemTemplate>
             </ListBox>
 
-            <TextBlock x:Name="EmptyLabel" Text="没有匹配的记录" Margin="4,9,0,3"
-                       Opacity="0.45" FontSize="12" Visibility="Collapsed" />
+            <TextBlock x:Name="EmptyLabel" Text="没有匹配的记录" Margin="4,10,0,4"
+                       Foreground="{DynamicResource Brush.TextTertiary}"
+                       FontSize="{DynamicResource Size.Secondary}" Visibility="Collapsed" />
 
-            <TextBlock Margin="4,7,0,1" FontSize="10" Opacity="0.4"
+            <TextBlock Margin="4,8,0,2" FontSize="{DynamicResource Size.Hint}"
+                       Foreground="{DynamicResource Brush.TextTertiary}"
                        Text="↑↓ 选择 · Enter 粘贴 · Esc 关闭" />
         </StackPanel>
     </Border>

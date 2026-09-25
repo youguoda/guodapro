@@ -38,6 +38,10 @@ public sealed record AppSettings
     /// </summary>
     public bool StartWithWindows { get; init; } = true;
 
+    /// <summary>Colours follow Windows when this is System; changing it applies live.</summary>
+    [JsonConverter(typeof(JsonStringEnumConverter<AppTheme>))]
+    public AppTheme Theme { get; init; } = AppTheme.System;
+
     public string CaptureHotkey { get; init; } = "Ctrl+Shift+Z";
 
     public string ClipboardTranslateHotkey { get; init; } = "Ctrl+Shift+X";

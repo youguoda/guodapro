@@ -50,6 +50,7 @@ public class AppSettingsTests
             BackendApiKey = "a-secret",
             ImageRetentionDays = 7,
             StartWithWindows = false,
+            Theme = AppTheme.Dark,
             ExclusionRules = [new StoredExclusionRule(ExclusionRuleKind.SourceApp, "MyVault")],
         };
 
@@ -65,6 +66,7 @@ public class AppSettingsTests
         Assert.Equal(original.BackendApiKey, loaded.BackendApiKey);
         Assert.Equal(original.ImageRetentionDays, loaded.ImageRetentionDays);
         Assert.Equal(original.StartWithWindows, loaded.StartWithWindows);
+        Assert.Equal(AppTheme.Dark, loaded.Theme);
         Assert.Equal(original.ExclusionRules, loaded.ExclusionRules);
     }
 

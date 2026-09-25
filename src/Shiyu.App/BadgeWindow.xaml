@@ -5,14 +5,17 @@
         ShowActivated="False" ShowInTaskbar="False" Topmost="True"
         ResizeMode="NoResize" SizeToContent="WidthAndHeight"
         Focusable="False" Opacity="0">
-    <Border x:Name="Pill" CornerRadius="13" Padding="11,5" Cursor="Hand"
-            Background="#EE1F6FEB" MouseLeftButtonUp="OnClicked">
+    <Border x:Name="Pill" CornerRadius="{DynamicResource Radius.Pill}" Padding="12,6" Cursor="Hand"
+            Background="{DynamicResource Brush.AccentFloating}" MouseLeftButtonUp="OnClicked">
         <Border.Effect>
-            <DropShadowEffect BlurRadius="10" ShadowDepth="1" Opacity="0.35" />
+            <StaticResource ResourceKey="Shadow.Badge"/>
         </Border.Effect>
         <StackPanel Orientation="Horizontal">
-            <TextBlock Text="译" Foreground="White" FontSize="13" FontWeight="SemiBold" />
-            <TextBlock Text="翻译这段" Foreground="#DFFFFFFF" FontSize="12" Margin="7,0,0,0"
+            <TextBlock Text="译" Foreground="{DynamicResource Brush.TextOnAccent}"
+                       FontSize="{DynamicResource Size.Body}"
+                       FontWeight="{DynamicResource Weight.Emphasis}" />
+            <TextBlock Text="翻译这段" Foreground="{DynamicResource Brush.TextOnAccent}"
+                       FontSize="{DynamicResource Size.Secondary}" Margin="8,0,0,0"
                        VerticalAlignment="Center" />
         </StackPanel>
     </Border>

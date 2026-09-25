@@ -4,39 +4,48 @@
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         ShowActivated="False" ShowInTaskbar="False" Topmost="True"
         ResizeMode="NoResize" SizeToContent="Height" Width="420" Opacity="0">
-    <Border CornerRadius="10" Background="#FAFFFFFF" BorderBrush="#22000000" BorderThickness="1">
+    <Border CornerRadius="{DynamicResource Radius.Card}" Background="{DynamicResource Brush.Surface}"
+            BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1">
         <Border.Effect>
-            <DropShadowEffect BlurRadius="18" ShadowDepth="2" Opacity="0.25" />
+            <StaticResource ResourceKey="Shadow.Floating"/>
         </Border.Effect>
 
         <StackPanel Margin="14,12">
             <DockPanel LastChildFill="False" Margin="0,0,0,8">
                 <TextBlock x:Name="DirectionLabel" DockPanel.Dock="Left"
-                           FontSize="11" Opacity="0.55" VerticalAlignment="Center" />
+                           Foreground="{DynamicResource Brush.TextSecondary}"
+                           FontSize="{DynamicResource Size.Caption}" VerticalAlignment="Center" />
                 <Button x:Name="CloseButton" DockPanel.Dock="Right" Content="✕"
-                        FontSize="11" Padding="6,1" BorderThickness="0" Background="Transparent"
-                        Cursor="Hand" Click="OnClose" ToolTip="关闭（Esc）" />
+                        FontSize="{DynamicResource Size.Caption}" Padding="6,2" BorderThickness="0"
+                        Background="Transparent" Cursor="Hand" Click="OnClose" ToolTip="关闭（Esc）" />
                 <Button x:Name="SwapButton" DockPanel.Dock="Right" Content="⇄ 换方向"
-                        FontSize="11" Padding="7,1" Margin="0,0,6,0" BorderThickness="0"
-                        Background="Transparent" Cursor="Hand" Click="OnSwapDirection" />
+                        FontSize="{DynamicResource Size.Caption}" Padding="8,2" Margin="0,0,6,0"
+                        BorderThickness="0" Background="Transparent" Cursor="Hand"
+                        Click="OnSwapDirection" />
             </DockPanel>
 
-            <TextBlock x:Name="OriginalText" FontSize="12" Opacity="0.5"
+            <TextBlock x:Name="OriginalText" FontSize="{DynamicResource Size.Secondary}"
+                       Foreground="{DynamicResource Brush.TextSecondary}"
                        TextWrapping="Wrap" MaxHeight="72" />
 
-            <Separator Margin="0,9" Opacity="0.25" />
+            <Separator Margin="0,8" />
 
-            <TextBlock x:Name="TranslatedText" FontSize="14" TextWrapping="Wrap"
-                       LineHeight="21" MaxHeight="260" />
+            <TextBlock x:Name="TranslatedText" FontSize="{DynamicResource Size.BodyLarge}"
+                       TextWrapping="Wrap" LineHeight="{DynamicResource Line.BodyLarge}"
+                       LineStackingStrategy="BlockLineHeight" MaxHeight="260" />
 
-            <TextBlock x:Name="StatusText" FontSize="11" Margin="0,8,0,0"
-                       TextWrapping="Wrap" Foreground="#C0392B" Visibility="Collapsed" />
+            <TextBlock x:Name="StatusText" FontSize="{DynamicResource Size.Caption}" Margin="0,8,0,0"
+                       TextWrapping="Wrap" Foreground="{DynamicResource Brush.Danger}"
+                       Visibility="Collapsed" />
 
             <DockPanel LastChildFill="False" Margin="0,10,0,0">
-                <TextBlock x:Name="HintText" DockPanel.Dock="Left" FontSize="10" Opacity="0.4"
+                <TextBlock x:Name="HintText" DockPanel.Dock="Left"
+                           FontSize="{DynamicResource Size.Hint}"
+                           Foreground="{DynamicResource Brush.TextTertiary}"
                            Text="Esc 关闭" VerticalAlignment="Center" />
                 <Button x:Name="CopyButton" DockPanel.Dock="Right" Content="复制译文"
-                        FontSize="11" Padding="10,3" Cursor="Hand" Click="OnCopy" />
+                        FontSize="{DynamicResource Size.Caption}" Padding="10,4" Cursor="Hand"
+                        Click="OnCopy" />
             </DockPanel>
         </StackPanel>
     </Border>

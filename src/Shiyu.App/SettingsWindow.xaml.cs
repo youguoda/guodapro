@@ -10,9 +10,9 @@ namespace Shiyu.App;
 /// <summary>
 /// Everything the user can change, on one screen.
 ///
-/// Deliberately short. No themes, no skins, no advanced panel — the fewer
-/// settings there are, the more "small and well made" is something the
-/// application can actually claim.
+/// Deliberately short — light/dark is as far as appearance goes; no skins, no
+/// advanced panels. The fewer settings there are, the more "small and well
+/// made" is something the application can actually claim.
 /// </summary>
 public partial class SettingsWindow : Window
 {
@@ -27,6 +27,9 @@ public partial class SettingsWindow : Window
 
         _current = current;
         _apply = apply;
+
+        // ComboBox order matches the AppTheme enum: System, Light, Dark.
+        ThemeChoice.SelectedIndex = (int)current.Theme;
 
         CaptureHotkey.Text = current.CaptureHotkey;
         ClipboardHotkey.Text = current.ClipboardTranslateHotkey;
@@ -147,6 +150,7 @@ public partial class SettingsWindow : Window
             ImageRetentionDays = retention,
             DataDirectoryOverride = directory,
             StartWithWindows = StartWithWindows.IsChecked == true,
+            Theme = (AppTheme)ThemeChoice.SelectedIndex,
             ExclusionRules = ParseExclusionRules(ExclusionRules.Text),
         };
 

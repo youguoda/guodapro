@@ -3,15 +3,16 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="拾语 · 设置" Height="600" Width="560"
         WindowStartupLocation="CenterScreen" ResizeMode="CanMinimize"
-        FontSize="13">
+        Background="{DynamicResource Brush.Background}"
+        FontSize="{DynamicResource Size.Body}">
     <Window.Resources>
         <Style TargetType="TextBlock" x:Key="SectionHeading">
-            <Setter Property="FontWeight" Value="SemiBold" />
-            <Setter Property="Margin" Value="0,16,0,7" />
+            <Setter Property="FontWeight" Value="{DynamicResource Weight.Emphasis}" />
+            <Setter Property="Margin" Value="0,16,0,8" />
         </Style>
         <Style TargetType="TextBlock" x:Key="FieldLabel">
             <Setter Property="VerticalAlignment" Value="Center" />
-            <Setter Property="Opacity" Value="0.7" />
+            <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}" />
             <Setter Property="Width" Value="104" />
         </Style>
         <Style TargetType="TextBox">
@@ -28,6 +29,20 @@
 
         <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
             <StackPanel>
+                <TextBlock Text="外观" Style="{StaticResource SectionHeading}" />
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                    <TextBlock Text="主题" Style="{StaticResource FieldLabel}" />
+                    <ComboBox x:Name="ThemeChoice" Width="130" SelectedIndex="0">
+                        <ComboBoxItem Content="跟随系统" />
+                        <ComboBoxItem Content="浅色" />
+                        <ComboBoxItem Content="深色" />
+                    </ComboBox>
+                </StackPanel>
+                <TextBlock Text="深浅切换立即生效，无需重启。"
+                           FontSize="{DynamicResource Size.Caption}"
+                           Foreground="{DynamicResource Brush.TextTertiary}"
+                           Margin="104,6,0,0" />
+
                 <TextBlock Text="快捷键" Style="{StaticResource SectionHeading}" />
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                     <TextBlock Text="划词翻译" Style="{StaticResource FieldLabel}" />
@@ -42,7 +57,9 @@
                     <TextBox x:Name="QuickBarHotkey" Width="190" />
                 </StackPanel>
                 <TextBlock Text="形如 Ctrl+Shift+Z。改动在保存后立即生效；被别的软件占用时会提示。"
-                           FontSize="11" Opacity="0.5" Margin="104,6,0,0" TextWrapping="Wrap" />
+                           FontSize="{DynamicResource Size.Caption}"
+                           Foreground="{DynamicResource Brush.TextTertiary}"
+                           Margin="104,6,0,0" TextWrapping="Wrap" />
 
                 <TextBlock Text="语言" Style="{StaticResource SectionHeading}" />
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
@@ -53,8 +70,8 @@
                     <TextBlock Text="原文语言" Style="{StaticResource FieldLabel}" />
                     <TextBox x:Name="SourceLanguage" Width="190" />
                 </StackPanel>
-                <TextBlock Text="原文语言留空表示由后端自行判断。" FontSize="11" Opacity="0.5"
-                           Margin="104,6,0,0" />
+                <TextBlock Text="原文语言留空表示由后端自行判断。" FontSize="{DynamicResource Size.Caption}"
+                           Foreground="{DynamicResource Brush.TextTertiary}" Margin="104,6,0,0" />
 
                 <TextBlock Text="翻译后端" Style="{StaticResource SectionHeading}" />
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
@@ -70,31 +87,39 @@
                     <PasswordBox x:Name="BackendKey" Width="340" Padding="6,4"
                                  VerticalContentAlignment="Center" />
                 </StackPanel>
-                <TextBlock x:Name="KeyHint" FontSize="11" Opacity="0.5" Margin="104,6,0,0" />
+                <TextBlock x:Name="KeyHint" FontSize="{DynamicResource Size.Caption}"
+                           Foreground="{DynamicResource Brush.TextTertiary}" Margin="104,6,0,0" />
 
                 <TextBlock Text="数据" Style="{StaticResource SectionHeading}" />
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                     <TextBlock Text="图片保留" Style="{StaticResource FieldLabel}" />
                     <TextBox x:Name="RetentionDays" Width="70" />
                     <TextBlock Text="天后清理原图（文本永不清理）" VerticalAlignment="Center"
-                               Opacity="0.55" FontSize="12" Margin="8,0,0,0" />
+                               Foreground="{DynamicResource Brush.TextSecondary}"
+                               FontSize="{DynamicResource Size.Secondary}" Margin="8,0,0,0" />
                 </StackPanel>
                 <StackPanel Orientation="Horizontal">
                     <TextBlock Text="数据位置" Style="{StaticResource FieldLabel}" />
                     <TextBox x:Name="DataDirectory" Width="268" TextChanged="OnDataDirectoryChanged" />
                     <Button Content="浏览…" Padding="9,3" Margin="6,0,0,0" Click="OnBrowseDataDirectory" />
                 </StackPanel>
-                <TextBlock x:Name="SyncWarning" FontSize="11" Foreground="#C0392B" TextWrapping="Wrap"
+                <TextBlock x:Name="SyncWarning" FontSize="{DynamicResource Size.Caption}"
+                           Foreground="{DynamicResource Brush.Danger}" TextWrapping="Wrap"
                            Margin="104,6,0,0" Visibility="Collapsed" />
-                <TextBlock Text="留空表示使用默认位置。更改后需要重启拾语。" FontSize="11" Opacity="0.5"
-                           Margin="104,4,0,0" />
+                <TextBlock Text="留空表示使用默认位置。更改后需要重启拾语。"
+                           FontSize="{DynamicResource Size.Caption}"
+                           Foreground="{DynamicResource Brush.TextTertiary}" Margin="104,4,0,0" />
 
                 <TextBlock Text="排除规则" Style="{StaticResource SectionHeading}" />
                 <TextBlock Text="这些来源或内容永远不会进入历史。每行一条；以 re: 开头表示正则匹配内容。"
-                           FontSize="11" Opacity="0.55" TextWrapping="Wrap" Margin="0,0,0,6" />
+                           FontSize="{DynamicResource Size.Caption}"
+                           Foreground="{DynamicResource Brush.TextSecondary}" TextWrapping="Wrap"
+                           Margin="0,0,0,6" />
                 <TextBox x:Name="ExclusionRules" Height="96" AcceptsReturn="True"
-                         VerticalScrollBarVisibility="Auto" FontFamily="Consolas" />
-                <TextBlock x:Name="PresetNote" FontSize="11" Opacity="0.5" Margin="0,6,0,0"
+                         VerticalScrollBarVisibility="Auto"
+                         FontFamily="{DynamicResource Font.Mono}" />
+                <TextBlock x:Name="PresetNote" FontSize="{DynamicResource Size.Caption}"
+                           Foreground="{DynamicResource Brush.TextTertiary}" Margin="0,6,0,0"
                            TextWrapping="Wrap" />
 
                 <TextBlock Text="启动" Style="{StaticResource SectionHeading}" />
@@ -105,7 +130,8 @@
 
         <DockPanel Grid.Row="1" LastChildFill="False" Margin="0,14,0,0">
             <TextBlock x:Name="SaveStatus" DockPanel.Dock="Left" VerticalAlignment="Center"
-                       Opacity="0.65" FontSize="12" TextWrapping="Wrap" MaxWidth="330" />
+                       Foreground="{DynamicResource Brush.TextSecondary}"
+                       FontSize="{DynamicResource Size.Secondary}" TextWrapping="Wrap" MaxWidth="330" />
             <Button DockPanel.Dock="Right" Content="保存" MinWidth="86" Padding="12,5"
                     Click="OnSave" />
             <Button DockPanel.Dock="Right" Content="关闭" MinWidth="86" Padding="12,5"
