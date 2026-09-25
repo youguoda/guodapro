@@ -6,9 +6,9 @@ namespace Shiyu.Core;
 /// </summary>
 public static class HoverActions
 {
-    /// <summary>Every action id that exists, in default order. Note (备注) and favourite (收藏) join when their data models do (ticket 10).</summary>
+    /// <summary>Every action id that exists, in default order.</summary>
     public static readonly string[] All =
-        ["copy", "paste", "plain", "open", "locate", "pin", "delete"];
+        ["copy", "paste", "plain", "open", "locate", "pin", "favorite", "note", "delete"];
 
     /// <summary>The id as the interface shows it.</summary>
     public static string Name(string id) => id switch
@@ -19,6 +19,8 @@ public static class HoverActions
         "open" => "打开",
         "locate" => "定位",
         "pin" => "置顶",
+        "favorite" => "收藏",
+        "note" => "备注",
         "delete" => "删除",
         _ => id,
     };
@@ -32,6 +34,8 @@ public static class HoverActions
         "open" => "开",
         "locate" => "位",
         "pin" => "钉",
+        "favorite" => "★",
+        "note" => "注",
         "delete" => "删",
         _ => "?",
     };

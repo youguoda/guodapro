@@ -240,6 +240,47 @@ internal sealed class BarCard : INotifyPropertyChanged
     /// <summary>The full capped path list of a file entry, for copying and pasting back.</summary>
     public IReadOnlyList<string> Files { get; init; } = [];
 
+    private bool _favorite;
+
+    /// <summary>Mutates in place: favouriting must not disturb the list around it.</summary>
+    public bool Favorite
+    {
+        get => _favorite;
+        set
+        {
+            _favorite = value;
+            Changed(nameof(Favorite));
+        }
+    }
+
+    public Visibility FavoriteVisibility => Favorite ? Visibility.Visible : Visibility.Collapsed;
+
+    private string? _note;
+
+    /// <summary>Mutates in place: the note becomes the entry's public face the moment it is saved.</summary>
+    public string? Note
+    {
+        get => _note;
+        set
+        {
+            _note = value;
+            Changed(nameof(Note));
+        }
+    }
+
+    private string _face = string.Empty;
+
+    /// <summary>What the body shows: the note by default, the original on hover.</summary>
+    public string Face
+    {
+        get => _face;
+        set
+        {
+            _face = value;
+            Changed(nameof(Face));
+        }
+    }
+
     /// <summary>True when every path of a file entry is gone — the card shows it struck through and faded.</summary>
     public bool AllPathsDead { get; init; }
 
@@ -518,7 +559,7 @@ internal partial class BarWindow : Window
                 .ToList()
             : [];
 
-        return new BarCard
+        var card = new BarCard
         {
             Id = entry.Id,
             Kind = entry.Kind,
@@ -529,7 +570,7 @@ internal partial class BarWindow : Window
                 EntryKind.Image => "图片",
                 EntryKind.Files => "文件",
                 _ => "文本",
-            },
+            } + (entry.UseCount > 0 ? $" · 用过 {entry.UseCount} 次" : ""),
             WhenText = entry.CreatedAt.ToLocalTime().ToString("MM-dd HH:mm"),
             Icon = _icons.For(entry.SourceApp),
             Thumbnail = entry.Kind == EntryKind.Image
@@ -541,6 +582,8 @@ internal partial class BarWindow : Window
             Html = entry.Html,
             Rtf = entry.Rtf,
             Files = entry.Files,
+            Favorite = entry.Favorite,
+            Note = entry.Note,
             FileRows = fileRows,
             AllPathsDead = entry.Kind == EntryKind.Files && entry.Files.All(path => !File.Exists(path)),
             FileCount = entry.Files.Count,
@@ -553,8 +596,11 @@ internal partial class BarWindow : Window
             ImageHeight = Math.Max(24, _settings.BarImageHeight),
             IsPinned = entry.IsPinned,
         };
-    }
 
+        // The note is the public face; the original waits behind a hover.
+        card.Face = entry.Note is { Length: > 0 } ? entry.Note : card.Preview;
+        return card;
+    }
     private void Rebuild()
     {
         _pinned.Clear();
@@ -639,6 +685,7 @@ internal partial class BarWindow : Window
         SearchBox.Clear();
         KindFilter.SelectedIndex = 0;
         SubtypeFilter.SelectedIndex = 0;
+        FavoriteOnly.IsChecked = false;
         RefreshTagChoices();
         ApplyFilter();
     }
@@ -664,6 +711,7 @@ internal partial class BarWindow : Window
                 4 => EntrySubtype.LocalPath,
                 _ => null,
             },
+            Favorite = FavoriteOnly.IsChecked == true ? true : null,
         };
 
         Rebuild();
@@ -774,6 +822,13 @@ internal partial class BarWindow : Window
 
         handover.Yield();
         tray.Open();
+
+        // Hover reveals the original behind a note: the note is the face the
+        // user wrote, the content is what they come back for.
+        if (((FrameworkElement)sender).DataContext is BarCard { Note.Length: > 0 } noted)
+        {
+            ApplyFace(noted, hovered: true);
+        }
     }
 
     private void OnCardMouseLeave(object sender, MouseEventArgs e)
@@ -786,6 +841,11 @@ internal partial class BarWindow : Window
 
         tray.Close();
         handover.Return();
+
+        if (((FrameworkElement)sender).DataContext is BarCard { Note.Length: > 0 } noted)
+        {
+            ApplyFace(noted, hovered: false);
+        }
     }
 
     /// <summary>Runs one hover action. Invoked from any card's tray via the container's subscription.</summary>
@@ -801,6 +861,7 @@ internal partial class BarWindow : Window
         switch (id)
         {
             case "copy":
+                _store.BumpUse(card.Id);
                 Confirm(feedback, CopyCard(card));
                 break;
 
@@ -808,6 +869,7 @@ internal partial class BarWindow : Window
                 // Strips every format: plain text and nothing else, so what
                 // lands carries no styling from where it came. Never offered
                 // for file entries — there is no plain form to strip.
+                _store.BumpUse(card.Id);
                 Confirm(feedback, _clipboard.SetText(card.Text));
                 break;
 
@@ -826,6 +888,18 @@ internal partial class BarWindow : Window
             case "pin":
                 _store.SetPinned(card.Id, !card.IsPinned);
                 ReloadData();
+                break;
+
+            case "favorite":
+                _store.SetFavorite(card.Id, !card.Favorite);
+
+                // In place: a favourite joins a collection and never moves,
+                // so the list around it must not so much as blink.
+                card.Favorite = !card.Favorite;
+                break;
+
+            case "note":
+                EditNote(card);
                 break;
 
             case "delete":
@@ -927,6 +1001,89 @@ internal partial class BarWindow : Window
         catch (Exception)
         {
         }
+    }
+
+    /// <summary>
+    /// The note editor: one box, three exits. Owned by the bar so it stays on
+    /// top of it and follows it away.
+    /// </summary>
+    private void EditNote(BarCard card)
+    {
+        var editor = new Window
+        {
+            Title = "备注",
+            Width = 340,
+            SizeToContent = SizeToContent.Height,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Owner = this,
+            ResizeMode = ResizeMode.NoResize,
+            ShowInTaskbar = false,
+            Background = (Brush)FindResource("Brush.Background"),
+        };
+
+        var box = new TextBox
+        {
+            Text = card.Note ?? string.Empty,
+            AcceptsReturn = true,
+            TextWrapping = TextWrapping.Wrap,
+            Height = 110,
+            Margin = new Thickness(12),
+            Padding = new Thickness(6, 4, 6, 4),
+        };
+        box.SetResourceReference(Control.BackgroundProperty, "Brush.SurfaceInput");
+        box.SetResourceReference(Control.ForegroundProperty, "Brush.Text");
+
+        var buttons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 0, 12, 12),
+        };
+
+        var save = new Button { Content = "保存", Padding = new Thickness(14, 4, 14, 4), Margin = new Thickness(6, 0, 0, 0) };
+        var remove = new Button { Content = "删除备注", Padding = new Thickness(10, 4, 10, 4), Margin = new Thickness(6, 0, 0, 0) };
+        var cancel = new Button { Content = "取消", Padding = new Thickness(10, 4, 10, 4), Margin = new Thickness(6, 0, 0, 0) };
+
+        save.Click += (_, _) =>
+        {
+            _store.SetNote(card.Id, box.Text);
+            card.Note = string.IsNullOrWhiteSpace(box.Text) ? null : box.Text.Trim();
+            ApplyFace(card, hovered: false);
+            editor.Close();
+        };
+
+        remove.Click += (_, _) =>
+        {
+            _store.SetNote(card.Id, null);
+            card.Note = null;
+            ApplyFace(card, hovered: false);
+            editor.Close();
+        };
+
+        cancel.Click += (_, _) => editor.Close();
+
+        buttons.Children.Add(cancel);
+        buttons.Children.Add(remove);
+        buttons.Children.Add(save);
+
+        var panel = new StackPanel();
+        panel.Children.Add(box);
+        panel.Children.Add(buttons);
+        editor.Content = panel;
+
+        box.Focus();
+        box.SelectAll();
+        editor.ShowDialog();
+    }
+
+    /// <summary>
+    /// Puts the right text in the face: the note when there is one, the
+    /// original while hovered. The note is the entry's public face because
+    /// what the user wrote is what the user remembers.
+    /// </summary>
+    private void ApplyFace(BarCard card, bool hovered)
+    {
+        card.Face = card.Note is { Length: > 0 } && !hovered ? card.Note : card.Preview;
     }
 
     private void ReloadData()
@@ -1228,6 +1385,16 @@ internal partial class BarWindow : Window
             case Key.P when !IsTyping && Keyboard.Modifiers == ModifierKeys.None:
                 e.Handled = true;
                 if (_selected is { } pin) ExecuteAction("pin", pin, feedback: null);
+                break;
+
+            case Key.S when !IsTyping && Keyboard.Modifiers == ModifierKeys.None:
+                e.Handled = true;
+                if (_selected is { } favourite) ExecuteAction("favorite", favourite, feedback: null);
+                break;
+
+            case Key.N when !IsTyping && Keyboard.Modifiers == ModifierKeys.None:
+                e.Handled = true;
+                if (_selected is { } note) ExecuteAction("note", note, feedback: null);
                 break;
 
             case Key.D when !IsTyping && Keyboard.Modifiers == ModifierKeys.None:

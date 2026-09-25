@@ -17,6 +17,10 @@ internal static class BarKeys
 
     public const string Pin = "P";
 
+    public const string Favorite = "S";
+
+    public const string Note = "N";
+
     public const string Delete = "D";
 
     public const string TagCycle = "Tab";
@@ -35,6 +39,8 @@ internal static class BarKeys
         "copy" => Copy,
         "open" => Open,
         "pin" => Pin,
+        "favorite" => Favorite,
+        "note" => Note,
         "delete" => Delete,
         _ => null,
     };
@@ -46,6 +52,8 @@ internal static class BarKeys
         Copy => Key.C,
         Open => Key.O,
         Pin => Key.P,
+        Favorite => Key.S,
+        Note => Key.N,
         Delete => Key.D,
         _ => Key.None,
     };

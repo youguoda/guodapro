@@ -50,6 +50,21 @@ public sealed record Entry(
     /// <summary>Pinned entries sort ahead of everything else.</summary>
     public bool IsPinned { get; init; }
 
+    /// <summary>
+    /// Belongs to the favourites collection. Never moves the entry — that is
+    /// the pin's job; the top of the list is for what is in use right now.
+    /// </summary>
+    public bool Favorite { get; init; }
+
+    /// <summary>
+    /// The user's own words for this entry. When present it is the entry's
+    /// public face; the original content waits behind a hover.
+    /// </summary>
+    public string? Note { get; init; }
+
+    /// <summary>How many times this entry was copied or pasted back out.</summary>
+    public int UseCount { get; init; }
+
     public IReadOnlyList<string> Tags { get; init; } = [];
 
     /// <summary>False once retention has removed the original from disk.</summary>

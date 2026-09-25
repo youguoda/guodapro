@@ -20,13 +20,16 @@ public sealed record HistoryFilter
 
     public EntryKind? Kind { get; init; }
 
-    /// <summary>Only text entries of this shape — links, colours, paths. Null means no subtype filter.</summary>
+    /// <summary>Only entries of this shape — links, colours, paths. Null means no subtype filter.</summary>
     public EntrySubtype? Subtype { get; init; }
+
+    /// <summary>True narrows to favourites; false and null both mean no favourite filter.</summary>
+    public bool? Favorite { get; init; }
 
     /// <summary>Only entries carrying this tag. Blank means no tag filter.</summary>
     public string? Tag { get; init; }
 
     public bool IsEmpty =>
         string.IsNullOrWhiteSpace(Query) && From is null && To is null && Kind is null
-        && Subtype is null && string.IsNullOrWhiteSpace(Tag);
+        && Subtype is null && Favorite != true && string.IsNullOrWhiteSpace(Tag);
 }

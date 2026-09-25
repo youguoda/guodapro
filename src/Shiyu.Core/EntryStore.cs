@@ -39,7 +39,7 @@ public sealed partial class EntryStore : IDisposable
     /// <summary>
     /// The shape the code expects. Bumped whenever a migration is added below.
     /// </summary>
-    private const int SchemaVersion = 7;
+    private const int SchemaVersion = 8;
 
     /// <summary>
     /// Joins tag names into one column. A unit separator, because it cannot
@@ -146,6 +146,16 @@ public sealed partial class EntryStore : IDisposable
             // A file copy's paths, newline-joined and capped. Existing rows
             // have none, and stay as they are.
             Execute("ALTER TABLE entries ADD COLUMN files TEXT NULL;");
+        }
+
+        if (from < 8)
+        {
+            // Organisation, not content: a favourite belongs to a collection
+            // without moving; a note is the entry's public face; a use count
+            // remembers how often the entry came back.
+            Execute("ALTER TABLE entries ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0;");
+            Execute("ALTER TABLE entries ADD COLUMN note TEXT NULL;");
+            Execute("ALTER TABLE entries ADD COLUMN use_count INTEGER NOT NULL DEFAULT 0;");
         }
 
         if (from != SchemaVersion)
@@ -387,7 +397,7 @@ public sealed partial class EntryStore : IDisposable
     {
         using var command = _connection.CreateCommand();
         command.CommandText = """
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files,
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count,
                    (SELECT group_concat(t.name, char(31)) FROM tags t
                       JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
@@ -405,7 +415,7 @@ public sealed partial class EntryStore : IDisposable
     {
         using var command = _connection.CreateCommand();
         command.CommandText = $"""
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files,
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count,
                    (SELECT group_concat(t.name, char(31)) FROM tags t
                       JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
@@ -421,7 +431,7 @@ public sealed partial class EntryStore : IDisposable
     {
         using var command = _connection.CreateCommand();
         command.CommandText = """
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files,
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count,
                    (SELECT group_concat(t.name, char(31)) FROM tags t
                       JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
@@ -485,7 +495,7 @@ public sealed partial class EntryStore : IDisposable
 
         using var command = _connection.CreateCommand();
         command.CommandText = """
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files,
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count,
                    (SELECT group_concat(t.name, char(31)) FROM tags t
                       JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
@@ -515,8 +525,15 @@ public sealed partial class EntryStore : IDisposable
 
         if (!string.IsNullOrWhiteSpace(filter.Query))
         {
-            conditions.Add(@"text LIKE $pattern ESCAPE '\'");
+            // The note is searchable alongside the text: "the brand blue one"
+            // has to find the entry whose content is a bare hex code.
+            conditions.Add("(text LIKE $pattern ESCAPE '\\' OR note LIKE $pattern ESCAPE '\\')");
             command.Parameters.AddWithValue("$pattern", $"%{EscapeForLike(filter.Query)}%");
+        }
+
+        if (filter.Favorite is { } favoriteOnly && favoriteOnly)
+        {
+            conditions.Add("favorite = 1");
         }
 
         if (filter.From is { } from)
@@ -565,7 +582,7 @@ public sealed partial class EntryStore : IDisposable
         var where = conditions.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", conditions);
 
         command.CommandText = $"""
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files,
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count,
                    (SELECT group_concat(t.name, char(31)) FROM tags t
                       JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
@@ -588,7 +605,7 @@ public sealed partial class EntryStore : IDisposable
     {
         using var command = _connection.CreateCommand();
         command.CommandText = """
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files,
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count,
                    (SELECT group_concat(t.name, char(31)) FROM tags t
                       JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
@@ -661,7 +678,7 @@ public sealed partial class EntryStore : IDisposable
     {
         using var command = _connection.CreateCommand();
         command.CommandText = """
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files,
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count,
                    (SELECT group_concat(t.name, char(31)) FROM tags t
                       JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
@@ -701,12 +718,15 @@ public sealed partial class EntryStore : IDisposable
                 Files = reader.IsDBNull(11) || reader.GetString(11).Length == 0
                     ? []
                     : reader.GetString(11).Split('\n'),
+                Favorite = reader.GetInt32(12) != 0,
+                Note = reader.IsDBNull(13) ? null : reader.GetString(13),
+                UseCount = reader.GetInt32(14),
 
                 // Joined in rather than fetched per row: a list of a hundred
                 // entries would otherwise be a hundred extra queries.
-                Tags = reader.IsDBNull(12)
+                Tags = reader.IsDBNull(15)
                     ? []
-                    : reader.GetString(12).Split(TagSeparator, StringSplitOptions.RemoveEmptyEntries),
+                    : reader.GetString(15).Split(TagSeparator, StringSplitOptions.RemoveEmptyEntries),
             });
         }
 

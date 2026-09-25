@@ -306,6 +306,12 @@ public partial class LibraryWindow : Window
 
     private void OnCopySelected(object sender, RoutedEventArgs e)
     {
+        foreach (var chosen in EntryList.SelectedItems.OfType<EntryItem>())
+        {
+            // The entry came back into the world; that is what a use is.
+            _store.BumpUse(chosen.Id);
+        }
+
         if (EntryList.SelectedItem is not EntryItem item)
         {
             return;

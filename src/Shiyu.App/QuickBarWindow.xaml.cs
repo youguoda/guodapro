@@ -153,6 +153,12 @@ public partial class QuickBarWindow : Window
             return;
         }
 
+        // The entry came back into the world; that is what a use is.
+        if (item.Id is { } id)
+        {
+            _store.BumpUse(id);
+        }
+
         // Hidden first: the paste has to land in the user's application, and
         // this window is in the way of the foreground until it goes.
         Hide();
@@ -176,7 +182,7 @@ public partial class QuickBarWindow : Window
     /// <summary>Lets the application close it for real on shutdown.</summary>
     public void CloseForGood() => Close();
 
-    private sealed record QuickItem(string Text, string Preview, string Meta)
+    private sealed record QuickItem(long? Id, string Text, string Preview, string Meta)
     {
         public static QuickItem From(Entry entry)
         {
@@ -187,6 +193,7 @@ public partial class QuickBarWindow : Window
             var source = string.IsNullOrEmpty(entry.SourceApp) ? "未知来源" : entry.SourceApp;
 
             return new QuickItem(
+                entry.Id,
                 entry.Text,
                 preview,
                 $"{entry.CreatedAt.ToLocalTime():MM-dd HH:mm} · {source}");

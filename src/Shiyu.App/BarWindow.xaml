@@ -125,12 +125,13 @@
                                 BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1"
                                 Background="{Binding SwatchBrush}" Visibility="{Binding SwatchVisibility}"
                                 VerticalAlignment="Center"/>
-                        <local:EntryBodyText x:Name="TextBody" Text="{Binding Preview}"
+                        <local:EntryBodyText x:Name="TextBody" Text="{Binding Face}"
                                    TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
                                    MaxHeight="{Binding TextMaxHeight}"
                                    LineHeight="{DynamicResource Line.Body}"
                                    LineStackingStrategy="BlockLineHeight"
-                                   Foreground="{DynamicResource Brush.Text}"/>
+                                   Foreground="{DynamicResource Brush.Text}"
+                                   ToolTip="{Binding Preview}"/>
                         <Border x:Name="ImageBody" MaxHeight="{Binding ImageHeight}"
                                 CornerRadius="{DynamicResource Radius.Small}"
                                 Background="{DynamicResource Brush.SurfaceSubtle}"
@@ -175,11 +176,18 @@
                         </StackPanel>
                     </DockPanel>
 
-                    <!-- Watermarks: quiet, bottom-right, never in the way. -->
-                    <TextBlock Grid.Row="1" Text="已置顶" FontSize="{DynamicResource Size.Hint}"
-                               Foreground="{DynamicResource Brush.TextTertiary}"
-                               HorizontalAlignment="Right" VerticalAlignment="Bottom"
-                               Visibility="{Binding PinnedVisibility}"/>
+                    <!-- Watermarks: quiet, bottom-right, never in the way.
+                         The star is a favourite; it never moves the card. -->
+                    <StackPanel Grid.Row="1" Orientation="Horizontal"
+                                HorizontalAlignment="Right" VerticalAlignment="Bottom">
+                        <TextBlock Text="★" FontSize="{DynamicResource Size.Hint}"
+                                   Foreground="{DynamicResource Brush.Accent}"
+                                   Visibility="{Binding FavoriteVisibility}"/>
+                        <TextBlock Text="已置顶" FontSize="{DynamicResource Size.Hint}"
+                                   Foreground="{DynamicResource Brush.TextTertiary}"
+                                   Margin="6,0,0,0"
+                                   Visibility="{Binding PinnedVisibility}"/>
+                    </StackPanel>
                 </Grid>
             </Border>
             <DataTemplate.Triggers>
@@ -265,6 +273,10 @@
                     <Button x:Name="ClearFilters" Content="清除" Margin="6,0,0,0" Padding="8,2"
                             FontSize="{DynamicResource Size.Caption}" Cursor="Hand"
                             Click="OnClearFilters"/>
+                    <ToggleButton x:Name="FavoriteOnly" Content="★" Margin="4,0,0,0" Width="30"
+                                  FontSize="{DynamicResource Size.Caption}" Cursor="Hand"
+                                  Checked="OnFilterChanged" Unchecked="OnFilterChanged"
+                                  ToolTip="只看收藏"/>
                 </StackPanel>
             </StackPanel>
         </Border>

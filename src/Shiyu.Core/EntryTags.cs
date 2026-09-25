@@ -20,6 +20,43 @@ public sealed partial class EntryStore
     }
 
     /// <summary>
+    /// Favourites or unfavourites an entry. A favourite never moves the entry:
+    /// belonging to a collection is the pin's job, a favourite only joins one.
+    /// </summary>
+    public void SetFavorite(long id, bool favorite)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = "UPDATE entries SET favorite = $favorite WHERE id = $id;";
+        command.Parameters.AddWithValue("$favorite", favorite ? 1 : 0);
+        command.Parameters.AddWithValue("$id", id);
+        command.ExecuteNonQuery();
+    }
+
+    /// <summary>Sets, rewrites, or (with null) removes an entry's note.</summary>
+    public void SetNote(long id, string? note)
+    {
+        var trimmed = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
+
+        using var command = _connection.CreateCommand();
+        command.CommandText = "UPDATE entries SET note = $note WHERE id = $id;";
+        command.Parameters.AddWithValue("$note", (object?)trimmed ?? DBNull.Value);
+        command.Parameters.AddWithValue("$id", id);
+        command.ExecuteNonQuery();
+    }
+
+    /// <summary>
+    /// Counts one more use — the entry was copied or pasted back into the
+    /// world again.
+    /// </summary>
+    public void BumpUse(long id)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = "UPDATE entries SET use_count = use_count + 1 WHERE id = $id;";
+        command.Parameters.AddWithValue("$id", id);
+        command.ExecuteNonQuery();
+    }
+
+    /// <summary>
     /// Attaches a tag, creating it if this is its first use. Comparison ignores
     /// case, so "Work" and "work" are one tag rather than two that look alike.
     /// </summary>
