@@ -227,14 +227,14 @@ public partial class App : Application
     /// </summary>
     private void ToggleBar()
     {
-        if (_store is null || _icons is null || _writer is null)
+        if (_store is null || _icons is null || _writer is null || _capture is null)
         {
             return;
         }
 
         if (_bar is null)
         {
-            _bar = new BarWindow(_store, _icons, _writer, _settings);
+            _bar = new BarWindow(_store, _icons, _writer, _capture, _settings);
             _bar.GeometryChanged += OnBarGeometryChanged;
         }
 

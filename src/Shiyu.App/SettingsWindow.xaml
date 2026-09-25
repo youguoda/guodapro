@@ -139,6 +139,15 @@
                     <TextBlock Text="文件条数" Style="{StaticResource FieldLabel}" />
                     <TextBox x:Name="BarFileCount" Width="70" />
                 </StackPanel>
+                <TextBlock Text="悬停动作" Style="{StaticResource FieldLabel}" Margin="0,8,0,6" VerticalAlignment="Top" />
+                <TextBox x:Name="BarActions" Width="340" Margin="104,0,0,6"
+                         Text="复制,粘贴,纯文本粘贴,打开,定位,置顶,删除" />
+                <TextBlock Text="逗号分隔，顺序即显示顺序；可填：复制、粘贴、纯文本粘贴、打开、定位、置顶、删除。对某条记录不适用的动作会自动隐藏。"
+                           FontSize="{DynamicResource Size.Caption}"
+                           Foreground="{DynamicResource Brush.TextTertiary}" Margin="104,0,0,6"
+                           TextWrapping="Wrap" />
+                <CheckBox x:Name="ActionSound" Content="动作完成后播放提示音（默认只显示对勾）"
+                          VerticalContentAlignment="Center" Margin="104,0,0,0" />
 
                 <TextBlock Text="启动" Style="{StaticResource SectionHeading}" />
                 <CheckBox x:Name="StartWithWindows" Content="开机时自动启动拾语"

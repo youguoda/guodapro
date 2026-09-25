@@ -11,6 +11,143 @@ using Shiyu.Windows;
 namespace Shiyu.App;
 
 /// <summary>
+/// The timestamp that yields its place to the hover actions. Fades and slides
+/// left when the tray opens, returns when it closes — the two read as one
+/// handover rather than as two separate events.
+/// </summary>
+internal sealed class HandoverText : TextBlock
+{
+    public HandoverText()
+    {
+        RenderTransform = new TranslateTransform();
+    }
+
+    public void Yield()
+    {
+        BeginAnimation(OpacityProperty, Motion.Fade(0));
+
+        if (RenderTransform is TranslateTransform slide)
+        {
+            slide.BeginAnimation(TranslateTransform.XProperty, Motion.Double(-8));
+        }
+    }
+
+    public void Return()
+    {
+        BeginAnimation(OpacityProperty, Motion.Fade(1));
+
+        if (RenderTransform is TranslateTransform slide)
+        {
+            slide.BeginAnimation(TranslateTransform.XProperty, Motion.Double(0));
+        }
+    }
+
+    /// <summary>Snaps back to the resting state, recycling-safe.</summary>
+    public void Reset()
+    {
+        BeginAnimation(OpacityProperty, null);
+        Opacity = 1;
+
+        if (RenderTransform is TranslateTransform slide)
+        {
+            slide.BeginAnimation(TranslateTransform.XProperty, null);
+            slide.X = 0;
+        }
+    }
+}
+
+/// <summary>
+/// The row container. Exists to reconfigure and reset the hover tray at
+/// exactly the moment recycling hands this container to another row — the
+/// issue 02 spike's finding about animation state following containers.
+/// </summary>
+internal sealed class BarCardContainer : ListBoxItem
+{
+    public BarCardContainer()
+    {
+        // Recycling in a nutshell: the same container instance gets a new
+        // row's DataContext.
+        DataContextChanged += (_, _) => PrepareTray();
+    }
+
+    public void PrepareTray()
+    {
+        var tray = Tree.FindDescendant<ActionTray>(this);
+        var handover = Tree.FindDescendant<HandoverText>(this);
+
+        if (DataContext is not BarCard card || tray is null)
+        {
+            return;
+        }
+
+        if (Window.GetWindow(this) is BarWindow host)
+        {
+            tray.Configure(card, host.ActionsFor(card));
+
+            // Resubscribed rather than accumulated: the tray instance
+            // survives recycling and would otherwise fire twice per press.
+            tray.ActionExecuted -= host.RunHoverAction;
+            tray.ActionExecuted += host.RunHoverAction;
+        }
+
+        tray.Reset();
+        handover?.Reset();
+    }
+}
+
+internal sealed class BarCardsList : ListBox
+{
+    protected override DependencyObject GetContainerForItemOverride()
+        => new BarCardContainer();
+
+    protected override void PrepareContainerForItemOverride(DependencyObject element, object item)
+    {
+        base.PrepareContainerForItemOverride(element, item);
+
+        if (element is BarCardContainer card)
+        {
+            card.PrepareTray();
+        }
+    }
+
+    protected override void ClearContainerForItemOverride(DependencyObject element, object item)
+    {
+        if (element is BarCardContainer card)
+        {
+            card.PrepareTray();
+        }
+
+        base.ClearContainerForItemOverride(element, item);
+    }
+}
+
+internal static class Tree
+{
+    internal static T? FindDescendant<T>(DependencyObject root)
+        where T : DependencyObject
+    {
+        var count = System.Windows.Media.VisualTreeHelper.GetChildrenCount(root);
+
+        for (var i = 0; i < count; i++)
+        {
+            var child = System.Windows.Media.VisualTreeHelper.GetChild(root, i);
+
+            if (child is T match)
+            {
+                return match;
+            }
+
+            if (FindDescendant<T>(child) is { } nested)
+            {
+                return nested;
+            }
+        }
+
+        return null;
+    }
+}
+
+/// <summary>
 /// One card's view state. A class rather than a record because selection is
 /// mutable and the card's own highlight follows it.
 /// </summary>
@@ -25,11 +162,17 @@ internal sealed class BarCard : INotifyPropertyChanged
 
     public string Preview { get; init; } = string.Empty;
 
-    public string Meta { get; init; } = string.Empty;
+    public string KindText { get; init; } = string.Empty;
+
+    public string WhenText { get; init; } = string.Empty;
 
     public ImageSource? Icon { get; init; }
 
     public ImageSource? Thumbnail { get; init; }
+
+    public string? OriginalPath { get; init; }
+
+    public bool HasOriginal { get; init; }
 
     public int TextLines { get; init; }
 
@@ -91,6 +234,7 @@ internal partial class BarWindow : Window
     private readonly EntryStore _store;
     private readonly AppIconCache _icons;
     private readonly WindowsClipboardWriter _clipboard;
+    private readonly SelectionCapture _capture;
     private readonly HistoryBrowser _browser;
     private readonly ObservableCollection<BarCard> _pinned = [];
     private readonly ObservableCollection<BarCard> _cards = [];
@@ -100,17 +244,24 @@ internal partial class BarWindow : Window
     private AppSettings _settings;
     private int _seenCount = -1;
     private bool _refillingTags;
+    private ForegroundWindow _returnTo;
 
     /// <summary>Raised when the window is moved or resized; the owner persists geometry, throttled its own way.</summary>
     public event Action? GeometryChanged;
 
-    public BarWindow(EntryStore store, AppIconCache icons, WindowsClipboardWriter clipboard, AppSettings settings)
+    public BarWindow(
+        EntryStore store,
+        AppIconCache icons,
+        WindowsClipboardWriter clipboard,
+        SelectionCapture capture,
+        AppSettings settings)
     {
         InitializeComponent();
 
         _store = store;
         _icons = icons;
         _clipboard = clipboard;
+        _capture = capture;
         _settings = settings;
         _browser = new HistoryBrowser(store);
 
@@ -149,6 +300,10 @@ internal partial class BarWindow : Window
     /// </summary>
     public void Summon()
     {
+        // Noted before this window takes the foreground, which it is about
+        // to: pasting from a card has to land where the user was.
+        _returnTo = ForegroundWindow.Current();
+
         ReloadIfBehind(force: true);
         _behindCheck.Start();
         Show();
@@ -157,7 +312,7 @@ internal partial class BarWindow : Window
         SearchBox.SelectAll();
     }
 
-    /// <summary>Hides with the standard fade, from a painted surface.</summary>
+    /// <summary>Hides with the standard fade, from a painted surface, and gives focus back.</summary>
     public void Dismiss()
     {
         _behindCheck.Stop();
@@ -168,6 +323,7 @@ internal partial class BarWindow : Window
             BeginAnimation(OpacityProperty, null);
             Opacity = 1;
             Hide();
+            _returnTo.Restore();
         };
         BeginAnimation(OpacityProperty, fade);
     }
@@ -257,11 +413,14 @@ internal partial class BarWindow : Window
             Kind = entry.Kind,
             Text = entry.Text,
             Preview = collapsed.Length > 500 ? collapsed[..500] + "…" : collapsed,
-            Meta = $"{(entry.Kind == EntryKind.Image ? "图片" : "文本")} · {entry.CreatedAt.ToLocalTime():MM-dd HH:mm}",
+            KindText = entry.Kind == EntryKind.Image ? "图片" : "文本",
+            WhenText = entry.CreatedAt.ToLocalTime().ToString("MM-dd HH:mm"),
             Icon = _icons.For(entry.SourceApp),
             Thumbnail = entry.Kind == EntryKind.Image
                 ? AppIconCache.Decode(entry.ThumbnailPng, 320)
                 : null,
+            OriginalPath = entry.OriginalPath,
+            HasOriginal = entry.HasOriginal,
             TextLines = Math.Max(1, _settings.BarTextLines),
             ImageHeight = Math.Max(24, _settings.BarImageHeight),
             IsPinned = entry.IsPinned,
@@ -405,6 +564,189 @@ internal partial class BarWindow : Window
         {
             _clipboard.SetText(card.Text);
         }
+    }
+
+    // --- hover actions --------------------------------------------------------
+
+    /// <summary>Which of the user's chosen actions this card can honour, in their order.</summary>
+    public IReadOnlyList<string> ActionsFor(BarCard card)
+        => HoverActions.AvailableFor(
+            HoverActions.Sanitise(_settings.BarActions), card.Kind, card.HasOriginal);
+
+    private void OnCardMouseEnter(object sender, MouseEventArgs e)
+    {
+        if (Tree.FindDescendant<ActionTray>((DependencyObject)sender) is not { } tray
+            || Tree.FindDescendant<HandoverText>((DependencyObject)sender) is not { } handover)
+        {
+            return;
+        }
+
+        handover.Yield();
+        tray.Open();
+    }
+
+    private void OnCardMouseLeave(object sender, MouseEventArgs e)
+    {
+        if (Tree.FindDescendant<ActionTray>((DependencyObject)sender) is not { } tray
+            || Tree.FindDescendant<HandoverText>((DependencyObject)sender) is not { } handover)
+        {
+            return;
+        }
+
+        tray.Close();
+        handover.Return();
+    }
+
+    /// <summary>Runs one hover action. Invoked from any card's tray via the container's subscription.</summary>
+    public void RunHoverAction(string id, BarCard card, Button button)
+    {
+        switch (id)
+        {
+            case "copy":
+                Confirm(button, _clipboard.SetText(card.Text));
+                break;
+
+            case "plain":
+                // Stored text is plain by construction; this becomes distinct
+                // when formatted entries exist (ticket 07).
+                Confirm(button, _clipboard.SetText(card.Text));
+                break;
+
+            case "paste":
+                PasteEntry(card);
+                break;
+
+            case "open":
+                OpenOriginal(card);
+                break;
+
+            case "locate":
+                LocateOriginal(card);
+                break;
+
+            case "pin":
+                _store.SetPinned(card.Id, !card.IsPinned);
+                ReloadData();
+                break;
+
+            case "delete":
+                _store.Delete(card.Id);
+                _browser.Forget(card.Id);
+                RemoveCard(card);
+                UpdateCount();
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Copies into the window the user was in before summoning the bar. The
+    /// bar hides first — until it does, it is the thing in the way of the
+    /// foreground the paste needs.
+    /// </summary>
+    private void PasteEntry(BarCard card)
+    {
+        if (!_returnTo.IsSomething)
+        {
+            _returnTo = ForegroundWindow.Current();
+        }
+
+        Hide();
+        _returnTo.Restore();
+        _capture.Paste(card.Text);
+    }
+
+    private void OpenOriginal(BarCard card)
+    {
+        if (card.OriginalPath is not { Length: > 0 } path)
+        {
+            return;
+        }
+
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path)
+            {
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception)
+        {
+            // A file that has moved or gone missing since retention is not
+            // worth interrupting the user over.
+        }
+    }
+
+    private void LocateOriginal(BarCard card)
+    {
+        if (card.OriginalPath is not { Length: > 0 } path)
+        {
+            return;
+        }
+
+        try
+        {
+            System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{path}\"");
+        }
+        catch (Exception)
+        {
+        }
+    }
+
+    private void ReloadData()
+    {
+        _browser.Reset();
+        RefreshTagChoices();
+        Rebuild();
+    }
+
+    private void RemoveCard(BarCard card)
+    {
+        var inRest = _cards.IndexOf(card);
+        if (inRest >= 0)
+        {
+            _cards.RemoveAt(inRest);
+        }
+        else
+        {
+            _pinned.Remove(card);
+        }
+
+        if (_pinned.Count == 0)
+        {
+            PinnedHost.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    /// <summary>
+    /// The success feedback: the pressed button becomes a tick for a second,
+    /// and — only if the user asked — a sound joins it.
+    /// </summary>
+    private void Confirm(Button button, bool succeeded)
+    {
+        if (!succeeded)
+        {
+            button.Content = "✗";
+            return;
+        }
+
+        if (_settings.ActionSound)
+        {
+            System.Media.SystemSounds.Asterisk.Play();
+        }
+
+        var glyph = button.Content;
+        button.Content = "✓";
+
+        var restore = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(1),
+        };
+        restore.Tick += (_, _) =>
+        {
+            restore.Stop();
+            button.Content = glyph;
+        };
+        restore.Start();
     }
 
     private void Select(BarCard? card)

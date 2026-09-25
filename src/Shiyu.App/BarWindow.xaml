@@ -23,15 +23,36 @@
     -->
     <Window.Resources>
 
+        <!-- The tray buttons' look; their motion lives in code (ActionTray). -->
+        <Style x:Key="TrayButtonStyle" TargetType="Button">
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="FontSize" Value="{DynamicResource Size.Hint}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome" CornerRadius="{DynamicResource Radius.Thumb}"
+                                Background="{DynamicResource Brush.SurfaceSubtle}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Brush.SurfaceInput}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- Rows are plain; the card visuals live in the item template. -->
-        <Style TargetType="ListBoxItem">
+        <Style TargetType="{x:Type local:BarCardContainer}">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="Padding" Value="0"/>
             <Setter Property="Margin" Value="8,4"/>
             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
             <Setter Property="Template">
                 <Setter.Value>
-                    <ControlTemplate TargetType="ListBoxItem">
+                    <ControlTemplate TargetType="{x:Type local:BarCardContainer}">
                         <ContentPresenter/>
                     </ControlTemplate>
                 </Setter.Value>
@@ -42,26 +63,35 @@
             <Border x:Name="Card" CornerRadius="{DynamicResource Radius.Card}"
                     Background="{DynamicResource Brush.Surface}"
                     BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1"
-                    Padding="10,8" MouseLeftButtonDown="OnCardPressed">
+                    Padding="10,8" MouseLeftButtonDown="OnCardPressed"
+                    MouseEnter="OnCardMouseEnter" MouseLeave="OnCardMouseLeave">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
-                    <!-- Meta: where it came from, what it is, when. -->
+                    <!-- Meta: where it came from and what it is on the left;
+                         on the right the timestamp, which yields its place to
+                         the hover actions and takes it back afterwards. -->
                     <DockPanel Grid.Row="0" Margin="0,0,0,6">
                         <Grid DockPanel.Dock="Left" Width="16" Height="16" Margin="0,0,6,0">
                             <Image Source="{Binding Icon}" Visibility="{Binding IconVisibility}"/>
                             <Border CornerRadius="{DynamicResource Radius.Thumb}"
                                     Background="{DynamicResource Brush.Accent}"
                                     Visibility="{Binding FallbackIconVisibility}">
-                                <TextBlock Text="ʰ" FontSize="{DynamicResource Size.Hint}"
+                                <TextBlock Text="拾" FontSize="{DynamicResource Size.Hint}"
                                            Foreground="{DynamicResource Brush.TextOnAccent}"
                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                         </Grid>
-                        <TextBlock Text="{Binding Meta}" FontSize="{DynamicResource Size.Caption}"
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                            <local:HandoverText Text="{Binding WhenText}" FontSize="{DynamicResource Size.Caption}"
+                                                Foreground="{DynamicResource Brush.TextSecondary}"
+                                                VerticalAlignment="Center"/>
+                            <local:ActionTray Margin="6,0,0,0"/>
+                        </StackPanel>
+                        <TextBlock Text="{Binding KindText}" FontSize="{DynamicResource Size.Caption}"
                                    Foreground="{DynamicResource Brush.TextSecondary}"
                                    VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                     </DockPanel>
@@ -155,15 +185,15 @@
             </Grid>
         </Border>
 
-        <ListBox x:Name="Cards" ItemTemplate="{StaticResource CardTemplate}"
-                 Background="Transparent" BorderThickness="0"
-                 HorizontalContentAlignment="Stretch"
-                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                 ScrollViewer.ScrollChanged="OnCardsScrolled"
-                 VirtualizingPanel.IsVirtualizing="True"
-                 VirtualizingPanel.VirtualizationMode="Recycling"
-                 VirtualizingPanel.ScrollUnit="Pixel"
-                 VirtualizingPanel.CacheLength="1"
-                 VirtualizingPanel.CacheLengthUnit="Page"/>
+        <local:BarCardsList x:Name="Cards" ItemTemplate="{StaticResource CardTemplate}"
+                            Background="Transparent" BorderThickness="0"
+                            HorizontalContentAlignment="Stretch"
+                            ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                            ScrollViewer.ScrollChanged="OnCardsScrolled"
+                            VirtualizingPanel.IsVirtualizing="True"
+                            VirtualizingPanel.VirtualizationMode="Recycling"
+                            VirtualizingPanel.ScrollUnit="Pixel"
+                            VirtualizingPanel.CacheLength="1"
+                            VirtualizingPanel.CacheLengthUnit="Page"/>
     </DockPanel>
 </Window>

@@ -65,6 +65,20 @@ public sealed record AppSettings
     /// <summary>How many files a file card lists before clamping. Reserved until file entries exist.</summary>
     public int BarFileCount { get; init; } = 3;
 
+    /// <summary>
+    /// Which hover actions a card offers, in the user's chosen order, as ids
+    /// from <see cref="HoverActions"/>. Sanitised on use, so a hand-edited
+    /// file degrades to fewer buttons rather than to a broken tray.
+    /// </summary>
+    public IReadOnlyList<string> BarActions { get; init; } = HoverActions.All;
+
+    /// <summary>
+    /// Whether completed actions also play a sound. Off by default: the
+    /// one-second tick on the button is the feedback; a sound on every copy
+    /// is a toy piano.
+    /// </summary>
+    public bool ActionSound { get; init; }
+
     // --- narrow bar geometry, remembered between sessions ---
     // Null means "never placed yet"; the width is fixed by design and not stored.
 

@@ -23,7 +23,7 @@
 
 **Blocked by:** 02, 04, 05, 09
 
-**Status:** ready-for-human
+**Status:** done
 
 - [x] 热键呼出一个约 360px 宽的置顶窄条，再次按下隐藏
 - [x] 无系统标题栏，整个背景可拖动移动窗口

@@ -26,6 +26,14 @@ internal static class Motion
     /// from wherever it currently is rather than snapping or stacking.
     /// </summary>
     public static DoubleAnimation Fade(double to, bool feature = false)
+        => Double(to, feature);
+
+    /// <summary>
+    /// A size or offset change — the squeeze of a tray button, the slide of a
+    /// handover. Same rules as <see cref="Fade"/>: one tier, one curve, zero
+    /// when the system asks for stillness.
+    /// </summary>
+    public static DoubleAnimation Double(double to, bool feature = false)
     {
         var allowed = UiAnimation.Allowed();
 

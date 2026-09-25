@@ -40,6 +40,9 @@ public partial class SettingsWindow : Window
         BarImageHeight.Text = current.BarImageHeight.ToString();
         BarFileCount.Text = current.BarFileCount.ToString();
 
+        BarActions.Text = string.Join(",", current.BarActions.Select(HoverActions.Name));
+        ActionSound.IsChecked = current.ActionSound;
+
         TargetLanguage.Text = current.TargetLanguage;
         SourceLanguage.Text = current.SourceLanguage ?? string.Empty;
 
@@ -131,6 +134,8 @@ public partial class SettingsWindow : Window
             problems.Add("窄条文件条数需要在 1 到 10 之间。");
         }
 
+        var actions = ParseBarActions(problems);
+
         if (TargetLanguage.Text.Trim().Length == 0)
         {
             problems.Add("译文语言不能为空。");
@@ -166,6 +171,8 @@ public partial class SettingsWindow : Window
             BarTextLines = textLines,
             BarImageHeight = imageHeight,
             BarFileCount = fileCount,
+            BarActions = actions,
+            ActionSound = ActionSound.IsChecked == true,
             TargetLanguage = TargetLanguage.Text.Trim(),
             SourceLanguage = SourceLanguage.Text.Trim() is { Length: > 0 } source ? source : null,
             BackendBaseUrl = BackendUrl.Text.Trim(),
@@ -220,6 +227,45 @@ public partial class SettingsWindow : Window
         => MessageBox.Show(
             this, message, "拾语", MessageBoxButton.OKCancel,
             MessageBoxImage.Warning, MessageBoxResult.Cancel) == MessageBoxResult.OK;
+
+    /// <summary>
+    /// Parses the comma-separated action list the user typed. Names rather
+    /// than ids, because ids are for files and names are for people; anything
+    /// unrecognised is a problem rather than a silent drop, because a
+    /// silently-shrinking tray looks like a bug.
+    /// </summary>
+    private List<string> ParseBarActions(List<string> problems)
+    {
+        var byName = HoverActions.All.ToDictionary(HoverActions.Name, StringComparer.Ordinal);
+        var result = new List<string>();
+
+        foreach (var raw in BarActions.Text.Split([',', '，', '、'], StringSplitOptions.TrimEntries))
+        {
+            if (raw.Length == 0)
+            {
+                continue;
+            }
+
+            if (byName.TryGetValue(raw, out var id))
+            {
+                if (!result.Contains(id))
+                {
+                    result.Add(id);
+                }
+            }
+            else
+            {
+                problems.Add($"悬停动作「{raw}」无法识别。");
+            }
+        }
+
+        if (result.Count == 0)
+        {
+            problems.Add("至少需要一个悬停动作。");
+        }
+
+        return result;
+    }
 
     private void OnClose(object sender, RoutedEventArgs e) => Close();
 }
