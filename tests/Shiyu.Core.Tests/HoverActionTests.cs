@@ -63,4 +63,53 @@ public class HoverActionTests
     {
         Assert.False(new AppSettings().ActionSound);
     }
+
+    [Fact]
+    public void A_former_default_action_list_upgrades_to_include_new_actions()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "shiyu-actions", Guid.NewGuid().ToString("N"), "s.json");
+
+        try
+        {
+            // Saved back when favourites and notes did not exist: exactly the
+            // old default, not a choice.
+            new AppSettings
+            {
+                BarActions = ["copy", "paste", "plain", "open", "locate", "pin", "delete"],
+            }.Save(path);
+
+            var loaded = AppSettings.Load(path);
+
+            Assert.Equal(HoverActions.All, loaded.BarActions);
+        }
+        finally
+        {
+            try { Directory.Delete(Path.GetDirectoryName(path)!, recursive: true); }
+            catch (IOException) { }
+        }
+    }
+
+    [Fact]
+    public void A_customised_action_list_survives_loading_untouched()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "shiyu-actions", Guid.NewGuid().ToString("N"), "s.json");
+
+        try
+        {
+            new AppSettings
+            {
+                BarActions = ["copy", "pin", "delete"],
+            }.Save(path);
+
+            var loaded = AppSettings.Load(path);
+
+            // The user reordered and pruned; that is theirs to keep.
+            Assert.Equal(["copy", "pin", "delete"], loaded.BarActions);
+        }
+        finally
+        {
+            try { Directory.Delete(Path.GetDirectoryName(path)!, recursive: true); }
+            catch (IOException) { }
+        }
+    }
 }

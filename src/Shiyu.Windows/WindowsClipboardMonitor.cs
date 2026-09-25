@@ -103,12 +103,13 @@ public sealed class WindowsClipboardMonitor : IClipboardMonitor, IDisposable
         }
 
         // No usable text. Files are the next thing worth keeping: a copy in
-        // Explorer publishes CF_HDROP and nothing else. Read while the
-        // clipboard is open, like the image, because there is no second chance.
-        if (ReadFileDrop() is { Count: > 0 } files)
+        // Explorer publishes CF_HDROP and nothing else. They were read inside
+        // the same clipboard open as the text — GetClipboardData answers null
+        // on a clipboard that is already closed again.
+        if (reading.Value.Files is { Count: > 0 } files)
         {
             _lastImageFingerprint = null;
-            Changed?.Invoke(new ClipboardSnapshot(string.Empty, sourceApp, IsExcluded(reading))
+            Changed?.Invoke(new ClipboardSnapshot(string.Empty, sourceApp, reading.Value.Excluded)
             {
                 Files = files,
                 SourceExePath = sourceExe,
@@ -144,7 +145,12 @@ public sealed class WindowsClipboardMonitor : IClipboardMonitor, IDisposable
         });
     }
 
-    private readonly record struct Reading(string Text, bool Excluded, string? Html, string? Rtf);
+    private readonly record struct Reading(
+        string Text,
+        bool Excluded,
+        string? Html,
+        string? Rtf,
+        IReadOnlyList<string> Files);
 
     /// <summary>
     /// The CF_HDROP file list, when the clipboard carries one. Requires the
@@ -223,6 +229,10 @@ public sealed class WindowsClipboardMonitor : IClipboardMonitor, IDisposable
             {
                 var excluded = IsExcludedByMarker();
 
+                // Everything is read inside this one open — text, formats,
+                // files. GetClipboardData answers null once the clipboard is
+                // closed, and the file branch used to learn that the hard way.
+
                 // Returned even when there is no text, so the marker survives
                 // for an image-only clipboard. Dropping the reading here would
                 // quietly reopen the hole exclusion exists to close: an image
@@ -231,7 +241,8 @@ public sealed class WindowsClipboardMonitor : IClipboardMonitor, IDisposable
                     ReadUnicodeText() ?? string.Empty,
                     excluded,
                     ReadFormatted(),
-                    ReadString(RtfFormat));
+                    ReadString(RtfFormat),
+                    ReadFileDrop());
             }
             finally
             {

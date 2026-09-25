@@ -117,9 +117,19 @@ public sealed record AppSettings
     {
         try
         {
-            return File.Exists(path)
+            var loaded = File.Exists(path)
                 ? JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(path), Format) ?? new AppSettings()
                 : new AppSettings();
+
+            // A saved action list that exactly matches a former default is a
+            // default that predates newer actions, not a choice — upgrade it,
+            // while respecting anything the user actually reordered or pruned.
+            if (loaded.BarActions.SequenceEqual(FormerDefaultActions))
+            {
+                loaded = loaded with { BarActions = HoverActions.All };
+            }
+
+            return loaded;
         }
         catch (JsonException)
         {
@@ -134,6 +144,10 @@ public sealed record AppSettings
             return new AppSettings();
         }
     }
+
+    /// <summary>The default action list before favourites and notes existed.</summary>
+    private static readonly string[] FormerDefaultActions =
+        ["copy", "paste", "plain", "open", "locate", "pin", "delete"];
 
     public void Save(string path)
     {
