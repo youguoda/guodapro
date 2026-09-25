@@ -685,7 +685,48 @@ internal partial class BarWindow : Window
         Append(_browser.Loaded);
         PinnedHost.Visibility = _pinned.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         UpdateCount();
+        UpdateEmptyState();
         EnsureActiveItem();
+    }
+
+    /// <summary>
+    /// The empty panel says which conditions emptied the list — a filter that
+    /// ate everything is recoverable, and the words are the recovery map.
+    /// </summary>
+    private void UpdateEmptyState()
+    {
+        var empty = _pinned.Count == 0 && _cards.Count == 0;
+        EmptyHost.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
+
+        if (!empty)
+        {
+            return;
+        }
+
+        var groupName = _selectedGroup is { } picked && _groupsById.TryGetValue(picked, out var group)
+            ? group.Name
+            : null;
+
+        var copy = EmptyStates.For(
+            new HistoryFilter
+            {
+                Query = SearchBox.Text,
+                Favorite = FavoriteOnly.IsChecked == true ? true : null,
+                Kind = KindFilter.SelectedIndex switch
+                {
+                    1 => EntryKind.Text,
+                    2 => EntryKind.Image,
+                    3 => EntryKind.Files,
+                    _ => null,
+                },
+                Group = _selectedGroup,
+            },
+            groupName,
+            _store.Count());
+
+        EmptyHeadline.Text = copy.Headline;
+        EmptyHint.Text = copy.Hint;
+        EmptyClear.Visibility = copy.OfferClear ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void Append(IEnumerable<Entry> entries)

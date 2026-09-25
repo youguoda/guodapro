@@ -340,15 +340,41 @@
             </Grid>
         </Border>
 
-        <local:BarCardsList x:Name="Cards" ItemTemplate="{StaticResource CardTemplate}"
-                            Background="Transparent" BorderThickness="0"
-                            HorizontalContentAlignment="Stretch"
-                            ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                            ScrollViewer.ScrollChanged="OnCardsScrolled"
-                            VirtualizingPanel.IsVirtualizing="True"
-                            VirtualizingPanel.VirtualizationMode="Recycling"
-                            VirtualizingPanel.ScrollUnit="Pixel"
-                            VirtualizingPanel.CacheLength="1"
-                            VirtualizingPanel.CacheLengthUnit="Page"/>
+        <!--
+          The empty state explains WHY the list is empty — the filter that
+          ate everything, or a history that is yet to begin — because "no
+          results" reads as breakage exactly when the user needs help most.
+        -->
+        <Grid>
+            <local:BarCardsList x:Name="Cards" ItemTemplate="{StaticResource CardTemplate}"
+                                Background="Transparent" BorderThickness="0"
+                                HorizontalContentAlignment="Stretch"
+                                ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                ScrollViewer.ScrollChanged="OnCardsScrolled"
+                                VirtualizingPanel.IsVirtualizing="True"
+                                VirtualizingPanel.VirtualizationMode="Recycling"
+                                VirtualizingPanel.ScrollUnit="Pixel"
+                                VirtualizingPanel.CacheLength="1"
+                                VirtualizingPanel.CacheLengthUnit="Page"/>
+
+            <Border x:Name="EmptyHost" Visibility="Collapsed"
+                    Background="{DynamicResource Brush.Surface}"
+                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                    MaxWidth="300" Margin="16,0">
+                <StackPanel>
+                    <TextBlock x:Name="EmptyHeadline" TextWrapping="Wrap" TextAlignment="Center"
+                               FontSize="{DynamicResource Size.BodyLarge}"
+                               Foreground="{DynamicResource Brush.Text}"/>
+                    <TextBlock x:Name="EmptyHint" TextWrapping="Wrap" TextAlignment="Center"
+                               Margin="0,6,0,0"
+                               FontSize="{DynamicResource Size.Caption}"
+                               Foreground="{DynamicResource Brush.TextTertiary}"/>
+                    <Button x:Name="EmptyClear" Content="清除筛选" Margin="0,10,0,0"
+                            Padding="14,5,14,5" HorizontalAlignment="Center"
+                            Cursor="Hand" Click="OnClearFilters"
+                            Visibility="Collapsed"/>
+                </StackPanel>
+            </Border>
+        </Grid>
     </DockPanel>
 </Window>
