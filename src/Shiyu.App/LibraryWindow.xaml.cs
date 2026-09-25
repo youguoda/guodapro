@@ -40,13 +40,15 @@ public partial class LibraryWindow : Window
 
     private bool _refillingTags;
     private AgentRun? _agentRun;
+    private readonly Func<AppSettings> _settings;
 
     public LibraryWindow(
         EntryStore store,
         WindowsClipboardWriter clipboard,
         ImageArchive images,
         Func<IStreamingModel> model,
-        AppIconCache icons)
+        AppIconCache icons,
+        Func<AppSettings>? settings = null)
     {
         InitializeComponent();
 
@@ -56,6 +58,7 @@ public partial class LibraryWindow : Window
         _model = model;
         _browser = new HistoryBrowser(store);
         _icons = icons;
+        _settings = settings ?? (() => new AppSettings());
 
         _searchDebounce = new DispatcherTimer { Interval = SearchDelay };
         _searchDebounce.Tick += (_, _) =>
@@ -375,9 +378,20 @@ public partial class LibraryWindow : Window
 
         // Irreversible and one click away from the ordinary buttons, so it asks
         // — and says how much is at stake rather than a generic "are you sure".
+        // Protected entries stay, and the copy says so: a number the user can
+        // check beats a surprise after the fact.
+        var guard = _settings();
+        var keepFavorites = guard.ProtectFavorites;
+        var keepPinned = guard.ProtectPinned;
+        var protectedCount = _store.CountProtected(keepFavorites, keepPinned);
+        var message = protectedCount > 0
+            ? $"将永久删除全部 {total} 条中未受保护的 {total - protectedCount} 条，无法撤销。"
+                + $"受收藏/置顶保护的 {protectedCount} 条会保留。确定吗？"
+            : $"将永久删除全部 {total} 条历史记录，无法撤销。确定吗？";
+
         var answer = MessageBox.Show(
             this,
-            $"将永久删除全部 {total} 条历史记录，无法撤销。确定吗？",
+            message,
             "清空全部历史",
             MessageBoxButton.OKCancel,
             MessageBoxImage.Warning,
@@ -388,10 +402,12 @@ public partial class LibraryWindow : Window
             return;
         }
 
-        DeleteOriginalsOf(_store.ImagesWithOriginals());
-        var removed = _store.DeleteAll();
+        DeleteOriginalsOf(_store.ImagesWithOriginals(keepFavorites, keepPinned));
+        var removed = _store.DeleteAll(keepFavorites, keepPinned);
         Reload();
-        Status($"已清空 {removed} 条");
+        Status(protectedCount > 0
+            ? $"已删除 {removed} 条，保留 {protectedCount} 条受保护"
+            : $"已清空 {removed} 条");
     }
 
     private void OnDeleteRange(object sender, RoutedEventArgs e)
@@ -412,9 +428,18 @@ public partial class LibraryWindow : Window
         var start = new DateTimeOffset(from.Date, DateTimeOffset.Now.Offset);
         var end = new DateTimeOffset(to.Date.AddDays(1).AddTicks(-1), DateTimeOffset.Now.Offset);
 
+        var guard = _settings();
+        var keepFavorites = guard.ProtectFavorites;
+        var keepPinned = guard.ProtectPinned;
+        var protectedInRange = _store.CountProtectedBetween(start, end, keepFavorites, keepPinned);
+        var rangeMessage = protectedInRange > 0
+            ? $"将永久删除 {from:yyyy-MM-dd} 至 {to:yyyy-MM-dd} 之间的全部记录，无法撤销。"
+                + $"其中受收藏/置顶保护的 {protectedInRange} 条会保留。确定吗？"
+            : $"将永久删除 {from:yyyy-MM-dd} 至 {to:yyyy-MM-dd} 之间的全部记录，无法撤销。确定吗？";
+
         var answer = MessageBox.Show(
             this,
-            $"将永久删除 {from:yyyy-MM-dd} 至 {to:yyyy-MM-dd} 之间的全部记录，无法撤销。确定吗？",
+            rangeMessage,
             "按时间段删除",
             MessageBoxButton.OKCancel,
             MessageBoxImage.Warning,
@@ -425,10 +450,12 @@ public partial class LibraryWindow : Window
             return;
         }
 
-        DeleteOriginalsOf(_store.ImagesCreatedBetween(start, end));
-        var removed = _store.DeleteCreatedBetween(start, end);
+        DeleteOriginalsOf(_store.ImagesCreatedBetween(start, end, keepFavorites, keepPinned));
+        var removed = _store.DeleteCreatedBetween(start, end, keepFavorites, keepPinned);
         Reload();
-        Status($"已删除 {removed} 条");
+        Status(protectedInRange > 0
+            ? $"已删除 {removed} 条，保留 {protectedInRange} 条受保护"
+            : $"已删除 {removed} 条");
     }
 
     /// <summary>Removes the files behind image entries that are about to go.</summary>

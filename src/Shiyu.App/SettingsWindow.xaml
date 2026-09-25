@@ -102,6 +102,12 @@
                                Foreground="{DynamicResource Brush.TextSecondary}"
                                FontSize="{DynamicResource Size.Secondary}" Margin="8,0,0,0" />
                 </StackPanel>
+                <CheckBox x:Name="ProtectFavorites" Content="收藏的条目不参与自动清理与批量删除"
+                          VerticalContentAlignment="Center" Margin="0,0,0,4"
+                          ToolTip="受保护的条目同时不显示删除入口；取消收藏即可删除"/>
+                <CheckBox x:Name="ProtectPinned" Content="置顶的条目不参与自动清理与批量删除"
+                          VerticalContentAlignment="Center" Margin="0,0,0,6"
+                          ToolTip="受保护的条目同时不显示删除入口；取消置顶即可删除"/>
                 <StackPanel Orientation="Horizontal">
                     <TextBlock Text="数据位置" Style="{StaticResource FieldLabel}" />
                     <TextBox x:Name="DataDirectory" Width="268" TextChanged="OnDataDirectoryChanged" />

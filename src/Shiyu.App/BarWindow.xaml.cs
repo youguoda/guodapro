@@ -97,6 +97,8 @@ internal sealed class RowKeyBadge : Border
 /// </summary>
 internal sealed class BarCardContainer : ListBoxItem
 {
+    private BarCard? _subscribed;
+
     public BarCardContainer()
     {
         // Recycling in a nutshell: the same container instance gets a new
@@ -122,6 +124,17 @@ internal sealed class BarCardContainer : ListBoxItem
             return;
         }
 
+        if (!ReferenceEquals(card, _subscribed))
+        {
+            if (_subscribed is not null)
+            {
+                _subscribed.PropertyChanged -= OnCardChanged;
+            }
+
+            _subscribed = card;
+            card.PropertyChanged += OnCardChanged;
+        }
+
         if (Window.GetWindow(this) is BarWindow host)
         {
             tray.Configure(card, host.ActionsFor(card));
@@ -137,6 +150,27 @@ internal sealed class BarCardContainer : ListBoxItem
 
         tray.Reset();
         handover?.Reset();
+
+        // Reconfigured while the pointer never left (favouriting flips delete
+        // protection): the tray reopens rather than snapping shut under the
+        // cursor waiting for an enter that will not come.
+        if (IsMouseOver)
+        {
+            tray.Open();
+        }
+    }
+
+    /// <summary>
+    /// Favouriting toggles delete protection, and the tray's actions are
+    /// chosen when the row was built — without this, a card starred a second
+    /// ago keeps showing the delete button the promise says is gone.
+    /// </summary>
+    private void OnCardChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(BarCard.Favorite))
+        {
+            PrepareTray();
+        }
     }
 }
 
@@ -1520,7 +1554,17 @@ internal partial class BarWindow : Window
     /// <summary>Which of the user's chosen actions this card can honour, in their order.</summary>
     public IReadOnlyList<string> ActionsFor(BarCard card)
         => HoverActions.AvailableFor(
-            HoverActions.Sanitise(_settings.BarActions), card.Kind, card.HasOriginal);
+            HoverActions.Sanitise(_settings.BarActions), card.Kind, card.HasOriginal,
+            DeleteIsProtected(card));
+
+    /// <summary>
+    /// Favourites and pins, under their protection switches, have no delete
+    /// entry point at all. The single clear-eyed delete — un-star first —
+    /// stays available, so there is no "cannot delete at all" dead end.
+    /// </summary>
+    private bool DeleteIsProtected(BarCard card)
+        => (_settings.ProtectFavorites && card.Favorite)
+            || (_settings.ProtectPinned && card.IsPinned);
 
     private void OnCardMouseEnter(object sender, MouseEventArgs e)
     {
@@ -1617,6 +1661,13 @@ internal partial class BarWindow : Window
                 break;
 
             case "delete":
+                // The keyboard path has no tray to hide; the guard answers
+                // for it what the hidden button answers for the mouse.
+                if (DeleteIsProtected(card))
+                {
+                    return;
+                }
+
                 _store.Delete(card.Id);
                 _browser.Forget(card.Id);
                 RemoveCard(card);

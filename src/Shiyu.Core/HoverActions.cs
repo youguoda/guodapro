@@ -76,8 +76,13 @@ public static class HoverActions
     /// a button that shows up only to report that it cannot work has already
     /// wasted the user's click.
     /// </summary>
+    /// <param name="deleteProtected">
+    /// True when deletion is off the table for this entry — a favourite or a
+    /// pin under protection. The delete action then vanishes rather than
+    /// greying out: a greyed delete is a button users keep poking.
+    /// </param>
     public static IReadOnlyList<string> AvailableFor(
-        IEnumerable<string> chosen, EntryKind kind, bool hasOriginal)
+        IEnumerable<string> chosen, EntryKind kind, bool hasOriginal, bool deleteProtected = false)
         => chosen.Where(id => id switch
         {
             // Stored text is plain; pasting "as plain text" means something
@@ -87,6 +92,8 @@ public static class HoverActions
             // Files carry their own paths to act on; images need the retained
             // original.
             "open" or "locate" => hasOriginal || kind == EntryKind.Files,
+
+            "delete" => !deleteProtected,
             _ => true,
         }).ToList();
 }

@@ -162,7 +162,8 @@ public partial class App : Application
             {
                 try
                 {
-                    service.Sweep(TimeSpan.FromDays(days));
+                    service.Sweep(
+                        TimeSpan.FromDays(days), _settings.ProtectFavorites, _settings.ProtectPinned);
                 }
                 catch (Exception)
                 {
@@ -366,7 +367,8 @@ public partial class App : Application
         if (_library is null)
         {
             _library = new LibraryWindow(
-                _store, _writer, _images!, () => new OpenAiCompatibleBackend(_settings.Backend), _icons!);
+                _store, _writer, _images!, () => new OpenAiCompatibleBackend(_settings.Backend), _icons!,
+                () => _settings);
             _library.Closed += (_, _) => _library = null;
             _library.Show();
         }

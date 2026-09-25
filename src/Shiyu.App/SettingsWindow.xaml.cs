@@ -58,6 +58,8 @@ public partial class SettingsWindow : Window
             : "尚未填写凭据，翻译功能需要它才能工作。";
 
         RetentionDays.Text = current.ImageRetentionDays.ToString();
+        ProtectFavorites.IsChecked = current.ProtectFavorites;
+        ProtectPinned.IsChecked = current.ProtectPinned;
         DataDirectory.Text = current.DataDirectoryOverride;
 
         ExclusionRules.Text = string.Join(
@@ -184,6 +186,8 @@ public partial class SettingsWindow : Window
             // retype a credential to change an unrelated setting.
             BackendApiKey = BackendKey.Password.Length > 0 ? BackendKey.Password : _current.BackendApiKey,
             ImageRetentionDays = retention,
+            ProtectFavorites = ProtectFavorites.IsChecked == true,
+            ProtectPinned = ProtectPinned.IsChecked == true,
             DataDirectoryOverride = directory,
             StartWithWindows = StartWithWindows.IsChecked == true,
             Theme = (AppTheme)ThemeChoice.SelectedIndex,

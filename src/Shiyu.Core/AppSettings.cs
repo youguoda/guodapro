@@ -33,6 +33,16 @@ public sealed record AppSettings
     public int ImageRetentionDays { get; init; } = 30;
 
     /// <summary>
+    /// Favourites survive retention sweeps and bulk deletes. On by default:
+    /// a starred entry is a promise the user made to themselves, and the
+    /// delete entry points for it disappear rather than grey out.
+    /// </summary>
+    public bool ProtectFavorites { get; init; } = true;
+
+    /// <summary>Pins survive retention sweeps and bulk deletes, like favourites.</summary>
+    public bool ProtectPinned { get; init; } = true;
+
+    /// <summary>
     /// A tray tool nobody starts is a tray tool nobody has; on by default,
     /// and the user can switch it off.
     /// </summary>

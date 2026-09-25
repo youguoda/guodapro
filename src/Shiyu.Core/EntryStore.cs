@@ -408,20 +408,22 @@ public sealed partial class EntryStore : IDisposable
     }
 
     /// <summary>Every image entry that still has an original on disk.</summary>
-    public IReadOnlyList<Entry> ImagesWithOriginals()
-        => ImagesWhere("original_path IS NOT NULL");
+    public IReadOnlyList<Entry> ImagesWithOriginals(bool keepFavorites = false, bool keepPinned = false)
+        => ImagesWhere($"original_path IS NOT NULL AND NOT ({ProtectedConditionFor(keepFavorites, keepPinned)})");
 
     /// <summary>Image entries with originals, created within the range.</summary>
-    public IReadOnlyList<Entry> ImagesCreatedBetween(DateTimeOffset from, DateTimeOffset to)
+    public IReadOnlyList<Entry> ImagesCreatedBetween(
+        DateTimeOffset from, DateTimeOffset to, bool keepFavorites = false, bool keepPinned = false)
     {
         using var command = _connection.CreateCommand();
-        command.CommandText = """
+        command.CommandText = $"""
             SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id,
                    (SELECT group_concat(t.name, char(31)) FROM tags t
                       JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
             WHERE kind = $kind AND original_path IS NOT NULL
-              AND created_at BETWEEN $from AND $to;
+              AND created_at BETWEEN $from AND $to
+              AND NOT ({ProtectedConditionFor(keepFavorites, keepPinned)});
             """;
         command.Parameters.AddWithValue("$kind", (int)EntryKind.Image);
         command.Parameters.AddWithValue("$from", from.ToUnixTimeMilliseconds());
@@ -446,15 +448,17 @@ public sealed partial class EntryStore : IDisposable
     }
 
     /// <summary>Image entries whose original is older than the cutoff.</summary>
-    public IReadOnlyList<Entry> ImagesWithOriginalsBefore(DateTimeOffset cutoff, int limit)
+    public IReadOnlyList<Entry> ImagesWithOriginalsBefore(
+        DateTimeOffset cutoff, int limit, bool keepFavorites = false, bool keepPinned = false)
     {
         using var command = _connection.CreateCommand();
-        command.CommandText = """
+        command.CommandText = $"""
             SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id,
                    (SELECT group_concat(t.name, char(31)) FROM tags t
                       JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
             WHERE kind = $kind AND original_path IS NOT NULL AND created_at < $cutoff
+              AND NOT ({ProtectedConditionFor(keepFavorites, keepPinned)})
             ORDER BY created_at ASC
             LIMIT $limit;
             """;
@@ -650,6 +654,32 @@ public sealed partial class EntryStore : IDisposable
         return Convert.ToInt32(command.ExecuteScalar());
     }
 
+    /// <summary>
+    /// How many entries the current protection settings would spare — the
+    /// number a confirmation owes the user before a bulk delete.
+    /// </summary>
+    public int CountProtected(bool keepFavorites, bool keepPinned)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = $"SELECT COUNT(*) FROM entries WHERE {ProtectedConditionFor(keepFavorites, keepPinned)};";
+        return Convert.ToInt32(command.ExecuteScalar());
+    }
+
+    /// <summary>The protected entries inside a time range — for a range delete's confirmation copy.</summary>
+    public int CountProtectedBetween(
+        DateTimeOffset from, DateTimeOffset to, bool keepFavorites, bool keepPinned)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT COUNT(*) FROM entries
+            WHERE created_at BETWEEN $from AND $to
+              AND {ProtectedConditionFor(keepFavorites, keepPinned)};
+            """;
+        command.Parameters.AddWithValue("$from", from.ToUnixTimeMilliseconds());
+        command.Parameters.AddWithValue("$to", to.ToUnixTimeMilliseconds());
+        return Convert.ToInt32(command.ExecuteScalar());
+    }
+
     /// <summary>Returns whether there was anything to delete.</summary>
     public bool Delete(long id)
     {
@@ -659,23 +689,58 @@ public sealed partial class EntryStore : IDisposable
         return command.ExecuteNonQuery() > 0;
     }
 
-    /// <summary>Deletes entries created within the range, both ends included.</summary>
-    public int DeleteCreatedBetween(DateTimeOffset from, DateTimeOffset to)
+    /// <summary>
+    /// Deletes entries created within the range, both ends included.
+    ///
+    /// Protected entries — favourites and pins, when their switches are on —
+    /// are spared: bulk deletes are the delete a user does not look at each
+    /// row of, which is exactly where a marker worth keeping should count.
+    /// </summary>
+    public int DeleteCreatedBetween(
+        DateTimeOffset from, DateTimeOffset to, bool keepFavorites = false, bool keepPinned = false)
     {
         using var command = _connection.CreateCommand();
-        command.CommandText = """
+        command.CommandText = $"""
             DELETE FROM entries
-            WHERE created_at BETWEEN $from AND $to;
+            WHERE created_at BETWEEN $from AND $to
+              AND NOT ({ProtectedConditionFor(keepFavorites, keepPinned)});
             """;
         command.Parameters.AddWithValue("$from", from.ToUnixTimeMilliseconds());
         command.Parameters.AddWithValue("$to", to.ToUnixTimeMilliseconds());
         return command.ExecuteNonQuery();
     }
 
-    public int DeleteAll()
+    /// <summary>
+    /// The SQL that says an entry is protected — literally, so any caller can
+    /// embed it without binding parameters by hand. The whole OR chain is
+    /// wrapped: unwrapped, SQL precedence would read
+    /// "range AND favourite" OR "pinned anywhere", which is not the promise.
+    /// </summary>
+    private static string ProtectedConditionFor(bool keepFavorites, bool keepPinned)
+    {
+        var clauses = new List<string>();
+        if (keepFavorites)
+        {
+            clauses.Add("(favorite = 1)");
+        }
+
+        if (keepPinned)
+        {
+            clauses.Add("(pinned = 1)");
+        }
+
+        return clauses.Count == 0 ? "0" : $"({string.Join(" OR ", clauses)})";
+    }
+
+    /// <summary>
+    /// Clears the history. Protected entries stay when their switches are on —
+    /// "clear everything" is exactly the moment a user would rather keep the
+    /// pile they so carefully starred — and the confirmation copy says so.
+    /// </summary>
+    public int DeleteAll(bool keepFavorites = false, bool keepPinned = false)
     {
         using var command = _connection.CreateCommand();
-        command.CommandText = "DELETE FROM entries;";
+        command.CommandText = $"DELETE FROM entries WHERE NOT ({ProtectedConditionFor(keepFavorites, keepPinned)});";
         return command.ExecuteNonQuery();
     }
 

@@ -29,13 +29,17 @@ public sealed class RetentionService(
     /// <summary>
     /// Removes originals older than <paramref name="retention"/>.
     ///
+    /// Protected entries — favourites and pins, when their switches are on —
+    /// keep their originals: what the user marked to keep outlasting the
+    /// sweep is the whole point of marking it.
+    ///
     /// Safe to interrupt at any point. The file is deleted before the entry
     /// forgets where it was, deliberately: crashing between the two leaves an
     /// entry pointing at a file that is gone, which every read path already
     /// copes with, and which the next sweep tidies. The other order would leave
     /// a file nothing references and nothing will ever clean up.
     /// </summary>
-    public RetentionResult Sweep(TimeSpan retention)
+    public RetentionResult Sweep(TimeSpan retention, bool keepFavorites = false, bool keepPinned = false)
     {
         var cutoff = clock.GetUtcNow() - retention;
         var removed = 0;
@@ -43,7 +47,7 @@ public sealed class RetentionService(
 
         while (true)
         {
-            var batch = store.ImagesWithOriginalsBefore(cutoff, BatchSize);
+            var batch = store.ImagesWithOriginalsBefore(cutoff, BatchSize, keepFavorites, keepPinned);
             if (batch.Count == 0)
             {
                 break;
