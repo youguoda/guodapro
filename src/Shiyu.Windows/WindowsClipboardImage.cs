@@ -33,6 +33,15 @@ public sealed class WindowsClipboardImage : IClipboardImage
     {
         try
         {
+            // Applications that draw with alpha — WeChat, browsers, the
+            // snipping tool — publish a PNG stream alongside the DIB, and
+            // WPF's GetImage reads their DIB as solid black. The PNG is read
+            // first: it is the exact image and needs no interpretation.
+            if (PngFromClipboard() is { } exact)
+            {
+                return new WindowsClipboardImage(exact);
+            }
+
             var bitmap = System.Windows.Clipboard.GetImage();
             if (bitmap is null)
             {
@@ -47,6 +56,49 @@ public sealed class WindowsClipboardImage : IClipboardImage
         {
             // Another process held the clipboard. Ordinary contention.
             return null;
+        }
+        catch (IOException)
+        {
+            // A PNG stream that does not decode is not worth keeping either.
+            return null;
+        }
+    }
+
+    private static BitmapSource? PngFromClipboard()
+    {
+        if (System.Windows.Clipboard.GetData("PNG") is not { } raw)
+        {
+            return null;
+        }
+
+        Stream? stream = raw as Stream;
+        if (raw is byte[] bytes)
+        {
+            stream = new MemoryStream(bytes);
+        }
+
+        if (stream is null || stream.Length == 0)
+        {
+            return null;
+        }
+
+        using (stream)
+        {
+            var decoded = BitmapFrame.Create(
+                stream, BitmapCreateOptions.None, BitmapCacheOption.OnLoad);
+
+            if (decoded.PixelWidth == 0 || decoded.PixelHeight == 0)
+            {
+                return null;
+            }
+
+            // A frame decoded from a stream keeps a live decoder that its own
+            // Freeze does not cover, so encoding on the background thread
+            // trips over thread affinity. Copying the bits into a
+            // WriteableBitmap detaches them from the decoder entirely.
+            var copy = new WriteableBitmap(decoded);
+            copy.Freeze();
+            return copy;
         }
     }
 

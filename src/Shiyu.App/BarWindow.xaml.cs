@@ -257,6 +257,9 @@ internal sealed class BarCard : INotifyPropertyChanged
         {
             _favorite = value;
             Changed(nameof(Favorite));
+            // The watermark binds the visibility, not the flag — without this
+            // the star never appears, and un-favouriting looks impossible.
+            Changed(nameof(FavoriteVisibility));
         }
     }
 
