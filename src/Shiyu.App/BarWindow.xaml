@@ -107,8 +107,15 @@
     </Window.Resources>
 
     <DockPanel>
+        <!--
+          Background dragging hangs off the window alone: a bubbling press
+          reaches it from anywhere unhandled. Wiring the same handler onto
+          these inner borders as well nests DragMove inside DragMove's own
+          modal loop, and the outer loop then waits forever for a mouse-up
+          the inner one consumed - the whole dispatcher freezes.
+        -->
         <Border x:Name="Header" DockPanel.Dock="Top" Background="{DynamicResource Brush.Surface}"
-                Padding="10,8" MouseLeftButtonDown="OnBackgroundPressed">
+                Padding="10,8">
             <StackPanel>
                 <TextBox x:Name="SearchBox" Padding="8,6" TextChanged="OnSearchChanged"
                          VerticalContentAlignment="Center"/>
@@ -138,7 +145,7 @@
         </Border>
 
         <Border DockPanel.Dock="Bottom" Background="{DynamicResource Brush.Surface}"
-                Padding="10,4" MouseLeftButtonDown="OnBackgroundPressed">
+                Padding="10,4">
             <Grid>
                 <TextBlock x:Name="CountLabel" FontSize="{DynamicResource Size.Hint}"
                            Foreground="{DynamicResource Brush.TextTertiary}"
