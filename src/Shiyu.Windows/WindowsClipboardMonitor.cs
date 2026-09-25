@@ -78,7 +78,7 @@ public sealed class WindowsClipboardMonitor : IClipboardMonitor, IDisposable
 
         // The foreground window is read first: opening the clipboard can take
         // several attempts, by which time focus may have moved on.
-        var sourceApp = ForegroundProcessName();
+        var (sourceApp, sourceExe) = ForegroundProcess();
 
         var reading = ReadClipboard();
 
@@ -87,7 +87,10 @@ public sealed class WindowsClipboardMonitor : IClipboardMonitor, IDisposable
             // Text supersedes whatever image came before it, so the next image
             // is judged fresh rather than against something long gone.
             _lastImageFingerprint = null;
-            Changed?.Invoke(new ClipboardSnapshot(reading.Value.Text, sourceApp, reading.Value.Excluded));
+            Changed?.Invoke(new ClipboardSnapshot(reading.Value.Text, sourceApp, reading.Value.Excluded)
+            {
+                SourceExePath = sourceExe,
+            });
             return;
         }
 
@@ -112,7 +115,11 @@ public sealed class WindowsClipboardMonitor : IClipboardMonitor, IDisposable
         }
 
         _lastImageFingerprint = fingerprint;
-        Changed?.Invoke(new ClipboardSnapshot(string.Empty, sourceApp, IsExcluded(reading)) { Image = image });
+        Changed?.Invoke(new ClipboardSnapshot(string.Empty, sourceApp, IsExcluded(reading))
+        {
+            Image = image,
+            SourceExePath = sourceExe,
+        });
     }
 
     private readonly record struct Reading(string Text, bool Excluded);
@@ -222,27 +229,51 @@ public sealed class WindowsClipboardMonitor : IClipboardMonitor, IDisposable
         }
     }
 
-    private static string? ForegroundProcessName()
+    /// <summary>
+    /// The foreground application's process name and executable path. The path
+    /// is taken now — while the process is alive — because that is the only
+    /// moment its icon is guaranteed extractable, and an uninstalled
+    /// application's history should still show the icon it had.
+    /// </summary>
+    private static (string? Name, string? ExePath) ForegroundProcess()
     {
         var foreground = NativeMethods.GetForegroundWindow();
         if (foreground == IntPtr.Zero)
         {
-            return null;
+            return (null, null);
         }
 
         if (NativeMethods.GetWindowThreadProcessId(foreground, out var processId) == 0)
         {
-            return null;
+            return (null, null);
         }
 
         try
         {
             using var process = Process.GetProcessById((int)processId);
-            return process.ProcessName;
+            return (process.ProcessName, TryExecutablePath(process));
         }
         catch (ArgumentException)
         {
             // The process ended between reading its id and opening it.
+            return (null, null);
+        }
+        catch (InvalidOperationException)
+        {
+            return (null, null);
+        }
+    }
+
+    private static string? TryExecutablePath(Process process)
+    {
+        try
+        {
+            return process.MainModule?.FileName;
+        }
+        catch (Win32Exception)
+        {
+            // Elevated or protected processes keep their modules to
+            // themselves; the entry is still recorded, the icon is not.
             return null;
         }
         catch (InvalidOperationException)

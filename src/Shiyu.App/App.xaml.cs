@@ -75,7 +75,8 @@ public partial class App : Application
         _exclusions = _settings.BuildExclusionPolicy();
         _images = new ImageArchive(AppPaths.ImageDirectory);
         _pipeline = new ClipboardPipeline(
-            _clipboard, _store, TimeProvider.System, _exclusions, _images);
+            _clipboard, _store, TimeProvider.System, _exclusions, _images,
+            icons: new SourceIconCache(_store, new WindowsSourceIcons()));
         _pipeline.ImageFailed += reason
             => _tray?.ShowNotification("拾语", $"复制的图片没能保存：{reason}");
 

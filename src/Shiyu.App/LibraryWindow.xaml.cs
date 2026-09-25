@@ -32,6 +32,9 @@ public partial class LibraryWindow : Window
     private readonly Func<IStreamingModel> _model;
     private readonly HistoryBrowser _browser;
     private readonly ObservableCollection<EntryItem> _items = [];
+
+    /// <summary>One decoded icon per application; see <see cref="IconFor"/>.</summary>
+    private readonly Dictionary<string, ImageSource?> _iconCache = [];
     private readonly DispatcherTimer _searchDebounce;
 
     /// <summary>The "no tag filter" choice, shown as the first item.</summary>
@@ -84,8 +87,30 @@ public partial class LibraryWindow : Window
     {
         foreach (var entry in entries)
         {
-            _items.Add(EntryItem.From(entry));
+            _items.Add(EntryItem.From(entry, IconFor));
         }
+    }
+
+    /// <summary>
+    /// Decodes each application's icon once per window, not once per row: the
+    /// same handful of applications appear throughout the list, and the list
+    /// asks for icons again on every filter change.
+    /// </summary>
+    private ImageSource? IconFor(string? sourceApp)
+    {
+        if (string.IsNullOrEmpty(sourceApp))
+        {
+            return null;
+        }
+
+        if (_iconCache.TryGetValue(sourceApp, out var cached))
+        {
+            return cached;
+        }
+
+        var icon = EntryItem.Decode(_store.ApplicationIcon(sourceApp), pixelWidth: 16);
+        _iconCache[sourceApp] = icon;
+        return icon;
     }
 
     private void UpdateChrome()
@@ -527,6 +552,7 @@ public partial class LibraryWindow : Window
         string Preview,
         string Meta,
         ImageSource? Thumbnail,
+        ImageSource? Icon,
         string? OriginalPath,
         bool IsPinned)
     {
@@ -535,10 +561,17 @@ public partial class LibraryWindow : Window
         public Visibility ThumbnailVisibility =>
             Thumbnail is null ? Visibility.Collapsed : Visibility.Visible;
 
+        /// <summary>An application with no findable icon gets Shiyu's own mark, never a hole.</summary>
+        public Visibility IconVisibility =>
+            Icon is null ? Visibility.Collapsed : Visibility.Visible;
+
+        public Visibility FallbackIconVisibility =>
+            Icon is null ? Visibility.Visible : Visibility.Collapsed;
+
         /// <summary>True while the full-size image is still on disk.</summary>
         public bool CanDrag => OriginalPath is { Length: > 0 } path && File.Exists(path);
 
-        public static EntryItem From(Entry entry)
+        public static EntryItem From(Entry entry, Func<string?, ImageSource?> iconOf)
         {
             var collapsed = string.Join(' ', entry.Text.Split(
                 ['\r', '\n', '\t'],
@@ -558,12 +591,14 @@ public partial class LibraryWindow : Window
                 entry.Text,
                 preview,
                 $"{entry.CreatedAt.ToLocalTime():yyyy-MM-dd HH:mm}  ·  {source}  ·  {tail}{tags}",
-                Decode(entry.ThumbnailPng),
+                Decode(entry.ThumbnailPng, pixelWidth: 240),
+                iconOf(entry.SourceApp),
                 entry.OriginalPath,
                 entry.IsPinned);
         }
 
-        private static ImageSource? Decode(byte[]? png)
+        /// <summary>Shared with the window, which decodes application icons the same way.</summary>
+        internal static ImageSource? Decode(byte[]? png, int pixelWidth = 0)
         {
             if (png is null or { Length: 0 })
             {
@@ -575,6 +610,15 @@ public partial class LibraryWindow : Window
                 var bitmap = new BitmapImage();
                 bitmap.BeginInit();
                 bitmap.CacheOption = BitmapCacheOption.OnLoad;
+
+                // Decoded at the display size rather than the stored size: a
+                // 32px icon shown at 16px needs a quarter of the memory, and a
+                // list full of rows has no use for the other three quarters.
+                if (pixelWidth > 0)
+                {
+                    bitmap.DecodePixelWidth = pixelWidth;
+                }
+
                 bitmap.StreamSource = new MemoryStream(png);
                 bitmap.EndInit();
 

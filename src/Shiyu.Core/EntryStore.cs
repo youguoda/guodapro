@@ -36,7 +36,7 @@ public sealed partial class EntryStore : IDisposable
     /// <summary>
     /// The shape the code expects. Bumped whenever a migration is added below.
     /// </summary>
-    private const int SchemaVersion = 3;
+    private const int SchemaVersion = 4;
 
     /// <summary>
     /// Joins tag names into one column. A unit separator, because it cannot
@@ -109,6 +109,20 @@ public sealed partial class EntryStore : IDisposable
             Execute("CREATE INDEX IF NOT EXISTS idx_entry_tags_tag ON entry_tags (tag_id);");
         }
 
+        if (from < 4)
+        {
+            // One row per source application: its icon, or a tombstone saying
+            // none was found. A thousand entries share one cached copy, and an
+            // uninstalled application keeps showing what was extracted while
+            // it was still alive.
+            Execute("""
+                CREATE TABLE IF NOT EXISTS applications (
+                    name TEXT PRIMARY KEY,
+                    icon BLOB NULL
+                );
+                """);
+        }
+
         if (from != SchemaVersion)
         {
             Execute($"PRAGMA user_version = {SchemaVersion};");
@@ -148,6 +162,44 @@ public sealed partial class EntryStore : IDisposable
 
         var id = (long)command.ExecuteScalar()!;
         return new Entry(id, text, sourceApp, createdAt);
+    }
+
+    /// <summary>
+    /// Whether the application has a row in the icon store — including a
+    /// tombstone row for an icon that could not be found.
+    /// </summary>
+    public bool HasApplicationIcon(string name)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM applications WHERE name = $name;";
+        command.Parameters.AddWithValue("$name", name);
+        return Convert.ToInt64(command.ExecuteScalar()) > 0;
+    }
+
+    /// <summary>The cached icon's PNG bytes, or null when none was found.</summary>
+    public byte[]? ApplicationIcon(string name)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = "SELECT icon FROM applications WHERE name = $name;";
+        command.Parameters.AddWithValue("$name", name);
+        var result = command.ExecuteScalar();
+        return result is byte[] png ? png : null;
+    }
+
+    /// <summary>
+    /// Stores the icon row, ignoring the call when one already exists — see
+    /// <see cref="SourceIconCache"/> for why a race must not overwrite.
+    /// </summary>
+    public void SaveApplicationIcon(string name, byte[]? png)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = """
+            INSERT OR IGNORE INTO applications (name, icon)
+            VALUES ($name, $icon);
+            """;
+        command.Parameters.AddWithValue("$name", name);
+        command.Parameters.AddWithValue("$icon", (object?)png ?? DBNull.Value);
+        command.ExecuteNonQuery();
     }
 
     /// <summary>

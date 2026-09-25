@@ -13,6 +13,7 @@ public sealed class ClipboardPipeline : IDisposable
     private readonly TimeProvider _clock;
     private ExclusionPolicy _exclusions;
     private readonly ImageArchive? _images;
+    private readonly SourceIconCache? _icons;
 
     /// <summary>
     /// Raised after an entry is recorded, when its content is the kind a user
@@ -36,13 +37,15 @@ public sealed class ClipboardPipeline : IDisposable
         EntryStore store,
         TimeProvider clock,
         ExclusionPolicy exclusions,
-        ImageArchive? images = null)
+        ImageArchive? images = null,
+        SourceIconCache? icons = null)
     {
         _clipboard = clipboard;
         _store = store;
         _clock = clock;
         _exclusions = exclusions;
         _images = images;
+        _icons = icons;
         _clipboard.Changed += OnClipboardChanged;
     }
 
@@ -61,6 +64,12 @@ public sealed class ClipboardPipeline : IDisposable
         {
             return;
         }
+
+        // The copy is now definitely going to be an entry, so this is the
+        // moment to make sure its source application has a cached icon — the
+        // executable is at hand and alive. Ensure swallows its own failures;
+        // recording never depends on it.
+        _icons?.Ensure(snapshot.SourceApp, snapshot.SourceExePath);
 
         if (snapshot.Image is { } image && _images is not null)
         {

@@ -316,4 +316,23 @@ internal static class NativeMethods
     [DllImport("user32.dll", SetLastError = true)]
     internal static extern bool SystemParametersInfo(int action, uint parameter, out bool state, uint winIni);
 
+    internal const uint ShgfiIcon = 0x00000100;
+    internal const uint ShgfiLargeIcon = 0x0;
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    internal struct ShFileInfo
+    {
+        public IntPtr hIcon;
+        public int iIcon;
+        public uint dwAttributes;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string DisplayName;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 80)] public string TypeName;
+    }
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    internal static extern IntPtr SHGetFileInfoW(string path, uint attributes, ref ShFileInfo info, uint size, uint flags);
+
+    [DllImport("user32.dll")]
+    internal static extern bool DestroyIcon(IntPtr icon);
+
 }

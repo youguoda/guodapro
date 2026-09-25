@@ -28,4 +28,12 @@ public sealed record ClipboardSnapshot(string Text, string? SourceApp, bool Excl
 {
     /// <summary>Set when an image was copied rather than text.</summary>
     public IClipboardImage? Image { get; init; }
+
+    /// <summary>
+    /// The foreground application's executable, taken at copy time — the only
+    /// moment the icon of an application that might later be uninstalled is
+    /// guaranteed to be extractable. Belongs to the snapshot for the same
+    /// reason <see cref="SourceApp"/> does.
+    /// </summary>
+    public string? SourceExePath { get; init; }
 }
