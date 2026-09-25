@@ -124,6 +124,10 @@ public partial class OverlayWindow : Window
     public Point PanelCentreOnScreen
         => Panel.PointToScreen(new Point(Panel.Width / 2, Panel.Height / 2));
 
+    /// <summary>The panel's top-left corner in physical screen pixels.</summary>
+    public Point PanelTopLeftOnScreen
+        => Panel.PointToScreen(new Point(0, 0));
+
     /// <summary>
     /// What WPF itself thinks is under a point inside the overlay. If WPF finds
     /// the panel but Windows does not, the problem is OS-level hit-testing

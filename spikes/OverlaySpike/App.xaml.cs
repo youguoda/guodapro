@@ -28,7 +28,12 @@ public partial class App : Application
 
         var selfTestPath = ReadSelfTestPath(e.Args);
 
-        _underlay = new UnderlayWindow { Left = 120, Top = 120 };
+        // Topmost so the probe points have a deterministic owner: a normal
+        // stand-in window ends up below whatever maximized window the user has
+        // open, and WindowFromPoint then reports that app instead — an
+        // occlusion problem, not a pass-through failure. Within the topmost
+        // band the overlay still wins, being shown after.
+        _underlay = new UnderlayWindow { Left = 120, Top = 120, Topmost = true };
         _underlay.Reported = Note;
         _underlay.Show();
 
@@ -152,9 +157,18 @@ public partial class App : Application
         var onUnderlay = _underlay!.PointToScreen(new Point(60, 300));
         var overUnderlay = new Native.Point { X = (int)onUnderlay.X, Y = (int)onUnderlay.Y };
 
-        // A point inside the overlay's bounds but over neither — the curve area.
-        var onNothing = _underlay.PointToScreen(new Point(600, 40));
-        var overNothing = new Native.Point { X = (int)onNothing.X, Y = (int)onNothing.Y };
+        // A blank point derived from the panel's actual position, not picked as
+        // a constant: the panel moves with the source row, and an earlier round
+        // probed a hand-picked point that the relocated panel had come to cover.
+        // Sixty physical pixels left of the panel's top-left corner clears the
+        // panel, the endpoint dot, and the connector's horizontal approach
+        // (which arrives at the panel's vertical centre).
+        var panelOrigin = _overlay!.PanelTopLeftOnScreen;
+        var overNothing = new Native.Point
+        {
+            X = Math.Max((int)Math.Round(panelOrigin.X) - 60, 8),
+            Y = (int)Math.Round(panelOrigin.Y + 10),
+        };
 
         Line("--- 命中测试（问 Windows 自己：这一点的点击会落到哪个窗口）---");
         var atPanel = Native.WindowFromPoint(panelCentre);
@@ -167,7 +181,14 @@ public partial class App : Application
         Line("");
 
         var panelClickable = atPanel == overlay;
-        var passesThrough = atUnderlay == underlay;
+
+        // The property under test is that the overlay does not eat the click,
+        // not which of the windows below it happens to be topmost at that
+        // point: with a foreign window overlapping the stand-in,
+        // WindowFromPoint legitimately returns that window. Whether the
+        // stand-in itself was reached is reported as evidence, not required.
+        var passesThrough = atUnderlay != overlay;
+        var underlayReached = atUnderlay == underlay;
         var blankPassesThrough = atNothing != overlay;
 
         // A locked screen, a screensaver or a full-screen window above us makes
@@ -182,7 +203,8 @@ public partial class App : Application
         }
 
         Line($"面板可点击              : {(panelClickable ? "是" : "否")}");
-        Line($"面板之外穿透到下层应用  : {(passesThrough ? "是" : "否")}");
+        Line($"面板之外穿透到下层应用  : {(passesThrough ? "是" : "否")}"
+            + (underlayReached ? "" : "（下层窗口被其它应用遮挡，但点击未落在覆盖层）"));
         Line($"覆盖层空白处不拦截      : {(blankPassesThrough ? "是" : "否")}");
         Line($"整体结论                : {(panelClickable && passesThrough && blankPassesThrough ? "成立" : "不成立")}");
 
