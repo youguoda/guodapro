@@ -101,6 +101,13 @@ internal sealed class BarCardContainer : ListBoxItem
         // Recycling in a nutshell: the same container instance gets a new
         // row's DataContext.
         DataContextChanged += (_, _) => PrepareTray();
+
+        // First realization has a hole the DataContext event cannot cover: it
+        // fires before the template applies, when the tray does not exist in
+        // the tree yet. Loaded fires once the visual tree is in place, which
+        // is the first moment the tray can actually be configured. Without
+        // this retry, every freshly realized row ends up with an empty tray.
+        Loaded += (_, _) => PrepareTray();
     }
 
     public void PrepareTray()
