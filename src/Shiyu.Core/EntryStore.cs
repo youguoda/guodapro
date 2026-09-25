@@ -39,7 +39,7 @@ public sealed partial class EntryStore : IDisposable
     /// <summary>
     /// The shape the code expects. Bumped whenever a migration is added below.
     /// </summary>
-    private const int SchemaVersion = 6;
+    private const int SchemaVersion = 7;
 
     /// <summary>
     /// Joins tag names into one column. A unit separator, because it cannot
@@ -139,6 +139,13 @@ public sealed partial class EntryStore : IDisposable
             // formatting. Existing rows have none, and stay as they are.
             Execute("ALTER TABLE entries ADD COLUMN html TEXT NULL;");
             Execute("ALTER TABLE entries ADD COLUMN rtf TEXT NULL;");
+        }
+
+        if (from < 7)
+        {
+            // A file copy's paths, newline-joined and capped. Existing rows
+            // have none, and stay as they are.
+            Execute("ALTER TABLE entries ADD COLUMN files TEXT NULL;");
         }
 
         if (from != SchemaVersion)
@@ -257,6 +264,38 @@ public sealed partial class EntryStore : IDisposable
     }
 
     /// <summary>
+    /// Records a file copy: the label is what the list shows, the paths are
+    /// what a paste back needs, already capped by the caller.
+    /// </summary>
+    public Entry AppendFiles(
+        IReadOnlyList<string> paths,
+        string? sourceApp,
+        DateTimeOffset createdAt)
+    {
+        var capped = paths.Count > FileEntries.Cap;
+        var kept = FileEntries.WithinCap(paths, out _);
+        var label = FileEntries.Label(paths, capped);
+
+        using var command = _connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO entries (text, source_app, created_at, kind, files)
+            VALUES ($label, $sourceApp, $createdAt, 2, $files)
+            RETURNING id;
+            """;
+        command.Parameters.AddWithValue("$label", label);
+        command.Parameters.AddWithValue("$sourceApp", (object?)sourceApp ?? DBNull.Value);
+        command.Parameters.AddWithValue("$createdAt", createdAt.ToUnixTimeMilliseconds());
+        command.Parameters.AddWithValue("$files", string.Join("\n", kept));
+
+        var id = (long)command.ExecuteScalar()!;
+        return new Entry(id, label, sourceApp, createdAt)
+        {
+            Kind = EntryKind.Files,
+            Files = kept,
+        };
+    }
+
+    /// <summary>
     /// Whether the application has a row in the icon store — including a
     /// tombstone row for an icon that could not be found.
     /// </summary>
@@ -348,7 +387,7 @@ public sealed partial class EntryStore : IDisposable
     {
         using var command = _connection.CreateCommand();
         command.CommandText = """
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf,
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files,
                    (SELECT group_concat(t.name, char(31)) FROM tags t
                       JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
@@ -366,7 +405,7 @@ public sealed partial class EntryStore : IDisposable
     {
         using var command = _connection.CreateCommand();
         command.CommandText = $"""
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf,
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files,
                    (SELECT group_concat(t.name, char(31)) FROM tags t
                       JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
@@ -382,7 +421,7 @@ public sealed partial class EntryStore : IDisposable
     {
         using var command = _connection.CreateCommand();
         command.CommandText = """
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf,
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files,
                    (SELECT group_concat(t.name, char(31)) FROM tags t
                       JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
@@ -446,7 +485,7 @@ public sealed partial class EntryStore : IDisposable
 
         using var command = _connection.CreateCommand();
         command.CommandText = """
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf,
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files,
                    (SELECT group_concat(t.name, char(31)) FROM tags t
                       JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
@@ -526,7 +565,7 @@ public sealed partial class EntryStore : IDisposable
         var where = conditions.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", conditions);
 
         command.CommandText = $"""
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf,
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files,
                    (SELECT group_concat(t.name, char(31)) FROM tags t
                       JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
@@ -549,7 +588,7 @@ public sealed partial class EntryStore : IDisposable
     {
         using var command = _connection.CreateCommand();
         command.CommandText = """
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf,
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files,
                    (SELECT group_concat(t.name, char(31)) FROM tags t
                       JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
@@ -622,7 +661,7 @@ public sealed partial class EntryStore : IDisposable
     {
         using var command = _connection.CreateCommand();
         command.CommandText = """
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf,
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files,
                    (SELECT group_concat(t.name, char(31)) FROM tags t
                       JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
@@ -659,12 +698,15 @@ public sealed partial class EntryStore : IDisposable
                 Subtype = ParseSubtype(reader.IsDBNull(8) ? null : reader.GetString(8)),
                 Html = reader.IsDBNull(9) ? null : reader.GetString(9),
                 Rtf = reader.IsDBNull(10) ? null : reader.GetString(10),
+                Files = reader.IsDBNull(11) || reader.GetString(11).Length == 0
+                    ? []
+                    : reader.GetString(11).Split('\n'),
 
                 // Joined in rather than fetched per row: a list of a hundred
                 // entries would otherwise be a hundred extra queries.
-                Tags = reader.IsDBNull(11)
+                Tags = reader.IsDBNull(12)
                     ? []
-                    : reader.GetString(11).Split(TagSeparator, StringSplitOptions.RemoveEmptyEntries),
+                    : reader.GetString(12).Split(TagSeparator, StringSplitOptions.RemoveEmptyEntries),
             });
         }
 

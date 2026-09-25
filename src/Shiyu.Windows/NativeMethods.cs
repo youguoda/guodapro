@@ -28,6 +28,8 @@ internal static class NativeMethods
 
     internal const uint CfUnicodeText = 13;
 
+    internal const uint CfHdrop = 15;
+
     internal const uint NimAdd = 0x00000000;
     internal const uint NimModify = 0x00000001;
     internal const uint NimDelete = 0x00000002;

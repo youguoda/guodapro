@@ -140,6 +140,62 @@ public sealed class WindowsClipboardWriter(MessageWindow window)
         }
     }
 
+    /// <summary>
+    /// Writes a file list back as CF_HDROP, so a paste into Explorer produces
+    /// the files themselves.
+    /// </summary>
+    public bool SetFiles(IReadOnlyList<string> paths)
+    {
+        if (paths.Count == 0)
+        {
+            return false;
+        }
+
+        for (var attempt = 0; attempt < OpenAttempts; attempt++)
+        {
+            if (!NativeMethods.OpenClipboard(window.Handle))
+            {
+                Thread.Sleep(RetryDelay);
+                continue;
+            }
+
+            try
+            {
+                if (!NativeMethods.EmptyClipboard())
+                {
+                    return false;
+                }
+
+                // DROPFILES: a 20-byte header whose offset field points past
+                // itself, followed by a wide double-null-terminated list.
+                var list = new System.Text.StringBuilder();
+                foreach (var path in paths)
+                {
+                    list.Append(path).Append('\0');
+                }
+
+                list.Append('\0');
+                var content = System.Text.Encoding.Unicode.GetBytes(list.ToString());
+
+                var bytes = new byte[20 + content.Length];
+                BitConverter.GetBytes(20).CopyTo(bytes, 0);
+                BitConverter.GetBytes(1).CopyTo(bytes, 16); // fWide
+
+                content.CopyTo(bytes, 20);
+
+                var handle = AllocateBytes(bytes);
+                return handle != IntPtr.Zero
+                    && NativeMethods.SetClipboardData(NativeMethods.CfHdrop, handle) != IntPtr.Zero;
+            }
+            finally
+            {
+                NativeMethods.CloseClipboard();
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>Leaves the clipboard empty, as opposed to holding an empty string.</summary>
     public bool Clear()
     {

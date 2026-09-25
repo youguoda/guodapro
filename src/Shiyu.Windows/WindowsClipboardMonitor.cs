@@ -102,6 +102,20 @@ public sealed class WindowsClipboardMonitor : IClipboardMonitor, IDisposable
             return;
         }
 
+        // No usable text. Files are the next thing worth keeping: a copy in
+        // Explorer publishes CF_HDROP and nothing else. Read while the
+        // clipboard is open, like the image, because there is no second chance.
+        if (ReadFileDrop() is { Count: > 0 } files)
+        {
+            _lastImageFingerprint = null;
+            Changed?.Invoke(new ClipboardSnapshot(string.Empty, sourceApp, IsExcluded(reading))
+            {
+                Files = files,
+                SourceExePath = sourceExe,
+            });
+            return;
+        }
+
         // No usable text. An image is the other thing worth keeping, and is
         // grabbed now rather than later: the clipboard is about to change again
         // and there is no second chance at it.
@@ -131,6 +145,61 @@ public sealed class WindowsClipboardMonitor : IClipboardMonitor, IDisposable
     }
 
     private readonly record struct Reading(string Text, bool Excluded, string? Html, string? Rtf);
+
+    /// <summary>
+    /// The CF_HDROP file list, when the clipboard carries one. Requires the
+    /// clipboard to already be open.
+    /// </summary>
+    private static IReadOnlyList<string> ReadFileDrop()
+    {
+        var handle = NativeMethods.GetClipboardData(NativeMethods.CfHdrop);
+        if (handle == IntPtr.Zero)
+        {
+            return [];
+        }
+
+        var pointer = NativeMethods.GlobalLock(handle);
+        if (pointer == IntPtr.Zero)
+        {
+            return [];
+        }
+
+        try
+        {
+            // DROPFILES: a DWORD offset to the list, then a flag saying whether
+            // the list is wide chars. The list itself is double-null terminated.
+            var offset = Marshal.ReadInt32(pointer);
+            var wide = Marshal.ReadInt32(pointer, 4) != 0;
+            var list = pointer + offset;
+
+            var paths = new List<string>();
+            var step = 0;
+
+            while (true)
+            {
+                var path = wide
+                    ? Marshal.PtrToStringUni(list + step * 2)
+                    : Marshal.PtrToStringAnsi(list + step);
+                if (string.IsNullOrEmpty(path))
+                {
+                    break;
+                }
+
+                paths.Add(path);
+
+                // Advances in list units: wide chars for the wide form; for
+                // the legacy ANSI form the converted length is the byte count
+                // for the paths that still use it (ASCII ones, in practice).
+                step += path.Length + 1;
+            }
+
+            return paths;
+        }
+        finally
+        {
+            NativeMethods.GlobalUnlock(handle);
+        }
+    }
 
     /// <summary>An exclusion marker applies to the whole clipboard, images included.</summary>
     private static bool IsExcluded(Reading? reading) => reading?.Excluded ?? false;

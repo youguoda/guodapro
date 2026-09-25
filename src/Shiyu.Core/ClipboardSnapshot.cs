@@ -46,4 +46,10 @@ public sealed record ClipboardSnapshot(string Text, string? SourceApp, bool Excl
 
     /// <summary>The copy's RTF form, when the source published one.</summary>
     public string? Rtf { get; init; }
+
+    /// <summary>
+    /// The paths of a file copy, when the clipboard carried CF_HDROP instead of
+    /// text or a bitmap. One copy of any number of files is one snapshot.
+    /// </summary>
+    public IReadOnlyList<string>? Files { get; init; }
 }

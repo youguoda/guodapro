@@ -4,6 +4,7 @@ public enum EntryKind
 {
     Text,
     Image,
+    Files,
 }
 
 /// <summary>
@@ -35,6 +36,12 @@ public sealed record Entry(
 
     /// <summary>The copy's RTF form, when the source published one instead of HTML.</summary>
     public string? Rtf { get; init; }
+
+    /// <summary>The paths of a file copy, capped at <see cref="FileEntries.Cap"/>. Empty for other kinds.</summary>
+    public IReadOnlyList<string> Files { get; init; } = [];
+
+    /// <summary>The file paths that still exist, checked lazily for display.</summary>
+    public IReadOnlyList<string> AliveFiles => Files.Where(File.Exists).ToList();
 
     public byte[]? ThumbnailPng { get; init; }
 

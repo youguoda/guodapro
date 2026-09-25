@@ -73,7 +73,10 @@ public static class HoverActions
             // Stored text is plain; pasting "as plain text" means something
             // only where formatted content could have been.
             "plain" => kind == EntryKind.Text,
-            "open" or "locate" => hasOriginal,
+
+            // Files carry their own paths to act on; images need the retained
+            // original.
+            "open" or "locate" => hasOriginal || kind == EntryKind.Files,
             _ => true,
         }).ToList();
 }

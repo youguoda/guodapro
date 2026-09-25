@@ -79,7 +79,8 @@
                     Background="{DynamicResource Brush.Surface}"
                     BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1"
                     Padding="10,8" MouseLeftButtonDown="OnCardPressed"
-                    MouseEnter="OnCardMouseEnter" MouseLeave="OnCardMouseLeave">
+                    MouseEnter="OnCardMouseEnter" MouseLeave="OnCardMouseLeave"
+                    MouseMove="OnCardMouseMove">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -137,6 +138,41 @@
                             <Image Source="{Binding Thumbnail}" Stretch="Uniform"
                                    RenderOptions.BitmapScalingMode="HighQuality"/>
                         </Border>
+                        <!-- Files: type icon per row, dead paths struck through
+                             and faded — a path that is gone says so in the
+                             list, not after a paste that produced nothing. -->
+                        <StackPanel x:Name="FilesBody" Visibility="{Binding FilesVisibility}">
+                            <ItemsControl ItemsSource="{Binding FileRows}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal" Margin="0,1">
+                                            <Image Source="{Binding Icon}" Width="16" Height="16"
+                                                   Margin="0,0,6,0" VerticalAlignment="Center"
+                                                   RenderOptions.BitmapScalingMode="HighQuality"/>
+                                            <TextBlock x:Name="RowName" Text="{Binding Name}"
+                                                       FontSize="{DynamicResource Size.Secondary}"
+                                                       Foreground="{DynamicResource Brush.Text}"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock x:Name="RowDead" Text="（路径不存在）"
+                                                       FontSize="{DynamicResource Size.Hint}"
+                                                       Foreground="{DynamicResource Brush.Danger}"
+                                                       Margin="6,0,0,0" VerticalAlignment="Center"
+                                                       Visibility="{Binding DeadVisibility}"/>
+                                        </StackPanel>
+                                        <DataTemplate.Triggers>
+                                            <DataTrigger Binding="{Binding Dead}" Value="True">
+                                                <Setter TargetName="RowName" Property="TextDecorations"
+                                                        Value="Strikethrough"/>
+                                                <Setter TargetName="RowName" Property="Opacity" Value="0.5"/>
+                                            </DataTrigger>
+                                        </DataTemplate.Triggers>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <TextBlock FontSize="{DynamicResource Size.Hint}"
+                                       Foreground="{DynamicResource Brush.TextTertiary}"
+                                       Margin="0,2,0,0" Text="{Binding FileTail}"/>
+                        </StackPanel>
                     </DockPanel>
 
                     <!-- Watermarks: quiet, bottom-right, never in the way. -->
@@ -149,8 +185,14 @@
             <DataTemplate.Triggers>
                 <DataTrigger Binding="{Binding Kind}" Value="Image">
                     <Setter TargetName="TextBody" Property="Visibility" Value="Collapsed"/>
+                    <Setter TargetName="FilesBody" Property="Visibility" Value="Collapsed"/>
                 </DataTrigger>
                 <DataTrigger Binding="{Binding Kind}" Value="Text">
+                    <Setter TargetName="ImageBody" Property="Visibility" Value="Collapsed"/>
+                    <Setter TargetName="FilesBody" Property="Visibility" Value="Collapsed"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Kind}" Value="Files">
+                    <Setter TargetName="TextBody" Property="Visibility" Value="Collapsed"/>
                     <Setter TargetName="ImageBody" Property="Visibility" Value="Collapsed"/>
                 </DataTrigger>
                 <DataTrigger Binding="{Binding IsSelected}" Value="True">
@@ -190,6 +232,7 @@
                             <ComboBoxItem Content="全部" />
                             <ComboBoxItem Content="文本" />
                             <ComboBoxItem Content="图片" />
+                            <ComboBoxItem Content="文件" />
                         </ComboBox>
                         <!-- Arrows: cycle the type filter. -->
                         <Border x:Name="KindKeyBadge" Style="{StaticResource KeyBadge}"

@@ -36,6 +36,13 @@ public sealed class FakeClipboardMonitor : IClipboardMonitor
             Image = BlankImage.Instance,
         });
 
+    /// <summary>Mimics a copied file selection.</summary>
+    public void EmitFiles(IReadOnlyList<string> paths, string? sourceApp = null)
+        => Changed?.Invoke(new ClipboardSnapshot(string.Empty, sourceApp, false)
+        {
+            Files = paths,
+        });
+
     private sealed class BlankImage : IClipboardImage
     {
         public static readonly BlankImage Instance = new();

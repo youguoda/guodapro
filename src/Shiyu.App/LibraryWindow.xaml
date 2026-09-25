@@ -45,12 +45,13 @@
             <TextBlock Text="类型" VerticalAlignment="Center"
                        Foreground="{DynamicResource Brush.TextSecondary}"
                        FontSize="{DynamicResource Size.Secondary}" />
-            <ComboBox x:Name="KindFilter" Width="92" Margin="6,0,14,0" SelectedIndex="0"
-                      SelectionChanged="OnFilterChanged">
-                <ComboBoxItem Content="全部" />
-                <ComboBoxItem Content="文本" />
-                <ComboBoxItem Content="图片" />
-            </ComboBox>
+                <ComboBox x:Name="KindFilter" Width="92" Margin="6,0,14,0" SelectedIndex="0"
+                          SelectionChanged="OnFilterChanged">
+                    <ComboBoxItem Content="全部" />
+                    <ComboBoxItem Content="文本" />
+                    <ComboBoxItem Content="图片" />
+                    <ComboBoxItem Content="文件" />
+                </ComboBox>
 
             <TextBlock Text="日期" VerticalAlignment="Center"
                        Foreground="{DynamicResource Brush.TextSecondary}"

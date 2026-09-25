@@ -1,5 +1,6 @@
 ﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -233,6 +234,28 @@ internal sealed class BarCard : INotifyPropertyChanged
 
     public string? Rtf { get; init; }
 
+    /// <summary>The file rows a file card shows, already clamped to the density knob.</summary>
+    public IReadOnlyList<FileRow> FileRows { get; init; } = [];
+
+    /// <summary>The full capped path list of a file entry, for copying and pasting back.</summary>
+    public IReadOnlyList<string> Files { get; init; } = [];
+
+    /// <summary>True when every path of a file entry is gone — the card shows it struck through and faded.</summary>
+    public bool AllPathsDead { get; init; }
+
+    public int FileCount { get; init; }
+
+    public Visibility FilesVisibility =>
+        Kind == EntryKind.Files ? Visibility.Visible : Visibility.Collapsed;
+
+    /// <summary>The quiet count line under the file rows.</summary>
+    public string FileTail => FileCount switch
+    {
+        0 => string.Empty,
+        1 => "1 个项目",
+        _ => $"共 {FileCount} 项",
+    };
+
     /// <summary>Links and emails open in the system's default program.</summary>
     public bool IsOpenable => Subtype is EntrySubtype.Link or EntrySubtype.Email;
 
@@ -282,6 +305,12 @@ internal sealed class BarCard : INotifyPropertyChanged
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }
 
+/// <summary>One row of a file card: a name, its type icon, and whether the path still exists.</summary>
+internal sealed record FileRow(string Name, string FullPath, ImageSource? Icon, bool Dead)
+{
+    public Visibility DeadVisibility => Dead ? Visibility.Visible : Visibility.Collapsed;
+}
+
 /// <summary>
 /// The resident narrow bar (ticket 12): about 360px wide, no system chrome,
 /// topmost, dragged by its background and resized by a grip, summoned and
@@ -303,6 +332,7 @@ internal partial class BarWindow : Window
     private readonly AppIconCache _icons;
     private readonly WindowsClipboardWriter _clipboard;
     private readonly SelectionCapture _capture;
+    private readonly FileTypeIcons _fileIcons;
     private readonly HistoryBrowser _browser;
     private readonly ObservableCollection<BarCard> _pinned = [];
     private readonly ObservableCollection<BarCard> _cards = [];
@@ -322,7 +352,8 @@ internal partial class BarWindow : Window
         AppIconCache icons,
         WindowsClipboardWriter clipboard,
         SelectionCapture capture,
-        AppSettings settings)
+        AppSettings settings,
+        FileTypeIcons fileIcons)
     {
         InitializeComponent();
 
@@ -331,6 +362,7 @@ internal partial class BarWindow : Window
         _clipboard = clipboard;
         _capture = capture;
         _settings = settings;
+        _fileIcons = fileIcons;
         _browser = new HistoryBrowser(store);
 
         _searchDebounce = new System.Windows.Threading.DispatcherTimer { Interval = SearchDelay };
@@ -475,13 +507,29 @@ internal partial class BarWindow : Window
             ['\r', '\n', '\t'],
             StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
 
+        var shown = Math.Max(1, _settings.BarFileCount);
+        var fileRows = entry.Kind == EntryKind.Files
+            ? entry.Files.Take(shown)
+                .Select(path => new FileRow(
+                    Path.GetFileName(path) is { Length: > 0 } name ? name : path,
+                    path,
+                    _fileIcons.For(path),
+                    !File.Exists(path)))
+                .ToList()
+            : [];
+
         return new BarCard
         {
             Id = entry.Id,
             Kind = entry.Kind,
             Text = entry.Text,
             Preview = collapsed.Length > 500 ? collapsed[..500] + "…" : collapsed,
-            KindText = entry.Kind == EntryKind.Image ? "图片" : "文本",
+            KindText = entry.Kind switch
+            {
+                EntryKind.Image => "图片",
+                EntryKind.Files => "文件",
+                _ => "文本",
+            },
             WhenText = entry.CreatedAt.ToLocalTime().ToString("MM-dd HH:mm"),
             Icon = _icons.For(entry.SourceApp),
             Thumbnail = entry.Kind == EntryKind.Image
@@ -492,6 +540,10 @@ internal partial class BarWindow : Window
             Subtype = entry.Subtype,
             Html = entry.Html,
             Rtf = entry.Rtf,
+            Files = entry.Files,
+            FileRows = fileRows,
+            AllPathsDead = entry.Kind == EntryKind.Files && entry.Files.All(path => !File.Exists(path)),
+            FileCount = entry.Files.Count,
             SwatchBrush = entry.Subtype == EntrySubtype.Color
                 && SubtypeColor.TryParse(entry.Text, out var colour)
                 ? new SolidColorBrush(System.Windows.Media.Color.FromArgb(colour.A, colour.R, colour.G, colour.B))
@@ -601,6 +653,7 @@ internal partial class BarWindow : Window
             {
                 1 => EntryKind.Text,
                 2 => EntryKind.Image,
+                3 => EntryKind.Files,
                 _ => null,
             },
             Subtype = SubtypeFilter.SelectedIndex switch
@@ -660,6 +713,29 @@ internal partial class BarWindow : Window
         {
             _clipboard.SetText(card.Text);
         }
+    }
+
+    /// <summary>
+    /// A file card dragged with the left button carries its living paths out
+    /// to the file system. Dead paths are left behind: a drag that silently
+    /// produces nothing is worse than one that visibly carries less.
+    /// </summary>
+    private void OnCardMouseMove(object sender, MouseEventArgs e)
+    {
+        if (e.LeftButton != MouseButtonState.Pressed
+            || ((FrameworkElement)sender).DataContext is not BarCard { Kind: EntryKind.Files } card)
+        {
+            return;
+        }
+
+        var alive = card.Files.Where(File.Exists).ToList();
+        if (alive.Count == 0)
+        {
+            return;
+        }
+
+        var data = new DataObject(DataFormats.FileDrop, alive.ToArray());
+        DragDrop.DoDragDrop((DependencyObject)sender, data, DragDropEffects.Copy);
     }
 
     private static void OpenUri(BarCard card)
@@ -730,7 +806,8 @@ internal partial class BarWindow : Window
 
             case "plain":
                 // Strips every format: plain text and nothing else, so what
-                // lands carries no styling from where it came.
+                // lands carries no styling from where it came. Never offered
+                // for file entries — there is no plain form to strip.
                 Confirm(feedback, _clipboard.SetText(card.Text));
                 break;
 
@@ -767,9 +844,11 @@ internal partial class BarWindow : Window
     /// and a plain one receives readable text.
     /// </summary>
     private bool CopyCard(BarCard card)
-        => card.Html is { Length: > 0 } || card.Rtf is { Length: > 0 }
-            ? _clipboard.SetRich(card.Text, card.Html, card.Rtf)
-            : _clipboard.SetText(card.Text);
+        => card.Files.Count > 0
+            ? _clipboard.SetFiles(card.Files)
+            : card.Html is { Length: > 0 } || card.Rtf is { Length: > 0 }
+                ? _clipboard.SetRich(card.Text, card.Html, card.Rtf)
+                : _clipboard.SetText(card.Text);
 
     /// <summary>
     /// Pastes into the window the user was in before summoning the bar. The
@@ -787,7 +866,14 @@ internal partial class BarWindow : Window
         Hide();
         _returnTo.Restore();
 
-        if (card.Html is { Length: > 0 } || card.Rtf is { Length: > 0 })
+        if (card.Files.Count > 0)
+        {
+            if (_clipboard.SetFiles(card.Files))
+            {
+                _capture.PasteCurrentClipboard();
+            }
+        }
+        else if (card.Html is { Length: > 0 } || card.Rtf is { Length: > 0 })
         {
             if (_clipboard.SetRich(card.Text, card.Html, card.Rtf))
             {
@@ -802,14 +888,17 @@ internal partial class BarWindow : Window
 
     private void OpenOriginal(BarCard card)
     {
-        if (card.OriginalPath is not { Length: > 0 } path)
+        var target = card.Files.FirstOrDefault(File.Exists)
+            ?? (card.OriginalPath is { Length: > 0 } path && File.Exists(path) ? path : null);
+
+        if (target is null)
         {
             return;
         }
 
         try
         {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path)
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(target)
             {
                 UseShellExecute = true,
             });
@@ -823,14 +912,17 @@ internal partial class BarWindow : Window
 
     private void LocateOriginal(BarCard card)
     {
-        if (card.OriginalPath is not { Length: > 0 } path)
+        var target = card.Files.FirstOrDefault(File.Exists)
+            ?? (card.OriginalPath is { Length: > 0 } path && File.Exists(path) ? path : null);
+
+        if (target is null)
         {
             return;
         }
 
         try
         {
-            System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{path}\"");
+            System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{target}\"");
         }
         catch (Exception)
         {

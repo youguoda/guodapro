@@ -113,6 +113,7 @@ public partial class LibraryWindow : Window
             {
                 1 => EntryKind.Text,
                 2 => EntryKind.Image,
+                3 => EntryKind.Files,
                 _ => null,
             },
             Subtype = SubtypeFilter.SelectedIndex switch

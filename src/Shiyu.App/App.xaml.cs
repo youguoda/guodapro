@@ -30,6 +30,7 @@ public partial class App : Application
     private ThemeManager? _theme;
     private BarWindow? _bar;
     private AppIconCache? _icons;
+    private FileTypeIcons? _fileIcons;
     private System.Windows.Threading.DispatcherTimer? _barGeometrySave;
 
     protected override void OnStartup(StartupEventArgs e)
@@ -66,6 +67,7 @@ public partial class App : Application
         AppPaths.UseDirectory(_settings.DataDirectoryOverride);
         _store = EntryStore.Open(AppPaths.DatabaseFile);
         _icons = new AppIconCache(_store);
+        _fileIcons = new FileTypeIcons();
 
         // Before any window exists: the first frame a window ever shows must
         // already be in the right theme.
@@ -234,7 +236,7 @@ public partial class App : Application
 
         if (_bar is null)
         {
-            _bar = new BarWindow(_store, _icons, _writer, _capture, _settings);
+            _bar = new BarWindow(_store, _icons, _writer, _capture, _settings, _fileIcons!);
             _bar.GeometryChanged += OnBarGeometryChanged;
         }
 

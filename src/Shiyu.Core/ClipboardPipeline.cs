@@ -73,6 +73,22 @@ public sealed class ClipboardPipeline : IDisposable
         // recording never depends on it.
         _icons?.Ensure(snapshot.SourceApp, snapshot.SourceExePath);
 
+        // A file copy: one entry for any number of files, like text and image
+        // before it. Identical repeats of the newest file list touch it rather
+        // than duplicating it.
+        if (snapshot.Files is { Count: > 0 } files)
+        {
+            var newest = _store.MostRecent();
+            if (newest is { Kind: EntryKind.Files } && newest.Files.SequenceEqual(files))
+            {
+                _store.Touch(newest.Id, _clock.GetUtcNow());
+                return;
+            }
+
+            _store.AppendFiles(files, snapshot.SourceApp, _clock.GetUtcNow());
+            return;
+        }
+
         if (snapshot.Image is { } image && _images is not null)
         {
             // Chained rather than fired and forgotten, so two quick copies are

@@ -1,0 +1,49 @@
+namespace Shiyu.Core;
+
+/// <summary>
+/// File-entry rules: the cap on how many paths one entry keeps, and the label
+/// that has to tell the truth about that cap. A user who copies a 500-file
+/// selection should see "500 项" in the list, not a lie by omission.
+/// </summary>
+public static class FileEntries
+{
+    /// <summary>
+    /// One entry keeps at most this many paths. Explorer happily lets a user
+    /// select thousands; storing them all buys nothing a paste needs — the
+    /// cap keeps the database and the list bounded.
+    /// </summary>
+    public const int Cap = 64;
+
+    /// <summary>
+    /// The paths worth keeping, and whether the cap left anything behind.
+    /// </summary>
+    public static IReadOnlyList<string> WithinCap(IReadOnlyList<string> paths, out bool capped)
+    {
+        capped = paths.Count > Cap;
+        return capped ? paths.Take(Cap).ToList() : paths;
+    }
+
+    /// <summary>
+    /// The entry's human label: the first file's name, a count when there are
+    /// several, and the honest total when the cap bit.
+    /// </summary>
+    public static string Label(IReadOnlyList<string> paths, bool capped)
+    {
+        if (paths.Count == 0)
+        {
+            return "空文件列表";
+        }
+
+        var first = Path.GetFileName(paths[0]);
+        first = first.Length == 0 ? paths[0] : first;
+
+        if (paths.Count == 1)
+        {
+            return first;
+        }
+
+        return capped
+            ? $"{first} 等 {paths.Count}+ 项"
+            : $"{first} 等 {paths.Count} 项";
+    }
+}
