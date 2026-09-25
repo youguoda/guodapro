@@ -86,6 +86,26 @@ internal sealed class ActionTray : StackPanel
         static void Swallow(object sender, MouseButtonEventArgs e) => e.Handled = true;
     }
 
+    /// <summary>
+    /// While Ctrl is held, buttons that answer to a letter show the letter
+    /// instead of their glyph — the badge and the key handler both read
+    /// <see cref="BarKeys"/>, so they cannot disagree. Buttons without a key
+    /// keep their glyph.
+    /// </summary>
+    public void ShowHints(bool on)
+    {
+        foreach (var button in Children.OfType<Button>())
+        {
+            if (button.Tag is not string id)
+            {
+                continue;
+            }
+
+            var key = BarKeys.TrayKey(id);
+            button.Content = on && key is not null ? key : HoverActions.Glyph(id);
+        }
+    }
+
     public void Open() => Animate(open: true);
 
     public void Close() => Animate(open: false);

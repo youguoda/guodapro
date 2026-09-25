@@ -57,6 +57,30 @@ internal sealed class HandoverText : TextBlock
 }
 
 /// <summary>
+/// The key badge that covers a row's source-app icon while Ctrl is held,
+/// showing the number key that pastes that row. Opaque, same sixteen units,
+/// exactly over the icon: one element to toggle, no layout movement.
+/// </summary>
+internal sealed class RowKeyBadge : Border
+{
+    public RowKeyBadge()
+    {
+        CornerRadius = new CornerRadius(3);
+        SetResourceReference(BackgroundProperty, "Brush.Accent");
+
+        var label = new TextBlock
+        {
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        label.SetResourceReference(TextBlock.FontSizeProperty, "Size.Hint");
+        label.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextOnAccent");
+        label.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding("RowKeyText"));
+        Child = label;
+    }
+}
+
+/// <summary>
 /// The row container. Exists to reconfigure and reset the hover tray at
 /// exactly the moment recycling hands this container to another row — the
 /// issue 02 spike's finding about animation state following containers.
@@ -74,6 +98,7 @@ internal sealed class BarCardContainer : ListBoxItem
     {
         var tray = Tree.FindDescendant<ActionTray>(this);
         var handover = Tree.FindDescendant<HandoverText>(this);
+        var badge = Tree.FindDescendant<RowKeyBadge>(this);
 
         if (DataContext is not BarCard card || tray is null)
         {
@@ -88,6 +113,9 @@ internal sealed class BarCardContainer : ListBoxItem
             // survives recycling and would otherwise fire twice per press.
             tray.ActionExecuted -= host.RunHoverAction;
             tray.ActionExecuted += host.RunHoverAction;
+
+            // A row realized while Ctrl is held must arrive with its badge.
+            host.ApplyKeyHintsTo(badge, tray);
         }
 
         tray.Reset();
@@ -165,6 +193,12 @@ internal sealed class BarCard : INotifyPropertyChanged
     public string KindText { get; init; } = string.Empty;
 
     public string WhenText { get; init; } = string.Empty;
+
+    /// <summary>
+    /// The number key that pastes this row, when it is one of the first ten
+    /// displayed rows; null otherwise. Assigned from display position.
+    /// </summary>
+    public string? RowKeyText { get; set; }
 
     public ImageSource? Icon { get; init; }
 
@@ -451,7 +485,9 @@ internal partial class BarWindow : Window
                 pastPinned = true;
             }
 
-            (pastPinned ? _cards : _pinned).Add(CardFor(entry));
+            var card = CardFor(entry);
+            card.RowKeyText = BarKeys.RowKey(_pinned.Count + _cards.Count + 1);
+            (pastPinned ? _cards : _pinned).Add(card);
         }
     }
 
@@ -821,8 +857,88 @@ internal partial class BarWindow : Window
         Cards.ScrollIntoView(rows[next]);
     }
 
+    // --- key hints (ticket 14) -------------------------------------------------
+
+    private bool _keyHintsOn;
+
+    /// <summary>
+    /// Hold Ctrl and every actionable icon swaps in place for the key that
+    /// drives it — the whole keyboard model taught at the place it applies,
+    /// for exactly as long as the user asks.
+    /// </summary>
+    private void SetKeyHints(bool on)
+    {
+        if (_keyHintsOn == on)
+        {
+            return;
+        }
+
+        _keyHintsOn = on;
+        SearchKeyBadge.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+        KindKeyBadge.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+        TagKeyBadge.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+
+        foreach (var container in RealizedContainers())
+        {
+            ApplyKeyHintsTo(
+                Tree.FindDescendant<RowKeyBadge>(container),
+                Tree.FindDescendant<ActionTray>(container));
+        }
+    }
+
+    /// <summary>
+    /// One row's hint state — also called for rows realized while Ctrl is
+    /// already down, so recycled rows arrive pre-badged rather than blank.
+    /// </summary>
+    internal void ApplyKeyHintsTo(RowKeyBadge? badge, ActionTray? tray)
+    {
+        if (badge is not null)
+        {
+            badge.Visibility = _keyHintsOn ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        tray?.ShowHints(_keyHintsOn);
+    }
+
+    private IEnumerable<BarCardContainer> RealizedContainers()
+    {
+        foreach (var item in _pinned.Concat(_cards))
+        {
+            if (PinnedList.ItemContainerGenerator.ContainerFromItem(item) is BarCardContainer pinned)
+            {
+                yield return pinned;
+            }
+
+            if (Cards.ItemContainerGenerator.ContainerFromItem(item) is BarCardContainer rest)
+            {
+                yield return rest;
+            }
+        }
+    }
+
+    private void OnPreviewKeyUp(object sender, KeyEventArgs e)
+    {
+        if (e.Key is Key.LeftCtrl or Key.RightCtrl && _keyHintsOn
+            && (Keyboard.Modifiers & ModifierKeys.Control) == 0)
+        {
+            SetKeyHints(false);
+        }
+    }
+
+    /// <summary>
+    /// Losing focus while Ctrl is still down — Ctrl+Tab, a notification
+    /// stealing the click — means the release event never arrives. The
+    /// badges come in now, or they stay forever.
+    /// </summary>
+    private void OnLostFocus(object sender, EventArgs e) => SetKeyHints(false);
+
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key is Key.LeftCtrl or Key.RightCtrl)
+        {
+            SetKeyHints(true);
+            return;
+        }
         switch (e.Key)
         {
             case Key.Escape:
@@ -882,6 +998,7 @@ internal partial class BarWindow : Window
             case Key.D7 or Key.NumPad7: NumberedRow(7, e); break;
             case Key.D8 or Key.NumPad8: NumberedRow(8, e); break;
             case Key.D9 or Key.NumPad9: NumberedRow(9, e); break;
+            case Key.D0 or Key.NumPad0: NumberedRow(10, e); break;
 
             // Letter actions only outside text fields — inside one, letters
             // are the search the user is typing.
