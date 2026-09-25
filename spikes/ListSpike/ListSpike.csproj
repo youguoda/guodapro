@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Spike for issue 02. Not part of the product: it exists to answer whether
+    virtualization, variable-height rows, pinned rows and per-row hover
+    animations can all hold at once on WPF's recycling VirtualizingStackPanel,
+    and is kept in the repository so the answer stays reproducible.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

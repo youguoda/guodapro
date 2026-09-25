@@ -1,0 +1,11 @@
+<Application x:Class="ListSpike.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!--
+      Resources stay empty on purpose: this build's PresentationBuildTasks
+      emits a Main without InitializeComponent, so App.xaml markup — including
+      any resources declared here — never loads. Styles the spike needs live
+      in the window instead.
+    -->
+    <Application.Resources />
+</Application>
