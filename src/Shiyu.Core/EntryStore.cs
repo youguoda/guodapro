@@ -39,7 +39,7 @@ public sealed partial class EntryStore : IDisposable
     /// <summary>
     /// The shape the code expects. Bumped whenever a migration is added below.
     /// </summary>
-    private const int SchemaVersion = 8;
+    private const int SchemaVersion = 9;
 
     /// <summary>
     /// Joins tag names into one column. A unit separator, because it cannot
@@ -156,6 +156,25 @@ public sealed partial class EntryStore : IDisposable
             Execute("ALTER TABLE entries ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0;");
             Execute("ALTER TABLE entries ADD COLUMN note TEXT NULL;");
             Execute("ALTER TABLE entries ADD COLUMN use_count INTEGER NOT NULL DEFAULT 0;");
+        }
+
+        if (from < 9)
+        {
+            // Groups are vertical containment — "this entry belongs to that
+            // pile" — as against tags, which are horizontal labels for
+            // filtering. Deleting a group orphans nothing: the foreign key
+            // nulls the column and the entry simply returns to ungrouped.
+            Execute("""
+                CREATE TABLE IF NOT EXISTS groups (
+                    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name     TEXT    NOT NULL,
+                    icon     TEXT    NULL,
+                    position INTEGER NOT NULL DEFAULT 0,
+                    hidden   INTEGER NOT NULL DEFAULT 0
+                );
+                """);
+            Execute("ALTER TABLE entries ADD COLUMN group_id INTEGER NULL REFERENCES groups(id) ON DELETE SET NULL;");
+            Execute("CREATE INDEX IF NOT EXISTS idx_entries_group ON entries (group_id);");
         }
 
         if (from != SchemaVersion)
@@ -397,7 +416,7 @@ public sealed partial class EntryStore : IDisposable
     {
         using var command = _connection.CreateCommand();
         command.CommandText = """
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count,
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id,
                    (SELECT group_concat(t.name, char(31)) FROM tags t
                       JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
@@ -415,7 +434,7 @@ public sealed partial class EntryStore : IDisposable
     {
         using var command = _connection.CreateCommand();
         command.CommandText = $"""
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count,
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id,
                    (SELECT group_concat(t.name, char(31)) FROM tags t
                       JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
@@ -431,7 +450,7 @@ public sealed partial class EntryStore : IDisposable
     {
         using var command = _connection.CreateCommand();
         command.CommandText = """
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count,
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id,
                    (SELECT group_concat(t.name, char(31)) FROM tags t
                       JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
@@ -495,7 +514,7 @@ public sealed partial class EntryStore : IDisposable
 
         using var command = _connection.CreateCommand();
         command.CommandText = """
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count,
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id,
                    (SELECT group_concat(t.name, char(31)) FROM tags t
                       JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
@@ -579,10 +598,16 @@ public sealed partial class EntryStore : IDisposable
             }
         }
 
+        if (filter.Group is { } group)
+        {
+            conditions.Add("group_id = $group");
+            command.Parameters.AddWithValue("$group", group);
+        }
+
         var where = conditions.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", conditions);
 
         command.CommandText = $"""
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count,
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id,
                    (SELECT group_concat(t.name, char(31)) FROM tags t
                       JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
@@ -605,7 +630,7 @@ public sealed partial class EntryStore : IDisposable
     {
         using var command = _connection.CreateCommand();
         command.CommandText = """
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count,
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id,
                    (SELECT group_concat(t.name, char(31)) FROM tags t
                       JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
@@ -678,7 +703,7 @@ public sealed partial class EntryStore : IDisposable
     {
         using var command = _connection.CreateCommand();
         command.CommandText = """
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count,
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id,
                    (SELECT group_concat(t.name, char(31)) FROM tags t
                       JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
@@ -721,12 +746,13 @@ public sealed partial class EntryStore : IDisposable
                 Favorite = reader.GetInt32(12) != 0,
                 Note = reader.IsDBNull(13) ? null : reader.GetString(13),
                 UseCount = reader.GetInt32(14),
+                GroupId = reader.IsDBNull(15) ? null : reader.GetInt64(15),
 
                 // Joined in rather than fetched per row: a list of a hundred
                 // entries would otherwise be a hundred extra queries.
-                Tags = reader.IsDBNull(15)
+                Tags = reader.IsDBNull(16)
                     ? []
-                    : reader.GetString(15).Split(TagSeparator, StringSplitOptions.RemoveEmptyEntries),
+                    : reader.GetString(16).Split(TagSeparator, StringSplitOptions.RemoveEmptyEntries),
             });
         }
 

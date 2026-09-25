@@ -21,6 +21,8 @@ internal static class BarKeys
 
     public const string Note = "N";
 
+    public const string Group = "G";
+
     public const string Delete = "D";
 
     public const string TagCycle = "Tab";
@@ -41,6 +43,7 @@ internal static class BarKeys
         "pin" => Pin,
         "favorite" => Favorite,
         "note" => Note,
+        "group" => Group,
         "delete" => Delete,
         _ => null,
     };
@@ -54,6 +57,7 @@ internal static class BarKeys
         Pin => Key.P,
         Favorite => Key.S,
         Note => Key.N,
+        Group => Key.G,
         Delete => Key.D,
         _ => Key.None,
     };

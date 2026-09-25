@@ -65,6 +65,12 @@ public sealed record Entry(
     /// <summary>How many times this entry was copied or pasted back out.</summary>
     public int UseCount { get; init; }
 
+    /// <summary>
+    /// The pile this entry was filed into, or null for ungrouped. Unlike tags
+    /// this is exclusive — an entry is in one group or in none.
+    /// </summary>
+    public long? GroupId { get; init; }
+
     public IReadOnlyList<string> Tags { get; init; } = [];
 
     /// <summary>False once retention has removed the original from disk.</summary>

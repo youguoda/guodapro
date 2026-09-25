@@ -26,10 +26,13 @@ public sealed record HistoryFilter
     /// <summary>True narrows to favourites; false and null both mean no favourite filter.</summary>
     public bool? Favorite { get; init; }
 
+    /// <summary>Only entries filed into this group. Null means no group filter.</summary>
+    public long? Group { get; init; }
+
     /// <summary>Only entries carrying this tag. Blank means no tag filter.</summary>
     public string? Tag { get; init; }
 
     public bool IsEmpty =>
         string.IsNullOrWhiteSpace(Query) && From is null && To is null && Kind is null
-        && Subtype is null && Favorite != true && string.IsNullOrWhiteSpace(Tag);
+        && Subtype is null && Favorite != true && Group is null && string.IsNullOrWhiteSpace(Tag);
 }

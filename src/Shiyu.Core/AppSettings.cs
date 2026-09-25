@@ -124,7 +124,8 @@ public sealed record AppSettings
             // A saved action list that exactly matches a former default is a
             // default that predates newer actions, not a choice — upgrade it,
             // while respecting anything the user actually reordered or pruned.
-            if (loaded.BarActions.SequenceEqual(FormerDefaultActions))
+            if (loaded.BarActions.SequenceEqual(FormerDefaultActions)
+                || loaded.BarActions.SequenceEqual(HoverActions.FormerDefaultWithoutGroup))
             {
                 loaded = loaded with { BarActions = HoverActions.All };
             }

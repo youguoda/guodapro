@@ -8,6 +8,10 @@ public static class HoverActions
 {
     /// <summary>Every action id that exists, in default order.</summary>
     public static readonly string[] All =
+        ["copy", "paste", "plain", "open", "locate", "pin", "favorite", "note", "group", "delete"];
+
+    /// <summary>The ids the previous default shipped with, before groups.</summary>
+    public static readonly string[] FormerDefaultWithoutGroup =
         ["copy", "paste", "plain", "open", "locate", "pin", "favorite", "note", "delete"];
 
     /// <summary>The id as the interface shows it.</summary>
@@ -21,6 +25,7 @@ public static class HoverActions
         "pin" => "置顶",
         "favorite" => "收藏",
         "note" => "备注",
+        "group" => "归组",
         "delete" => "删除",
         _ => id,
     };
@@ -36,6 +41,7 @@ public static class HoverActions
         "pin" => "钉",
         "favorite" => "★",
         "note" => "注",
+        "group" => "组",
         "delete" => "删",
         _ => "?",
     };
