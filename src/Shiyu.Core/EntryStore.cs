@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 
 namespace Shiyu.Core;
 
@@ -10,6 +10,9 @@ namespace Shiyu.Core;
 public sealed partial class EntryStore : IDisposable
 {
     private readonly SqliteConnection _connection;
+
+    /// <summary>Internal for tests: writing rows the way an older build would have.</summary>
+    internal SqliteConnection Connection => _connection;
 
     private EntryStore(SqliteConnection connection) => _connection = connection;
 
@@ -36,7 +39,7 @@ public sealed partial class EntryStore : IDisposable
     /// <summary>
     /// The shape the code expects. Bumped whenever a migration is added below.
     /// </summary>
-    private const int SchemaVersion = 4;
+    private const int SchemaVersion = 5;
 
     /// <summary>
     /// Joins tag names into one column. A unit separator, because it cannot
@@ -123,10 +126,75 @@ public sealed partial class EntryStore : IDisposable
                 """);
         }
 
+        if (from < 5)
+        {
+            // What a text entry is — link, email, colour, path — recorded at
+            // write time so lists and filters never re-derive it per row.
+            Execute("ALTER TABLE entries ADD COLUMN sub_type TEXT NULL;");
+        }
+
         if (from != SchemaVersion)
         {
             Execute($"PRAGMA user_version = {SchemaVersion};");
         }
+
+        BackfillSubtypes();
+    }
+
+    /// <summary>
+    /// Classifies any rows recorded before subtypes existed. Idempotent and
+    /// run on every open: it selects only NULL rows, so a clean database
+    /// costs one indexed query and the work happens exactly once per row.
+    /// </summary>
+    private void BackfillSubtypes()
+    {
+        var updates = new List<(long id, string subtype)>();
+
+        // The reader is fully closed before any write: SQLite allows one
+        // statement at a time per connection, and a cursor held open across
+        // the update turns a routine backfill into a lock error.
+        using (var read = _connection.CreateCommand())
+        {
+            read.CommandText = "SELECT id, text FROM entries WHERE sub_type IS NULL AND kind = 0;";
+
+            using var reader = read.ExecuteReader();
+            while (reader.Read())
+            {
+                var subtype = SubtypeClassifier.Detect(reader.GetString(1));
+                if (subtype != EntrySubtype.None)
+                {
+                    updates.Add((reader.GetInt64(0), subtype.ToString()));
+                }
+            }
+        }
+
+        if (updates.Count == 0)
+        {
+            return;
+        }
+
+        // None-valued rows stay NULL: they are the common case, and writing
+        // millions of no-ops is not free on a big history.
+        using var transaction = _connection.BeginTransaction();
+
+        using var update = _connection.CreateCommand();
+        update.Transaction = transaction;
+        update.CommandText = "UPDATE entries SET sub_type = $subtype WHERE id = $id;";
+        var subtypeParameter = update.CreateParameter();
+        subtypeParameter.ParameterName = "$subtype";
+        update.Parameters.Add(subtypeParameter);
+        var idParameter = update.CreateParameter();
+        idParameter.ParameterName = "$id";
+        update.Parameters.Add(idParameter);
+
+        foreach (var (id, subtype) in updates)
+        {
+            subtypeParameter.Value = subtype;
+            idParameter.Value = id;
+            update.ExecuteNonQuery();
+        }
+
+        transaction.Commit();
     }
 
     private int ReadSchemaVersion()
@@ -150,18 +218,22 @@ public sealed partial class EntryStore : IDisposable
 
     public Entry Append(string text, string? sourceApp, DateTimeOffset createdAt)
     {
+        var subtype = SubtypeClassifier.Detect(text);
+
         using var command = _connection.CreateCommand();
         command.CommandText = """
-            INSERT INTO entries (text, source_app, created_at)
-            VALUES ($text, $sourceApp, $createdAt)
+            INSERT INTO entries (text, source_app, created_at, sub_type)
+            VALUES ($text, $sourceApp, $createdAt, $subtype)
             RETURNING id;
             """;
         command.Parameters.AddWithValue("$text", text);
         command.Parameters.AddWithValue("$sourceApp", (object?)sourceApp ?? DBNull.Value);
         command.Parameters.AddWithValue("$createdAt", createdAt.ToUnixTimeMilliseconds());
+        command.Parameters.AddWithValue("$subtype",
+            subtype == EntrySubtype.None ? DBNull.Value : (object)subtype.ToString());
 
         var id = (long)command.ExecuteScalar()!;
-        return new Entry(id, text, sourceApp, createdAt);
+        return new Entry(id, text, sourceApp, createdAt) { Subtype = subtype };
     }
 
     /// <summary>
@@ -256,7 +328,7 @@ public sealed partial class EntryStore : IDisposable
     {
         using var command = _connection.CreateCommand();
         command.CommandText = """
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned,
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type,
                    (SELECT group_concat(t.name, char(31)) FROM tags t
                       JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
@@ -274,7 +346,7 @@ public sealed partial class EntryStore : IDisposable
     {
         using var command = _connection.CreateCommand();
         command.CommandText = $"""
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned,
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type,
                    (SELECT group_concat(t.name, char(31)) FROM tags t
                       JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
@@ -290,7 +362,7 @@ public sealed partial class EntryStore : IDisposable
     {
         using var command = _connection.CreateCommand();
         command.CommandText = """
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned,
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type,
                    (SELECT group_concat(t.name, char(31)) FROM tags t
                       JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
@@ -354,7 +426,7 @@ public sealed partial class EntryStore : IDisposable
 
         using var command = _connection.CreateCommand();
         command.CommandText = """
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned,
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type,
                    (SELECT group_concat(t.name, char(31)) FROM tags t
                       JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
@@ -416,10 +488,25 @@ public sealed partial class EntryStore : IDisposable
             command.Parameters.AddWithValue("$tag", filter.Tag.Trim());
         }
 
+        if (filter.Subtype is { } subtype)
+        {
+            // One filter choice, two stored values: a "path" filter means
+            // both local and UNC, because to the user they are one idea.
+            if (subtype == EntrySubtype.LocalPath)
+            {
+                conditions.Add("sub_type IN ('LocalPath', 'UncPath')");
+            }
+            else
+            {
+                conditions.Add("sub_type = $subtype");
+                command.Parameters.AddWithValue("$subtype", subtype.ToString());
+            }
+        }
+
         var where = conditions.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", conditions);
 
         command.CommandText = $"""
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned,
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type,
                    (SELECT group_concat(t.name, char(31)) FROM tags t
                       JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
@@ -442,7 +529,7 @@ public sealed partial class EntryStore : IDisposable
     {
         using var command = _connection.CreateCommand();
         command.CommandText = """
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned,
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type,
                    (SELECT group_concat(t.name, char(31)) FROM tags t
                       JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
@@ -515,7 +602,7 @@ public sealed partial class EntryStore : IDisposable
     {
         using var command = _connection.CreateCommand();
         command.CommandText = """
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned,
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type,
                    (SELECT group_concat(t.name, char(31)) FROM tags t
                       JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
@@ -526,6 +613,12 @@ public sealed partial class EntryStore : IDisposable
 
         return ReadEntries(command);
     }
+
+    /// <summary>A column written before an unknown value appeared — never worth a broken list over.</summary>
+    private static EntrySubtype ParseSubtype(string? stored)
+        => stored is not null && Enum.TryParse<EntrySubtype>(stored, out var parsed)
+            ? parsed
+            : EntrySubtype.None;
 
     private static IReadOnlyList<Entry> ReadEntries(SqliteCommand command)
     {
@@ -543,12 +636,13 @@ public sealed partial class EntryStore : IDisposable
                 ThumbnailPng = reader.IsDBNull(5) ? null : (byte[])reader[5],
                 OriginalPath = reader.IsDBNull(6) ? null : reader.GetString(6),
                 IsPinned = reader.GetInt32(7) != 0,
+                Subtype = ParseSubtype(reader.IsDBNull(8) ? null : reader.GetString(8)),
 
                 // Joined in rather than fetched per row: a list of a hundred
                 // entries would otherwise be a hundred extra queries.
-                Tags = reader.IsDBNull(8)
+                Tags = reader.IsDBNull(9)
                     ? []
-                    : reader.GetString(8).Split(TagSeparator, StringSplitOptions.RemoveEmptyEntries),
+                    : reader.GetString(9).Split(TagSeparator, StringSplitOptions.RemoveEmptyEntries),
             });
         }
 

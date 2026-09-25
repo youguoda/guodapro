@@ -115,6 +115,14 @@ public partial class LibraryWindow : Window
                 2 => EntryKind.Image,
                 _ => null,
             },
+            Subtype = SubtypeFilter.SelectedIndex switch
+            {
+                1 => EntrySubtype.Link,
+                2 => EntrySubtype.Email,
+                3 => EntrySubtype.Color,
+                4 => EntrySubtype.LocalPath,
+                _ => null,
+            },
             From = FilterFrom.SelectedDate is { } from
                 ? new DateTimeOffset(from.Date, DateTimeOffset.Now.Offset)
                 : null,
@@ -228,6 +236,7 @@ public partial class LibraryWindow : Window
     {
         SearchBox.Text = string.Empty;
         KindFilter.SelectedIndex = 0;
+        SubtypeFilter.SelectedIndex = 0;
         TagFilter.SelectedItem = AnyTag;
         FilterFrom.SelectedDate = null;
         FilterTo.SelectedDate = null;

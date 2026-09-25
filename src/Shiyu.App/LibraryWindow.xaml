@@ -69,6 +69,18 @@
             <ComboBox x:Name="TagFilter" Width="118" Margin="6,0,10,0"
                       SelectionChanged="OnFilterChanged" />
 
+            <TextBlock Text="子类型" VerticalAlignment="Center"
+                       Foreground="{DynamicResource Brush.TextSecondary}"
+                       FontSize="{DynamicResource Size.Secondary}" />
+            <ComboBox x:Name="SubtypeFilter" Width="76" Margin="6,0,10,0" SelectedIndex="0"
+                      SelectionChanged="OnFilterChanged">
+                <ComboBoxItem Content="全部" />
+                <ComboBoxItem Content="链接" />
+                <ComboBoxItem Content="邮箱" />
+                <ComboBoxItem Content="颜色" />
+                <ComboBoxItem Content="路径" />
+            </ComboBox>
+
             <Button Content="清除筛选" FontSize="{DynamicResource Size.Caption}" Padding="10,4"
                     Cursor="Hand" Click="OnClearFilters" />
         </StackPanel>

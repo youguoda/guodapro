@@ -113,23 +113,31 @@
                                    VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                     </DockPanel>
 
-                    <!-- Body: text clamped to N lines, images to N units. The
+                    <!-- Body: text clamped to N lines, images to N units, a
+                         colour entry preceded by a swatch of itself. The
                          text clamp is a height of exact line multiples rather
                          than MaxLines, because this build's XAML compiler
                          rejects bindings on MaxLines. -->
-                    <TextBlock x:Name="TextBody" Grid.Row="1" Text="{Binding Preview}"
-                               TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
-                               MaxHeight="{Binding TextMaxHeight}"
-                               LineHeight="{DynamicResource Line.Body}"
-                               LineStackingStrategy="BlockLineHeight"
-                               Foreground="{DynamicResource Brush.Text}"/>
-                    <Border x:Name="ImageBody" Grid.Row="1" MaxHeight="{Binding ImageHeight}"
-                            CornerRadius="{DynamicResource Radius.Small}"
-                            Background="{DynamicResource Brush.SurfaceSubtle}"
-                            Visibility="{Binding ImageVisibility}">
-                        <Image Source="{Binding Thumbnail}" Stretch="Uniform"
-                               RenderOptions.BitmapScalingMode="HighQuality"/>
-                    </Border>
+                    <DockPanel Grid.Row="1">
+                        <Border DockPanel.Dock="Left" Width="44" Height="22" Margin="0,2,8,2"
+                                CornerRadius="{DynamicResource Radius.Thumb}"
+                                BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1"
+                                Background="{Binding SwatchBrush}" Visibility="{Binding SwatchVisibility}"
+                                VerticalAlignment="Center"/>
+                        <local:EntryBodyText x:Name="TextBody" Text="{Binding Preview}"
+                                   TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
+                                   MaxHeight="{Binding TextMaxHeight}"
+                                   LineHeight="{DynamicResource Line.Body}"
+                                   LineStackingStrategy="BlockLineHeight"
+                                   Foreground="{DynamicResource Brush.Text}"/>
+                        <Border x:Name="ImageBody" MaxHeight="{Binding ImageHeight}"
+                                CornerRadius="{DynamicResource Radius.Small}"
+                                Background="{DynamicResource Brush.SurfaceSubtle}"
+                                Visibility="{Binding ImageVisibility}">
+                            <Image Source="{Binding Thumbnail}" Stretch="Uniform"
+                                   RenderOptions.BitmapScalingMode="HighQuality"/>
+                        </Border>
+                    </DockPanel>
 
                     <!-- Watermarks: quiet, bottom-right, never in the way. -->
                     <TextBlock Grid.Row="1" Text="已置顶" FontSize="{DynamicResource Size.Hint}"
@@ -203,6 +211,14 @@
                                        HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                     </Grid>
+                    <ComboBox x:Name="SubtypeFilter" Width="64" Margin="6,0,0,0"
+                              SelectedIndex="0" SelectionChanged="OnFilterChanged">
+                        <ComboBoxItem Content="子类型" />
+                        <ComboBoxItem Content="链接" />
+                        <ComboBoxItem Content="邮箱" />
+                        <ComboBoxItem Content="颜色" />
+                        <ComboBoxItem Content="路径" />
+                    </ComboBox>
                     <Button x:Name="ClearFilters" Content="清除" Margin="6,0,0,0" Padding="8,2"
                             FontSize="{DynamicResource Size.Caption}" Cursor="Hand"
                             Click="OnClearFilters"/>

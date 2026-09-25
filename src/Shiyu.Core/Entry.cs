@@ -27,6 +27,9 @@ public sealed record Entry(
 {
     public EntryKind Kind { get; init; } = EntryKind.Text;
 
+    /// <summary>What a text entry is — a link, an email, a colour, a path — so the list can show it as itself.</summary>
+    public EntrySubtype Subtype { get; init; } = EntrySubtype.None;
+
     public byte[]? ThumbnailPng { get; init; }
 
     public string? OriginalPath { get; init; }

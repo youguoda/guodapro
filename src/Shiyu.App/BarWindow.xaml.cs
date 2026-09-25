@@ -11,6 +11,14 @@ using Shiyu.Windows;
 namespace Shiyu.App;
 
 /// <summary>
+/// A card's text body, typed so the window can find it in a realized row —
+/// among other things to dress it as a link while Ctrl is held.
+/// </summary>
+internal sealed class EntryBodyText : TextBlock
+{
+}
+
+/// <summary>
 /// The timestamp that yields its place to the hover actions. Fades and slides
 /// left when the tray opens, returns when it closes — the two read as one
 /// handover rather than as two separate events.
@@ -175,6 +183,16 @@ internal static class Tree
     }
 }
 
+internal static class BrushExtensions
+{
+    /// <summary>A brush frozen for sharing across recycled rows.</summary>
+    public static Brush FrozenBrush(this SolidColorBrush brush)
+    {
+        brush.Freeze();
+        return brush;
+    }
+}
+
 /// <summary>
 /// One card's view state. A class rather than a record because selection is
 /// mutable and the card's own highlight follows it.
@@ -207,6 +225,17 @@ internal sealed class BarCard : INotifyPropertyChanged
     public string? OriginalPath { get; init; }
 
     public bool HasOriginal { get; init; }
+
+    public EntrySubtype Subtype { get; init; }
+
+    /// <summary>Links and emails open in the system's default program.</summary>
+    public bool IsOpenable => Subtype is EntrySubtype.Link or EntrySubtype.Email;
+
+    /// <summary>The parsed colour of a colour entry, as a frozen brush ready to paint.</summary>
+    public Brush? SwatchBrush { get; init; }
+
+    public Visibility SwatchVisibility =>
+        SwatchBrush is null ? Visibility.Collapsed : Visibility.Visible;
 
     public int TextLines { get; init; }
 
@@ -455,6 +484,12 @@ internal partial class BarWindow : Window
                 : null,
             OriginalPath = entry.OriginalPath,
             HasOriginal = entry.HasOriginal,
+            Subtype = entry.Subtype,
+            SwatchBrush = entry.Subtype == EntrySubtype.Color
+                && SubtypeColor.TryParse(entry.Text, out var colour)
+                ? new SolidColorBrush(System.Windows.Media.Color.FromArgb(colour.A, colour.R, colour.G, colour.B))
+                    .FrozenBrush()
+                : null,
             TextLines = Math.Max(1, _settings.BarTextLines),
             ImageHeight = Math.Max(24, _settings.BarImageHeight),
             IsPinned = entry.IsPinned,
@@ -544,6 +579,7 @@ internal partial class BarWindow : Window
     {
         SearchBox.Clear();
         KindFilter.SelectedIndex = 0;
+        SubtypeFilter.SelectedIndex = 0;
         RefreshTagChoices();
         ApplyFilter();
     }
@@ -558,6 +594,14 @@ internal partial class BarWindow : Window
             {
                 1 => EntryKind.Text,
                 2 => EntryKind.Image,
+                _ => null,
+            },
+            Subtype = SubtypeFilter.SelectedIndex switch
+            {
+                1 => EntrySubtype.Link,
+                2 => EntrySubtype.Email,
+                3 => EntrySubtype.Color,
+                4 => EntrySubtype.LocalPath,
                 _ => null,
             },
         };
@@ -593,6 +637,14 @@ internal partial class BarWindow : Window
             return;
         }
 
+        // Ctrl-click on a link or email opens it — the same modifier whose
+        // hints dress it as clickable, so the affordance and the act agree.
+        if (card.IsOpenable && Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+        {
+            OpenUri(card);
+            return;
+        }
+
         Select(card);
 
         // Border is not a Control and has no double-click of its own; the
@@ -600,6 +652,25 @@ internal partial class BarWindow : Window
         if (e.ClickCount == 2)
         {
             _clipboard.SetText(card.Text);
+        }
+    }
+
+    private static void OpenUri(BarCard card)
+    {
+        try
+        {
+            var target = card.Subtype == EntrySubtype.Email
+                ? "mailto:" + card.Text.Trim()
+                : card.Text.Trim();
+
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(target)
+            {
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception)
+        {
+            // A link the shell cannot resolve is not worth a broken window.
         }
     }
 
@@ -883,6 +954,27 @@ internal partial class BarWindow : Window
             ApplyKeyHintsTo(
                 Tree.FindDescendant<RowKeyBadge>(container),
                 Tree.FindDescendant<ActionTray>(container));
+
+            // Links and emails dress as clickable for exactly as long as the
+            // modifier that opens them is held. On release the resource
+            // reference is restored rather than a local colour set, so theme
+            // changes keep reaching these texts.
+            if (Tree.FindDescendant<EntryBodyText>(container) is { } body)
+            {
+                var clickable = on
+                    && ((FrameworkElement)container).DataContext is BarCard { IsOpenable: true };
+
+                if (clickable)
+                {
+                    body.Foreground = (Brush)FindResource("Brush.Accent");
+                    body.TextDecorations = System.Windows.TextDecorations.Underline;
+                }
+                else
+                {
+                    body.SetResourceReference(TextBlock.ForegroundProperty, "Brush.Text");
+                    body.TextDecorations = null;
+                }
+            }
         }
     }
 
