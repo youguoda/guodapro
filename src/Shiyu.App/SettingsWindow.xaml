@@ -52,9 +52,13 @@
                     <TextBlock Text="翻译剪贴板" Style="{StaticResource FieldLabel}" />
                     <TextBox x:Name="ClipboardHotkey" Width="190" />
                 </StackPanel>
-                <StackPanel Orientation="Horizontal">
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                     <TextBlock Text="快速条" Style="{StaticResource FieldLabel}" />
                     <TextBox x:Name="QuickBarHotkey" Width="190" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="窄条" Style="{StaticResource FieldLabel}" />
+                    <TextBox x:Name="BarHotkey" Width="190" />
                 </StackPanel>
                 <TextBlock Text="形如 Ctrl+Shift+Z。改动在保存后立即生效；被别的软件占用时会提示。"
                            FontSize="{DynamicResource Size.Caption}"
@@ -121,6 +125,20 @@
                 <TextBlock x:Name="PresetNote" FontSize="{DynamicResource Size.Caption}"
                            Foreground="{DynamicResource Brush.TextTertiary}" Margin="0,6,0,0"
                            TextWrapping="Wrap" />
+
+                <TextBlock Text="窄条密度" Style="{StaticResource SectionHeading}" />
+                <TextBlock Text="密度只改变每张卡片裁剪多少内容，字号与间距固定。"
+                           FontSize="{DynamicResource Size.Caption}"
+                           Foreground="{DynamicResource Brush.TextTertiary}" Margin="0,0,0,6"
+                           TextWrapping="Wrap" />
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                    <TextBlock Text="文本行数" Style="{StaticResource FieldLabel}" />
+                    <TextBox x:Name="BarTextLines" Width="70" />
+                    <TextBlock Text="图片高度" Style="{StaticResource FieldLabel}" Margin="16,0,0,0" />
+                    <TextBox x:Name="BarImageHeight" Width="70" Margin="0,0,16,0" />
+                    <TextBlock Text="文件条数" Style="{StaticResource FieldLabel}" />
+                    <TextBox x:Name="BarFileCount" Width="70" />
+                </StackPanel>
 
                 <TextBlock Text="启动" Style="{StaticResource SectionHeading}" />
                 <CheckBox x:Name="StartWithWindows" Content="开机时自动启动拾语"

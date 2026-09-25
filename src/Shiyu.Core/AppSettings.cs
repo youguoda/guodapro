@@ -48,6 +48,32 @@ public sealed record AppSettings
 
     public string QuickBarHotkey { get; init; } = "Ctrl+Shift+V";
 
+    /// <summary>Summons and hides the resident narrow bar.</summary>
+    public string BarHotkey { get; init; } = "Ctrl+Shift+B";
+
+    // --- narrow bar density ---
+    // Density is how much content each card clamps, never how small the text
+    // gets: sizes and paddings stay fixed so the list can never look cramped
+    // or empty, only show more or less of each entry.
+
+    /// <summary>How many lines of text a card shows before clamping.</summary>
+    public int BarTextLines { get; init; } = 4;
+
+    /// <summary>The tallest an image card may be, in device-independent units.</summary>
+    public int BarImageHeight { get; init; } = 120;
+
+    /// <summary>How many files a file card lists before clamping. Reserved until file entries exist.</summary>
+    public int BarFileCount { get; init; } = 3;
+
+    // --- narrow bar geometry, remembered between sessions ---
+    // Null means "never placed yet"; the width is fixed by design and not stored.
+
+    public double? BarLeft { get; init; }
+
+    public double? BarTop { get; init; }
+
+    public double? BarHeight { get; init; }
+
     /// <summary>
     /// Blank means the default beside the application data. Changing it needs a
     /// restart, and a synced folder needs a warning first — the history is not

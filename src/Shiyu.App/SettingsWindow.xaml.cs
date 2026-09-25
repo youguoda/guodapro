@@ -34,6 +34,11 @@ public partial class SettingsWindow : Window
         CaptureHotkey.Text = current.CaptureHotkey;
         ClipboardHotkey.Text = current.ClipboardTranslateHotkey;
         QuickBarHotkey.Text = current.QuickBarHotkey;
+        BarHotkey.Text = current.BarHotkey;
+
+        BarTextLines.Text = current.BarTextLines.ToString();
+        BarImageHeight.Text = current.BarImageHeight.ToString();
+        BarFileCount.Text = current.BarFileCount.ToString();
 
         TargetLanguage.Text = current.TargetLanguage;
         SourceLanguage.Text = current.SourceLanguage ?? string.Empty;
@@ -102,10 +107,28 @@ public partial class SettingsWindow : Window
         var capture = RequireHotkey(CaptureHotkey.Text, "划词翻译", problems);
         var clipboard = RequireHotkey(ClipboardHotkey.Text, "翻译剪贴板", problems);
         var quickBar = RequireHotkey(QuickBarHotkey.Text, "快速条", problems);
+        var bar = RequireHotkey(BarHotkey.Text, "窄条", problems);
 
         if (!int.TryParse(RetentionDays.Text, out var retention) || retention < 1)
         {
             problems.Add("图片保留天数需要是一个不小于 1 的整数。");
+        }
+
+        // Density knobs: wide enough ranges that every screen and taste fits,
+        // narrow enough that nothing pathological does.
+        if (!int.TryParse(BarTextLines.Text, out var textLines) || textLines is < 1 or > 20)
+        {
+            problems.Add("窄条文本行数需要在 1 到 20 之间。");
+        }
+
+        if (!int.TryParse(BarImageHeight.Text, out var imageHeight) || imageHeight is < 40 or > 400)
+        {
+            problems.Add("窄条图片高度需要在 40 到 400 之间。");
+        }
+
+        if (!int.TryParse(BarFileCount.Text, out var fileCount) || fileCount is < 1 or > 10)
+        {
+            problems.Add("窄条文件条数需要在 1 到 10 之间。");
         }
 
         if (TargetLanguage.Text.Trim().Length == 0)
@@ -113,12 +136,12 @@ public partial class SettingsWindow : Window
             problems.Add("译文语言不能为空。");
         }
 
-        var chosen = new[] { capture, clipboard, quickBar }.Where(h => h is not null).ToList();
-        if (chosen.Count == 3 && chosen.Distinct().Count() != 3)
+        var chosen = new[] { capture, clipboard, quickBar, bar }.Where(h => h is not null).ToList();
+        if (chosen.Count == 4 && chosen.Distinct().Count() != 4)
         {
             // Registering the same combination twice means the second one
             // silently never works.
-            problems.Add("三个快捷键不能相同。");
+            problems.Add("四个快捷键不能相同。");
         }
 
         if (problems.Count > 0)
@@ -139,6 +162,10 @@ public partial class SettingsWindow : Window
             CaptureHotkey = capture!.ToString(),
             ClipboardTranslateHotkey = clipboard!.ToString(),
             QuickBarHotkey = quickBar!.ToString(),
+            BarHotkey = bar!.ToString(),
+            BarTextLines = textLines,
+            BarImageHeight = imageHeight,
+            BarFileCount = fileCount,
             TargetLanguage = TargetLanguage.Text.Trim(),
             SourceLanguage = SourceLanguage.Text.Trim() is { Length: > 0 } source ? source : null,
             BackendBaseUrl = BackendUrl.Text.Trim(),

@@ -35,6 +35,14 @@ public class AppSettingsTests
         Assert.True(settings.StartWithWindows);
         Assert.Equal(30, settings.ImageRetentionDays);
         Assert.False(settings.Backend.IsConfigured);
+
+        // The narrow bar: a hotkey of its own, density knobs in the middle of
+        // their range, and no remembered position yet.
+        Assert.Equal("Ctrl+Shift+B", settings.BarHotkey);
+        Assert.Equal(4, settings.BarTextLines);
+        Assert.Equal(120, settings.BarImageHeight);
+        Assert.Equal(3, settings.BarFileCount);
+        Assert.Null(settings.BarLeft);
     }
 
     [Fact]
@@ -51,6 +59,13 @@ public class AppSettingsTests
             ImageRetentionDays = 7,
             StartWithWindows = false,
             Theme = AppTheme.Dark,
+            BarHotkey = "Ctrl+Alt+B",
+            BarTextLines = 6,
+            BarImageHeight = 200,
+            BarFileCount = 5,
+            BarLeft = 12.5,
+            BarTop = 34.5,
+            BarHeight = 800,
             ExclusionRules = [new StoredExclusionRule(ExclusionRuleKind.SourceApp, "MyVault")],
         };
 
@@ -67,6 +82,13 @@ public class AppSettingsTests
         Assert.Equal(original.ImageRetentionDays, loaded.ImageRetentionDays);
         Assert.Equal(original.StartWithWindows, loaded.StartWithWindows);
         Assert.Equal(AppTheme.Dark, loaded.Theme);
+        Assert.Equal("Ctrl+Alt+B", loaded.BarHotkey);
+        Assert.Equal(6, loaded.BarTextLines);
+        Assert.Equal(200, loaded.BarImageHeight);
+        Assert.Equal(5, loaded.BarFileCount);
+        Assert.Equal(12.5, loaded.BarLeft);
+        Assert.Equal(34.5, loaded.BarTop);
+        Assert.Equal(800, loaded.BarHeight);
         Assert.Equal(original.ExclusionRules, loaded.ExclusionRules);
     }
 

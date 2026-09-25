@@ -32,9 +32,7 @@ public partial class LibraryWindow : Window
     private readonly Func<IStreamingModel> _model;
     private readonly HistoryBrowser _browser;
     private readonly ObservableCollection<EntryItem> _items = [];
-
-    /// <summary>One decoded icon per application; see <see cref="IconFor"/>.</summary>
-    private readonly Dictionary<string, ImageSource?> _iconCache = [];
+    private readonly AppIconCache _icons;
     private readonly DispatcherTimer _searchDebounce;
 
     /// <summary>The "no tag filter" choice, shown as the first item.</summary>
@@ -47,7 +45,8 @@ public partial class LibraryWindow : Window
         EntryStore store,
         WindowsClipboardWriter clipboard,
         ImageArchive images,
-        Func<IStreamingModel> model)
+        Func<IStreamingModel> model,
+        AppIconCache icons)
     {
         InitializeComponent();
 
@@ -56,6 +55,7 @@ public partial class LibraryWindow : Window
         _images = images;
         _model = model;
         _browser = new HistoryBrowser(store);
+        _icons = icons;
 
         _searchDebounce = new DispatcherTimer { Interval = SearchDelay };
         _searchDebounce.Tick += (_, _) =>
@@ -87,30 +87,8 @@ public partial class LibraryWindow : Window
     {
         foreach (var entry in entries)
         {
-            _items.Add(EntryItem.From(entry, IconFor));
+            _items.Add(EntryItem.From(entry, _icons.For));
         }
-    }
-
-    /// <summary>
-    /// Decodes each application's icon once per window, not once per row: the
-    /// same handful of applications appear throughout the list, and the list
-    /// asks for icons again on every filter change.
-    /// </summary>
-    private ImageSource? IconFor(string? sourceApp)
-    {
-        if (string.IsNullOrEmpty(sourceApp))
-        {
-            return null;
-        }
-
-        if (_iconCache.TryGetValue(sourceApp, out var cached))
-        {
-            return cached;
-        }
-
-        var icon = EntryItem.Decode(_store.ApplicationIcon(sourceApp), pixelWidth: 16);
-        _iconCache[sourceApp] = icon;
-        return icon;
     }
 
     private void UpdateChrome()
@@ -597,40 +575,7 @@ public partial class LibraryWindow : Window
                 entry.IsPinned);
         }
 
-        /// <summary>Shared with the window, which decodes application icons the same way.</summary>
-        internal static ImageSource? Decode(byte[]? png, int pixelWidth = 0)
-        {
-            if (png is null or { Length: 0 })
-            {
-                return null;
-            }
-
-            try
-            {
-                var bitmap = new BitmapImage();
-                bitmap.BeginInit();
-                bitmap.CacheOption = BitmapCacheOption.OnLoad;
-
-                // Decoded at the display size rather than the stored size: a
-                // 32px icon shown at 16px needs a quarter of the memory, and a
-                // list full of rows has no use for the other three quarters.
-                if (pixelWidth > 0)
-                {
-                    bitmap.DecodePixelWidth = pixelWidth;
-                }
-
-                bitmap.StreamSource = new MemoryStream(png);
-                bitmap.EndInit();
-
-                // Frozen so the list can recycle rows across threads freely.
-                bitmap.Freeze();
-                return bitmap;
-            }
-            catch (NotSupportedException)
-            {
-                // A thumbnail that will not decode is not worth a broken window.
-                return null;
-            }
-        }
+        private static ImageSource? Decode(byte[]? png, int pixelWidth)
+            => AppIconCache.Decode(png, pixelWidth);
     }
 }

@@ -28,6 +28,9 @@ public partial class App : Application
     private System.Windows.Threading.DispatcherTimer? _retention;
     private SettingsWindow? _settingsWindow;
     private ThemeManager? _theme;
+    private BarWindow? _bar;
+    private AppIconCache? _icons;
+    private System.Windows.Threading.DispatcherTimer? _barGeometrySave;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -62,6 +65,7 @@ public partial class App : Application
         _settings = AppSettings.Load(AppPaths.SettingsFile);
         AppPaths.UseDirectory(_settings.DataDirectoryOverride);
         _store = EntryStore.Open(AppPaths.DatabaseFile);
+        _icons = new AppIconCache(_store);
 
         // Before any window exists: the first frame a window ever shows must
         // already be in the right theme.
@@ -195,6 +199,9 @@ public partial class App : Application
             // re-resolves every DynamicResource in every open window.
             _theme?.Apply(updated.Theme);
 
+            // The bar's density knobs take effect on the spot too.
+            _bar?.ApplySettings(updated);
+
             // Rules are swapped in on the live policy object, so the very next
             // copy is judged by them.
             _exclusions = updated.BuildExclusionPolicy();
@@ -211,6 +218,62 @@ public partial class App : Application
                 _tray?.ShowNotification("拾语", "数据位置已更改，重启拾语后生效。");
             }
         }
+    }
+
+    /// <summary>
+    /// Summons or hides the resident narrow bar. One instance, reused: a bar
+    /// that keeps its position and scroll between summons is a place the user
+    /// learns to find things.
+    /// </summary>
+    private void ToggleBar()
+    {
+        if (_store is null || _icons is null || _writer is null)
+        {
+            return;
+        }
+
+        if (_bar is null)
+        {
+            _bar = new BarWindow(_store, _icons, _writer, _settings);
+            _bar.GeometryChanged += OnBarGeometryChanged;
+        }
+
+        _bar.Toggle();
+    }
+
+    /// <summary>
+    /// Geometry saves are debounced rather than per-move: a drag fires this
+    /// dozens of times a second and the settings file does not deserve that.
+    /// </summary>
+    private void OnBarGeometryChanged()
+    {
+        _barGeometrySave ??= new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(800),
+        };
+
+        _barGeometrySave.Tick -= SaveBarGeometry;
+        _barGeometrySave.Tick += SaveBarGeometry;
+        _barGeometrySave.Stop();
+        _barGeometrySave.Start();
+    }
+
+    private void SaveBarGeometry(object? sender, EventArgs e)
+    {
+        _barGeometrySave?.Stop();
+
+        if (_bar is null)
+        {
+            return;
+        }
+
+        _settings = _settings with
+        {
+            BarLeft = _bar.BarLeft,
+            BarTop = _bar.BarTop,
+            BarHeight = _bar.BarHeight,
+        };
+        _settings.Save(AppPaths.SettingsFile);
     }
 
     /// <summary>
@@ -273,7 +336,7 @@ public partial class App : Application
         if (_library is null)
         {
             _library = new LibraryWindow(
-                _store, _writer, _images!, () => new OpenAiCompatibleBackend(_settings.Backend));
+                _store, _writer, _images!, () => new OpenAiCompatibleBackend(_settings.Backend), _icons!);
             _library.Closed += (_, _) => _library = null;
             _library.Show();
         }
@@ -314,6 +377,8 @@ public partial class App : Application
         _retention?.Stop();
         _theme?.Dispose();
         _settingsWindow?.Close();
+        SaveBarGeometry(this, EventArgs.Empty);
+        _bar?.Close();
         _quickBar?.CloseForGood();
         _panel?.CloseForGood();
         _badge?.CloseForGood();
@@ -340,6 +405,9 @@ public partial class App : Application
 
         // Ctrl+Shift+V sits next to the paste the user already knows.
         Add(_settings.QuickBarHotkey, "快速条", ShowQuickBar);
+
+        // The resident narrow bar: summoned and hidden by the same key.
+        Add(_settings.BarHotkey, "窄条", ToggleBar);
 
         // The escape hatch. Without it the user cannot tell a filter that
         // judged wrongly from a tool that broke, and has no way to insist.
