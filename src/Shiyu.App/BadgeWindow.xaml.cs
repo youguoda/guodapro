@@ -17,8 +17,12 @@ namespace Shiyu.App;
 /// </summary>
 public partial class BadgeWindow : Window
 {
-    private static readonly TimeSpan FadeIn = TimeSpan.FromMilliseconds(120);
-    private static readonly TimeSpan Hold = TimeSpan.FromMilliseconds(1700);
+    // The fade-out is kept, the fade-in deliberately is not: WPF skips
+    // compositing a layered window whose current surface is fully transparent,
+    // so an opacity animation that starts at 0 never gets its first tick and
+    // the badge stays invisible forever (found during human acceptance of
+    // ticket 04; the same frozen-clock behaviour as the ListSpike finding).
+    private static readonly TimeSpan Hold = TimeSpan.FromMilliseconds(2000);
     private static readonly TimeSpan FadeOut = TimeSpan.FromMilliseconds(260);
 
     private readonly DispatcherTimer _dismiss;
@@ -61,7 +65,11 @@ public partial class BadgeWindow : Window
 
         _dismiss.Stop();
         BeginAnimation(OpacityProperty, null);
-        Opacity = 0;
+
+        // Full opacity immediately — a fade-in starting from 0 never renders
+        // (see field notes above). The fade-out below is the one that works,
+        // because it starts from a painted surface.
+        Opacity = 1;
 
         // Shown before measuring: the size is not known until it has been laid
         // out, and the placement arithmetic needs it.
@@ -73,7 +81,6 @@ public partial class BadgeWindow : Window
         UpdateLayout();
         MoveBesideCursor();
 
-        BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, FadeIn));
         _dismiss.Start();
     }
 

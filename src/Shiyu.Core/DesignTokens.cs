@@ -113,11 +113,11 @@ public static class DesignTokens
     /// <summary>Mono-first for code, colours, hotkeys, paths — then CJK for the mixed cases.</summary>
     public const string FamilyMono = "Cascadia Mono, Consolas, Microsoft YaHei UI";
 
-    public const double FontHint = 10;
-    public const double FontCaption = 11;
-    public const double FontSecondary = 12;
-    public const double FontBody = 13;
-    public const double FontBodyLarge = 14;
+    public const double FontHint = 11;
+    public const double FontCaption = 12;
+    public const double FontSecondary = 13;
+    public const double FontBody = 14;
+    public const double FontBodyLarge = 15;
 
     /// <summary>Chinese body line height. A floor, not a suggestion — see DesignTokenTests.</summary>
     public const double BodyLineRatio = 1.7;
