@@ -20,13 +20,15 @@ public partial class SettingsWindow : Window
 
     private readonly AppSettings _current;
     private readonly Action<AppSettings> _apply;
+    private readonly BackupUi? _backup;
 
-    public SettingsWindow(AppSettings current, Action<AppSettings> apply)
+    public SettingsWindow(AppSettings current, Action<AppSettings> apply, BackupUi? backup = null)
     {
         InitializeComponent();
 
         _current = current;
         _apply = apply;
+        _backup = backup;
 
         // ComboBox order matches the AppTheme enum: System, Light, Dark.
         ThemeChoice.SelectedIndex = (int)current.Theme;
@@ -266,6 +268,12 @@ public partial class SettingsWindow : Window
 
         return result;
     }
+
+    private void OnExportBackup(object sender, RoutedEventArgs e)
+        => _backup?.Export(this);
+
+    private void OnImportBackup(object sender, RoutedEventArgs e)
+        => _backup?.Import(this);
 
     private void OnClose(object sender, RoutedEventArgs e) => Close();
 }

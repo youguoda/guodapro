@@ -186,7 +186,14 @@ public partial class App : Application
             return;
         }
 
-        _settingsWindow = new SettingsWindow(_settings, Apply);
+        _settingsWindow = new SettingsWindow(
+            _settings,
+            Apply,
+            new BackupUi(
+                _store!,
+                AppPaths.ImageDirectory,
+                () => File.Exists(AppPaths.SettingsFile) ? File.ReadAllText(AppPaths.SettingsFile) : null,
+                RestoreSettingsFromBackup));
         _settingsWindow.Closed += (_, _) => _settingsWindow = null;
         _settingsWindow.Show();
 
@@ -219,6 +226,27 @@ public partial class App : Application
             {
                 _tray?.ShowNotification("拾语", "数据位置已更改，重启拾语后生效。");
             }
+        }
+
+        /// <summary>
+        /// A backup's settings land the way a saved settings window does:
+        /// written to disk, then applied live — a restore should not have to
+        /// wait for a restart to feel real.
+        /// </summary>
+        void RestoreSettingsFromBackup(string json)
+        {
+            File.WriteAllText(AppPaths.SettingsFile, json);
+            var restored = AppSettings.Load(AppPaths.SettingsFile);
+
+            _settings = restored;
+            _theme?.Apply(restored.Theme);
+            _bar?.ApplySettings(restored);
+            _exclusions = restored.BuildExclusionPolicy();
+            _pipeline?.UseExclusions(_exclusions);
+
+            _hotkeys?.Dispose();
+            _hotkeys = new HotkeyRegistry(_messageWindow!);
+            RegisterHotkeys();
         }
     }
 

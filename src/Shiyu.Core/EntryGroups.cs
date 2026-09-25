@@ -130,6 +130,33 @@ public sealed partial class EntryStore
         transaction.Commit();
     }
 
+    /// <summary>The group an entry is filed into, or null. Export reads it to carry group membership by name.</summary>
+    public EntryGroup? GroupOf(Entry entry)
+    {
+        if (entry.GroupId is not { } id)
+        {
+            return null;
+        }
+
+        using var command = _connection.CreateCommand();
+        command.CommandText = """
+            SELECT id, name, icon, position, hidden
+            FROM groups
+            WHERE id = $id;
+            """;
+        command.Parameters.AddWithValue("$id", id);
+
+        using var reader = command.ExecuteReader();
+        return reader.Read()
+            ? new EntryGroup(
+                reader.GetInt64(0),
+                reader.GetString(1),
+                reader.IsDBNull(2) ? null : reader.GetString(2),
+                reader.GetInt32(3),
+                reader.GetInt32(4) != 0)
+            : null;
+    }
+
     /// <summary>
     /// Deletes a group. Its entries are not deleted — the foreign key clears
     /// their column and they return to ungrouped, exactly as promised.
