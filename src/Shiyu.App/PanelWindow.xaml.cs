@@ -16,8 +16,6 @@ namespace Shiyu.App;
 /// </summary>
 public partial class PanelWindow : Window
 {
-    private static readonly TimeSpan FadeIn = TimeSpan.FromMilliseconds(110);
-
     private readonly HotkeyRegistry _hotkeys;
     private readonly WindowsClipboardWriter _clipboard;
     private readonly Func<ITranslationBackend> _backend;
@@ -64,11 +62,14 @@ public partial class PanelWindow : Window
             Show();
         }
 
+        // Full opacity immediately, no fade-in: a layered window fading in
+        // from transparency never composites (ticket 04's badge finding), so
+        // the panel would rely on the translation stream's layout churn to
+        // rescue it — arriving late or, with a fast backend, not at all.
         BeginAnimation(OpacityProperty, null);
         Opacity = 1;
         UpdateLayout();
         MoveBesideCursor();
-        BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, FadeIn));
 
         HoldEscape();
         await RunTranslation();
@@ -155,8 +156,13 @@ public partial class PanelWindow : Window
     {
         _inFlight?.Cancel();
         ReleaseEscape();
-        BeginAnimation(OpacityProperty, null);
-        Hide();
+
+        // Leaving fades out through the app-wide motion system: from a
+        // painted surface, which composites fine, and instant when Windows
+        // asks for reduced motion.
+        var fade = Motion.Fade(0);
+        fade.Completed += (_, _) => Hide();
+        BeginAnimation(OpacityProperty, fade);
     }
 
     private void OnClose(object sender, RoutedEventArgs e) => Dismiss();

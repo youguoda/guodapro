@@ -17,13 +17,14 @@ namespace Shiyu.App;
 /// </summary>
 public partial class BadgeWindow : Window
 {
-    // The fade-out is kept, the fade-in deliberately is not: WPF skips
-    // compositing a layered window whose current surface is fully transparent,
-    // so an opacity animation that starts at 0 never gets its first tick and
-    // the badge stays invisible forever (found during human acceptance of
-    // ticket 04; the same frozen-clock behaviour as the ListSpike finding).
+    // The hold is what the spec calls "one to two seconds"; the fade-out goes
+    // through Motion, the app-wide motion system (ticket 05). The fade-in is
+    // deliberately absent: WPF skips compositing a layered window whose
+    // current surface is fully transparent, so an opacity animation starting
+    // at 0 never gets its first tick and the badge stays invisible forever —
+    // found during human acceptance of ticket 04; the same frozen-clock
+    // behaviour as the ListSpike finding.
     private static readonly TimeSpan Hold = TimeSpan.FromMilliseconds(2000);
-    private static readonly TimeSpan FadeOut = TimeSpan.FromMilliseconds(260);
 
     private readonly DispatcherTimer _dismiss;
     private string _text = string.Empty;
@@ -115,7 +116,7 @@ public partial class BadgeWindow : Window
 
     private void FadeAway()
     {
-        var fade = new DoubleAnimation(Opacity, 0, FadeOut);
+        var fade = Motion.Fade(0);
         fade.Completed += (_, _) =>
         {
             // Hidden rather than closed: the badge appears many times an hour,

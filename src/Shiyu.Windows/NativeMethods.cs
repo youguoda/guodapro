@@ -311,4 +311,9 @@ internal static class NativeMethods
     [DllImport("user32.dll")]
     internal static extern uint GetClipboardSequenceNumber();
 
+    internal const int SpiGetClientAreaAnimation = 0x1042;
+
+    [DllImport("user32.dll", SetLastError = true)]
+    internal static extern bool SystemParametersInfo(int action, uint parameter, out bool state, uint winIni);
+
 }

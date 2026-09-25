@@ -145,4 +145,44 @@ public static class DesignTokens
     /// tied to a control's width (a label's indent) stay where they are used.
     /// </summary>
     public static readonly double[] SpacingScale = [2, 4, 6, 8, 10, 12, 14, 16, 18, 24];
+
+    // --- motion -----------------------------------------------------------------
+
+    /// <summary>State changes. Fast enough to read as response, not as movement.</summary>
+    public const double MotionFastMs = 160;
+
+    /// <summary>Feature moments. Slower, never slow enough to wait for.</summary>
+    public const double MotionSlowMs = 300;
+
+    public static TimeSpan MotionFast => TimeSpan.FromMilliseconds(MotionFastMs);
+    public static TimeSpan MotionSlow => TimeSpan.FromMilliseconds(MotionSlowMs);
+}
+
+/// <summary>
+/// The two motion curves. A new effect that fits neither curve is a new
+/// effect that should not exist.
+/// </summary>
+public enum MotionCurve
+{
+    /// <summary>Ordinary state changes: calm, quick, out of the way.</summary>
+    Standard,
+
+    /// <summary>The two or three "watch this" moments: a little more personality, same family.</summary>
+    Feature,
+}
+
+/// <summary>
+/// Decides how long a transition takes. Every animation in the app asks here,
+/// which is what makes reduced motion all-or-nothing rather than a sieve: one
+/// call site forgetting to consult this is one effect that ignores the user's
+/// accessibility preference.
+/// </summary>
+public static class MotionPlan
+{
+    /// <param name="animationsAllowed">What the system says; supplied live by the platform layer.</param>
+    /// <param name="feature">True for the two or three moments that earn the slower tier.</param>
+    public static TimeSpan Duration(bool animationsAllowed, bool feature = false)
+        => !animationsAllowed ? TimeSpan.Zero
+         : feature ? DesignTokens.MotionSlow
+         : DesignTokens.MotionFast;
 }
