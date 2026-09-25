@@ -262,6 +262,16 @@ public partial class App : Application
     }
 
     /// <summary>
+    /// Opens the settings window landed on one item — the deep link other
+    /// windows use instead of knowing anything about settings internals.
+    /// </summary>
+    internal void OpenSettingsAt(string itemId)
+    {
+        ShowSettings();
+        _settingsWindow?.JumpToItem(itemId);
+    }
+
+    /// <summary>
     /// Summons or hides the resident narrow bar. One instance, reused: a bar
     /// that keeps its position and scroll between summons is a place the user
     /// learns to find things.
@@ -277,6 +287,7 @@ public partial class App : Application
         {
             _bar = new BarWindow(_store, _icons, _writer, _capture, _settings, _fileIcons!);
             _bar.GeometryChanged += OnBarGeometryChanged;
+            _bar.DataSettingsRequested += OpenSettingsAt;
         }
 
         _bar.Toggle();

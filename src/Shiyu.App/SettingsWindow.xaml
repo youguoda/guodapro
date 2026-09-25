@@ -20,15 +20,46 @@
 
     <Grid Margin="14">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
+        <TextBox x:Name="SearchBox" Grid.Row="0" Padding="8,6"
+                 VerticalContentAlignment="Center"
+                 ToolTip="搜索设置——支持你自己的说法，比如“多久删”"
+                 TextChanged="OnSearchChanged"/>
+        <TextBlock Text="搜索设置…" Grid.Row="0" IsHitTestVisible="False" Margin="10,7,0,0"
+                   Foreground="{DynamicResource Brush.TextTertiary}"
+                   FontSize="{DynamicResource Size.Secondary}">
+            <TextBlock.Style>
+                <Style TargetType="TextBlock">
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding Text, ElementName=SearchBox}" Value="">
+                            <Setter Property="Visibility" Value="Visible"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                </Style>
+            </TextBlock.Style>
+        </TextBlock>
+
         <!-- Every page, section, and editor below is generated from
              SettingsSchema — this window hardcodes no setting. -->
-        <TabControl x:Name="Pages" Grid.Row="0" Background="Transparent" BorderThickness="0"/>
+        <Grid Grid.Row="1">
+            <TabControl x:Name="Pages" Background="Transparent" BorderThickness="0"/>
 
-        <DockPanel Grid.Row="1" LastChildFill="False" Margin="0,14,0,0">
+            <!-- Search results overlay the pages until one is chosen. -->
+            <Border x:Name="ResultsHost" Visibility="Collapsed"
+                    VerticalAlignment="Top" Margin="0,6,8,0" MaxHeight="320"
+                    Background="{DynamicResource Brush.Surface}"
+                    BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1"
+                    CornerRadius="6" Padding="4">
+                <StackPanel x:Name="ResultsList"/>
+            </Border>
+        </Grid>
+
+        <DockPanel Grid.Row="2" LastChildFill="False" Margin="0,14,0,0">
             <TextBlock x:Name="SaveStatus" DockPanel.Dock="Left" VerticalAlignment="Center"
                        Foreground="{DynamicResource Brush.TextSecondary}"
                        FontSize="{DynamicResource Size.Secondary}" TextWrapping="Wrap" MaxWidth="330"/>

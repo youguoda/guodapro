@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using Shiyu.Core;
 using Shiyu.Windows;
 
@@ -34,6 +35,8 @@ public partial class SettingsWindow : Window
     private readonly Dictionary<string, FrameworkElement> _rows = [];
     private readonly Dictionary<string, TextBox> _numberBoxes = [];
     private readonly Dictionary<string, List<(ToggleButton Button, int Index)>> _segments = [];
+    private readonly Dictionary<string, ScrollViewer> _pageScrollers = [];
+    private readonly Dictionary<string, int> _pageTabIndex = [];
 
     private TextBox? _directoryBox;
     private TextBlock? _directoryWarning;
@@ -73,8 +76,201 @@ public partial class SettingsWindow : Window
             }
 
             scroll.Content = body;
+            _pageScrollers[page.Id] = scroll;
+            _pageTabIndex[page.Id] = Pages.Items.Count;
             Pages.Items.Add(new TabItem { Header = page.Title, Content = scroll });
         }
+    }
+
+    // --- search and deep links --------------------------------------------------
+
+    private void OnSearchChanged(object sender, TextChangedEventArgs e)
+    {
+        ResultsList.Children.Clear();
+
+        var hits = SettingsSearch.Find(SearchBox.Text);
+        if (SearchBox.Text.Trim().Length == 0)
+        {
+            ResultsHost.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        ResultsHost.Visibility = Visibility.Visible;
+
+        if (hits.Count == 0)
+        {
+            var none = new TextBlock
+            {
+                Text = "没有匹配的设置项——换个说法试试？",
+                Margin = new Thickness(8, 6, 8, 6),
+                Opacity = 0.8,
+            };
+            none.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
+            ResultsList.Children.Add(none);
+            return;
+        }
+
+        foreach (var hit in hits)
+        {
+            var captured = hit;
+            var button = new Button
+            {
+                Content = new StackPanel
+                {
+                    Children =
+                    {
+                        new TextBlock { Text = hit.Item.Label },
+                        new TextBlock
+                        {
+                            Text = $"{hit.PageTitle} · {hit.SectionTitle}",
+                            FontSize = (double)FindResource("Size.Hint"),
+                            Opacity = 0.75,
+                        },
+                    },
+                },
+                Padding = new Thickness(10, 5, 10, 5),
+                Margin = new Thickness(0, 0, 0, 2),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                Cursor = Cursors.Hand,
+            };
+            button.SetResourceReference(BackgroundProperty, "Brush.Surface");
+            button.Click += (_, _) => JumpTo(captured.Item.Id, captured.PageId);
+            ResultsList.Children.Add(button);
+        }
+
+        if (hits.Count >= SettingsSearch.ResultCap)
+        {
+            var cap = new TextBlock
+            {
+                Text = $"已显示前 {SettingsSearch.ResultCap} 项——再具体一点。",
+                Margin = new Thickness(8, 4, 8, 4),
+                FontSize = (double)FindResource("Size.Hint"),
+                Opacity = 0.7,
+            };
+            cap.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextTertiary");
+            ResultsList.Children.Add(cap);
+        }
+    }
+
+    /// <summary>
+    /// The deep link: one id lands the user on that item — tab selected, row
+    /// scrolled to the middle of the view, and a decaying pulse saying
+    /// "this one", because landing silently looks like not landing at all.
+    /// </summary>
+    public void JumpToItem(string itemId)
+    {
+        var hit = SettingsSchema.Tree
+            .SelectMany(page => page.Sections.SelectMany(section => section.Items)
+                .Select(item => (page.Id, item)))
+            .FirstOrDefault(entry => entry.item.Id == itemId);
+
+        if (hit.item is not null)
+        {
+            JumpTo(hit.item.Id, hit.Id);
+        }
+    }
+
+    private void JumpTo(string itemId, string pageId)
+    {
+        SearchBox.Clear();
+
+        if (!_pageTabIndex.TryGetValue(pageId, out var index)
+            || !_rows.TryGetValue(itemId, out var row))
+        {
+            return;
+        }
+
+        // A child under a collapsed parent cannot be shown without flipping
+        // the parent's value — not ours to do — so the pulse lands on the
+        // deepest ancestor the user can actually see.
+        var target = row;
+        var candidate = AllItems().FirstOrDefault(item => item.Id == itemId);
+        while (candidate is { Parent: { } parentId }
+               && _edited.TryGetValue(parentId, out var parent)
+               && !parent.Toggle)
+        {
+            if (!_rows.TryGetValue(parentId, out var parentRow))
+            {
+                break;
+            }
+
+            target = parentRow;
+            candidate = AllItems().FirstOrDefault(next => next.Id == parentId);
+        }
+
+        Pages.SelectedIndex = index;
+
+        // The tab has to lay out before there is anything to scroll.
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (!_pageScrollers.TryGetValue(pageId, out var scroller))
+            {
+                return;
+            }
+
+            var top = target.TranslatePoint(new Point(0, 0), (UIElement)scroller.Content).Y;
+            var centre = top + target.ActualHeight / 2 - scroller.ViewportHeight / 2;
+            scroller.ScrollToVerticalOffset(Math.Max(0, centre));
+
+            Pulse(target);
+        }, System.Windows.Threading.DispatcherPriority.Render);
+    }
+
+    /// <summary>
+    /// Three decaying flashes rather than one steady glow: steady reads as
+    /// "selected", decay reads as "look here". With animations reduced, a
+    /// quiet static wash says the same thing without moving.
+    /// </summary>
+    private static void Pulse(FrameworkElement row)
+    {
+        if (row is not Grid grid)
+        {
+            return;
+        }
+
+        var wash = new Border
+        {
+            Background = (Brush)row.FindResource("Brush.Accent"),
+            Opacity = 0,
+            IsHitTestVisible = false,
+            CornerRadius = new CornerRadius(4),
+        };
+        Grid.SetColumnSpan(wash, 2);
+        grid.Children.Add(wash);
+
+        void Remove()
+        {
+            grid.Children.Remove(wash);
+        }
+
+        if (!UiAnimation.Allowed())
+        {
+            wash.Opacity = 0.16;
+            var timer = new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(1.8),
+            };
+            timer.Tick += (_, _) =>
+            {
+                timer.Stop();
+                Remove();
+            };
+            timer.Start();
+            return;
+        }
+
+        var pulse = new DoubleAnimationUsingKeyFrames { Duration = TimeSpan.FromSeconds(1.3) };
+        foreach (var (at, peak) in new[]
+                 {
+                     (0.0, 0.0), (0.15, 0.38), (0.45, 0.0),
+                     (0.55, 0.22), (0.85, 0.0), (0.95, 0.12), (1.3, 0.0),
+                 })
+        {
+            pulse.KeyFrames.Add(new EasingDoubleKeyFrame(peak, KeyTime.FromTimeSpan(TimeSpan.FromSeconds(at))));
+        }
+
+        pulse.Completed += (_, _) => Remove();
+        wash.BeginAnimation(OpacityProperty, pulse);
     }
 
     private FrameworkElement RowFor(SettingsItem item)

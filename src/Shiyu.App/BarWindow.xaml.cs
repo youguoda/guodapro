@@ -902,6 +902,9 @@ internal partial class BarWindow : Window
 
     private bool _fittingGroups;
 
+    /// <summary>Carries a settings deep-link id up to whoever owns settings.</summary>
+    public event Action<string>? DataSettingsRequested;
+
     /// <summary>Rebuilds the switcher row after groups appear, change, or vanish.</summary>
     private void RefreshGroups()
     {
@@ -1232,7 +1235,9 @@ internal partial class BarWindow : Window
             _groupChooser.IsOpen = false;
         }
 
-        new GroupManagerWindow(_store) { Owner = this }.ShowDialog();
+        var manager = new GroupManagerWindow(_store) { Owner = this };
+        manager.DataSettingsRequested += () => DataSettingsRequested?.Invoke("store.protect");
+        manager.ShowDialog();
         RefreshGroups();
         ApplyFilter();
     }

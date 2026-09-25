@@ -19,6 +19,9 @@ internal sealed class GroupManagerWindow : Window
     private readonly EntryStore _store;
     private readonly StackPanel _list = new();
 
+    /// <summary>Raised when the user asks for the related settings — a deep link.</summary>
+    public event Action? DataSettingsRequested;
+
     public GroupManagerWindow(EntryStore store)
     {
         _store = store;
@@ -86,6 +89,17 @@ internal sealed class GroupManagerWindow : Window
         };
         hint.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextTertiary");
         root.Children.Add(hint);
+
+        var link = new Button
+        {
+            Content = "删除保护与备份在设置中调整…",
+            Padding = new Thickness(0, 3, 0, 3),
+            Margin = new Thickness(0, 8, 0, 0),
+            Cursor = Cursors.Hand,
+            HorizontalAlignment = HorizontalAlignment.Left,
+        };
+        link.Click += (_, _) => DataSettingsRequested?.Invoke();
+        root.Children.Add(link);
 
         Content = root;
         Reload();

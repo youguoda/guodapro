@@ -88,7 +88,7 @@ public static class SettingsSchema
                 new SettingsItem(
                     "theme", "主题", SettingsControl.Segmented,
                     Choices: ["跟随系统", "浅色", "深色"],
-                    Keywords: ["主题", "深色", "浅色", "夜间"])),
+                    Keywords: ["主题", "深色", "浅色", "夜间", "夜间模式", "变暗"])),
             new SettingsSection("look.density", "密度",
                 new SettingsItem(
                     "bar.text-lines", "文本行数", SettingsControl.Number, Min: 1, Max: 20,
@@ -129,22 +129,22 @@ public static class SettingsSchema
                 new SettingsItem(
                     "store.retention-days", "图片保留", SettingsControl.Number, Min: 1, Max: 36500,
                     Hint: "天后清理原图；文本永不清理。",
-                    Keywords: ["保留", "清理", "图片", "原图"]),
+                    Keywords: ["保留", "清理", "图片", "原图", "多久删", "过期", "几天", "占用"]),
                 new SettingsItem(
                     "store.protect", "删除保护", SettingsControl.Toggle,
                     Hint: "受收藏/置顶保护的条目不参与自动清理与批量删除，也不显示删除入口；取消标记即可删除。",
-                    Keywords: ["保护", "收藏", "置顶", "删除"]),
+                    Keywords: ["保护", "收藏", "置顶", "删除", "误删", "防手滑"]),
                 new SettingsItem(
                     "store.protect-favorites", "保护收藏", SettingsControl.Toggle,
-                    Parent: "store.protect", Keywords: ["保护", "收藏"]),
+                    Parent: "store.protect", Keywords: ["保护", "收藏", "星标"]),
                 new SettingsItem(
                     "store.protect-pinned", "保护置顶", SettingsControl.Toggle,
-                    Parent: "store.protect", Keywords: ["保护", "置顶"])),
+                    Parent: "store.protect", Keywords: ["保护", "置顶", "钉住"])),
             new SettingsSection("store.location", "位置与启动",
                 new SettingsItem(
                     "store.directory", "数据位置", SettingsControl.Directory,
                     Hint: "历史与图片存在这里；留空用默认位置。",
-                    Keywords: ["位置", "目录", "数据", "移动"]),
+                    Keywords: ["位置", "目录", "数据", "移动", "迁移", "换盘"]),
                 new SettingsItem(
                     "store.start-with-windows", "开机自启", SettingsControl.Toggle,
                     Keywords: ["开机", "自启", "启动"]),
