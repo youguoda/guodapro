@@ -46,4 +46,27 @@ public static class FileEntries
             ? $"{first} 等 {paths.Count}+ 项"
             : $"{first} 等 {paths.Count} 项";
     }
+
+    private static readonly HashSet<string> PreviewExtensions =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ".png", ".jpg", ".jpeg", ".jfif", ".gif", ".bmp", ".webp", ".tif", ".tiff", ".ico",
+        };
+
+    /// <summary>
+    /// The first path of a copy that is entirely image files, or null.
+    ///
+    /// All-or-nothing on purpose: a preview of the first file next to rows for
+    /// the others would imply the picture stands for the whole selection only
+    /// sometimes, and the card would never be able to say which.
+    /// </summary>
+    public static string? PreviewImagePath(IReadOnlyList<string> paths)
+    {
+        if (paths.Count == 0 || paths.Any(path => !PreviewExtensions.Contains(Path.GetExtension(path))))
+        {
+            return null;
+        }
+
+        return paths[0];
+    }
 }

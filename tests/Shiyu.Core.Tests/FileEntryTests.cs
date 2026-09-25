@@ -72,4 +72,20 @@ public class FileEntryTests
         var entry = Assert.Single(store.Recent(limit: 10));
         Assert.Equal([@"C:\one\x.log", @"C:\two\y.log"], entry.Files);
     }
+
+    [Fact]
+    public void A_copy_of_only_images_names_the_first_as_the_preview()
+    {
+        Assert.Equal(@"C:\pics\a.jpg", FileEntries.PreviewImagePath([@"C:\pics\a.jpg", @"C:\pics\b.png"]));
+        Assert.Equal(@"C:\pics\only.png", FileEntries.PreviewImagePath([@"C:\pics\only.png"]));
+        Assert.Equal(@"C:\pics\UPPER.JPG", FileEntries.PreviewImagePath([@"C:\pics\UPPER.JPG"]));
+    }
+
+    [Fact]
+    public void A_mixed_or_empty_copy_has_no_preview()
+    {
+        Assert.Null(FileEntries.PreviewImagePath([@"C:\pics\a.jpg", @"C:\docs\b.pdf"]));
+        Assert.Null(FileEntries.PreviewImagePath([@"C:\a.txt"]));
+        Assert.Null(FileEntries.PreviewImagePath([]));
+    }
 }

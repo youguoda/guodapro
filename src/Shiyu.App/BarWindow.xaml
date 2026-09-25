@@ -141,8 +141,17 @@
                         </Border>
                         <!-- Files: type icon per row, dead paths struck through
                              and faded — a path that is gone says so in the
-                             list, not after a paste that produced nothing. -->
+                             list, not after a paste that produced nothing.
+                             A copy made only of pictures previews as one. -->
                         <StackPanel x:Name="FilesBody" Visibility="{Binding FilesVisibility}">
+                            <Border MaxHeight="{Binding ImageHeight}"
+                                    CornerRadius="{DynamicResource Radius.Small}"
+                                    Background="{DynamicResource Brush.SurfaceSubtle}"
+                                    Visibility="{Binding FilePreviewVisibility}"
+                                    Margin="0,0,0,3">
+                                <Image Source="{Binding FilePreviewSource}" Stretch="Uniform"
+                                       RenderOptions.BitmapScalingMode="HighQuality"/>
+                            </Border>
                             <ItemsControl ItemsSource="{Binding FileRows}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>

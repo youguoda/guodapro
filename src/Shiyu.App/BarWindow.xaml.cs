@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using Shiyu.Core;
 using Shiyu.Windows;
 
@@ -243,6 +244,13 @@ internal sealed class BarCard : INotifyPropertyChanged
 
     /// <summary>The file rows a file card shows, already clamped to the density knob.</summary>
     public IReadOnlyList<FileRow> FileRows { get; init; } = [];
+
+    /// <summary>A file copy made entirely of images previews its first file.</summary>
+    public ImageSource? FilePreviewSource { get; init; }
+
+    public Visibility FilePreviewVisibility => FilePreviewSource is null
+        ? Visibility.Collapsed
+        : Visibility.Visible;
 
     /// <summary>The full capped path list of a file entry, for copying and pasting back.</summary>
     public IReadOnlyList<string> Files { get; init; } = [];
@@ -595,6 +603,7 @@ internal partial class BarWindow : Window
             Favorite = entry.Favorite,
             Note = entry.Note,
             FileRows = fileRows,
+            FilePreviewSource = PreviewFileImage(entry),
             AllPathsDead = entry.Kind == EntryKind.Files && entry.Files.All(path => !File.Exists(path)),
             FileCount = entry.Files.Count,
             SwatchBrush = entry.Subtype == EntrySubtype.Color
@@ -610,6 +619,38 @@ internal partial class BarWindow : Window
         // The note is the public face; the original waits behind a hover.
         card.Face = entry.Note is { Length: > 0 } ? entry.Note : card.Preview;
         return card;
+    }
+
+    /// <summary>
+    /// A file copy made entirely of images previews as pictures: names alone
+    /// answer "which file", not "what was in it". A missing or unreadable file
+    /// falls back to the rows — a struck-through name says more than nothing.
+    /// </summary>
+    private static ImageSource? PreviewFileImage(Entry entry)
+    {
+        if (entry.Kind != EntryKind.Files
+            || FileEntries.PreviewImagePath(entry.Files) is not { } path
+            || !File.Exists(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            var image = new BitmapImage();
+            image.BeginInit();
+            image.CacheOption = BitmapCacheOption.OnLoad;
+            image.DecodePixelWidth = 320;
+            image.UriSource = new Uri(path);
+            image.EndInit();
+            image.Freeze();
+            return image;
+        }
+        catch (Exception)
+        {
+            // A file with an image extension that is not a readable bitmap.
+            return null;
+        }
     }
     private void Rebuild()
     {
