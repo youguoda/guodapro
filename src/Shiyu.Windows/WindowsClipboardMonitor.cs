@@ -172,10 +172,12 @@ public sealed class WindowsClipboardMonitor : IClipboardMonitor, IDisposable
 
         try
         {
-            // DROPFILES: a DWORD offset to the list, then a flag saying whether
-            // the list is wide chars. The list itself is double-null terminated.
+            // DROPFILES: DWORD pFiles (offset to the list), POINT pt, BOOL
+            // fNC, BOOL fWide — twenty bytes in total, with fWide at 16.
+            // Reading the flag from the wrong offset decodes every list as
+            // ANSI and turns wide-char paths into single-character garbage.
             var offset = Marshal.ReadInt32(pointer);
-            var wide = Marshal.ReadInt32(pointer, 4) != 0;
+            var wide = Marshal.ReadInt32(pointer, 16) != 0;
             var list = pointer + offset;
 
             var paths = new List<string>();

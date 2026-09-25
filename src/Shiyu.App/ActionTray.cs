@@ -68,16 +68,17 @@ internal sealed class ActionTray : StackPanel
         button.SetResourceReference(Control.ForegroundProperty,
             HoverActions.IsDestructive(id) ? "Brush.Danger" : "Brush.Text");
 
-        // Every mouse event stops here. The card underneath treats a press as
-        // selection and a double-press as a copy; a tray press is none of the
-        // card's business. Middle and right buttons included — six events is
-        // the reference implementation's hard-won list, not padding.
-        button.PreviewMouseLeftButtonDown += Swallow;
-        button.PreviewMouseLeftButtonUp += Swallow;
-        button.PreviewMouseRightButtonDown += Swallow;
-        button.PreviewMouseRightButtonUp += Swallow;
-        button.PreviewMouseDown += Swallow;
-        button.PreviewMouseUp += Swallow;
+        // Every mouse event stops here — on the bubbling versions, after the
+        // button's own class handlers have run, so the button still clicks
+        // while the press never reaches the card underneath. Swallowing the
+        // preview events instead kills the button's Click mechanism outright,
+        // which is how the tray first shipped: visible, Pressable, dead.
+        button.MouseLeftButtonDown += Swallow;
+        button.MouseLeftButtonUp += Swallow;
+        button.MouseRightButtonDown += Swallow;
+        button.MouseRightButtonUp += Swallow;
+        button.MouseDown += Swallow;
+        button.MouseUp += Swallow;
 
         button.Click += (_, _) => ActionExecuted?.Invoke(id, card, button);
 
