@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace Shiyu.Core;
 
 /// <summary>
@@ -102,7 +104,12 @@ public sealed class ClipboardPipeline : IDisposable
             return;
         }
 
-        _store.Append(snapshot.Text, snapshot.SourceApp, now);
+        _store.Append(
+            snapshot.Text,
+            snapshot.SourceApp,
+            now,
+            WithinLimit(snapshot.Html),
+            WithinLimit(snapshot.Rtf));
         Offer(snapshot.Text);
     }
 
@@ -128,6 +135,18 @@ public sealed class ClipboardPipeline : IDisposable
             ImageFailed?.Invoke(failure.Message);
         }
     }
+
+    /// <summary>
+    /// The ceiling on a stored formatted form. A whole-page copy can be
+    /// megabytes; keeping it would bloat the database for a formatting nobody
+    /// will paste back, so past that the plain text stands alone.
+    /// </summary>
+    private const int FormattedLimitBytes = 512 * 1024;
+
+    private static string? WithinLimit(string? formatted)
+        => formatted is { Length: > 0 } && Encoding.UTF8.GetByteCount(formatted) <= FormattedLimitBytes
+            ? formatted
+            : null;
 
     private void Offer(string text)
     {

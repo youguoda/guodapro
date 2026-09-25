@@ -30,6 +30,12 @@ public sealed record Entry(
     /// <summary>What a text entry is — a link, an email, a colour, a path — so the list can show it as itself.</summary>
     public EntrySubtype Subtype { get; init; } = EntrySubtype.None;
 
+    /// <summary>The copy's HTML form, kept for pasting back with formatting. The Text stays the searchable plain form.</summary>
+    public string? Html { get; init; }
+
+    /// <summary>The copy's RTF form, when the source published one instead of HTML.</summary>
+    public string? Rtf { get; init; }
+
     public byte[]? ThumbnailPng { get; init; }
 
     public string? OriginalPath { get; init; }

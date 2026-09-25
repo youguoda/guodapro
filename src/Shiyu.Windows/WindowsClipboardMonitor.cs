@@ -41,6 +41,12 @@ public sealed class WindowsClipboardMonitor : IClipboardMonitor, IDisposable
     private bool _disposed;
     private long? _lastImageFingerprint;
 
+    private static readonly uint HtmlFormat =
+        NativeMethods.RegisterClipboardFormatW("HTML Format");
+
+    private static readonly uint RtfFormat =
+        NativeMethods.RegisterClipboardFormatW("Rich Text Format");
+
     public event Action<ClipboardSnapshot>? Changed;
 
     public WindowsClipboardMonitor(MessageWindow window)
@@ -90,6 +96,8 @@ public sealed class WindowsClipboardMonitor : IClipboardMonitor, IDisposable
             Changed?.Invoke(new ClipboardSnapshot(reading.Value.Text, sourceApp, reading.Value.Excluded)
             {
                 SourceExePath = sourceExe,
+                Html = reading.Value.Html,
+                Rtf = reading.Value.Rtf,
             });
             return;
         }
@@ -122,7 +130,7 @@ public sealed class WindowsClipboardMonitor : IClipboardMonitor, IDisposable
         });
     }
 
-    private readonly record struct Reading(string Text, bool Excluded);
+    private readonly record struct Reading(string Text, bool Excluded, string? Html, string? Rtf);
 
     /// <summary>An exclusion marker applies to the whole clipboard, images included.</summary>
     private static bool IsExcluded(Reading? reading) => reading?.Excluded ?? false;
@@ -150,7 +158,11 @@ public sealed class WindowsClipboardMonitor : IClipboardMonitor, IDisposable
                 // for an image-only clipboard. Dropping the reading here would
                 // quietly reopen the hole exclusion exists to close: an image
                 // copied from a password manager would be recorded.
-                return new Reading(ReadUnicodeText() ?? string.Empty, excluded);
+                return new Reading(
+                    ReadUnicodeText() ?? string.Empty,
+                    excluded,
+                    ReadFormatted(),
+                    ReadString(RtfFormat));
             }
             finally
             {
@@ -222,6 +234,51 @@ public sealed class WindowsClipboardMonitor : IClipboardMonitor, IDisposable
         try
         {
             return Marshal.PtrToStringUni(pointer);
+        }
+        finally
+        {
+            NativeMethods.GlobalUnlock(handle);
+        }
+    }
+
+    /// <summary>
+    /// The copy's HTML fragment, when the source published one. Only the
+    /// fragment is kept — the header is transport, not content.
+    /// </summary>
+    private static string? ReadFormatted()
+    {
+        var bytes = ReadBytes(HtmlFormat);
+        return bytes is null ? null : ClipboardHtml.ExtractFragment(bytes);
+    }
+
+    /// <summary>Requires the clipboard to already be open.</summary>
+    private static string? ReadString(uint format)
+    {
+        var bytes = ReadBytes(format);
+        return bytes is null ? null : System.Text.Encoding.UTF8.GetString(bytes).TrimEnd('\0');
+    }
+
+    /// <summary>Requires the clipboard to already be open.</summary>
+    private static byte[]? ReadBytes(uint format)
+    {
+        var handle = NativeMethods.GetClipboardData(format);
+        if (handle == IntPtr.Zero)
+        {
+            return null;
+        }
+
+        var pointer = NativeMethods.GlobalLock(handle);
+        if (pointer == IntPtr.Zero)
+        {
+            return null;
+        }
+
+        try
+        {
+            var size = (int)NativeMethods.GlobalSize(handle);
+            var bytes = new byte[size];
+            Marshal.Copy(pointer, bytes, 0, size);
+            return bytes;
         }
         finally
         {

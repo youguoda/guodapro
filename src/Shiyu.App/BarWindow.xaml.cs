@@ -228,6 +228,11 @@ internal sealed class BarCard : INotifyPropertyChanged
 
     public EntrySubtype Subtype { get; init; }
 
+    /// <summary>The copy's HTML form, kept so pasting back into a rich destination keeps its formatting.</summary>
+    public string? Html { get; init; }
+
+    public string? Rtf { get; init; }
+
     /// <summary>Links and emails open in the system's default program.</summary>
     public bool IsOpenable => Subtype is EntrySubtype.Link or EntrySubtype.Email;
 
@@ -485,6 +490,8 @@ internal partial class BarWindow : Window
             OriginalPath = entry.OriginalPath,
             HasOriginal = entry.HasOriginal,
             Subtype = entry.Subtype,
+            Html = entry.Html,
+            Rtf = entry.Rtf,
             SwatchBrush = entry.Subtype == EntrySubtype.Color
                 && SubtypeColor.TryParse(entry.Text, out var colour)
                 ? new SolidColorBrush(System.Windows.Media.Color.FromArgb(colour.A, colour.R, colour.G, colour.B))
@@ -718,12 +725,12 @@ internal partial class BarWindow : Window
         switch (id)
         {
             case "copy":
-                Confirm(feedback, _clipboard.SetText(card.Text));
+                Confirm(feedback, CopyCard(card));
                 break;
 
             case "plain":
-                // Stored text is plain by construction; this becomes distinct
-                // when formatted entries exist (ticket 07).
+                // Strips every format: plain text and nothing else, so what
+                // lands carries no styling from where it came.
                 Confirm(feedback, _clipboard.SetText(card.Text));
                 break;
 
@@ -755,9 +762,20 @@ internal partial class BarWindow : Window
     }
 
     /// <summary>
-    /// Copies into the window the user was in before summoning the bar. The
+    /// Copies an entry as itself: plain text always, the HTML and RTF forms
+    /// when the entry has them, so a rich destination receives the formatting
+    /// and a plain one receives readable text.
+    /// </summary>
+    private bool CopyCard(BarCard card)
+        => card.Html is { Length: > 0 } || card.Rtf is { Length: > 0 }
+            ? _clipboard.SetRich(card.Text, card.Html, card.Rtf)
+            : _clipboard.SetText(card.Text);
+
+    /// <summary>
+    /// Pastes into the window the user was in before summoning the bar. The
     /// bar hides first — until it does, it is the thing in the way of the
-    /// foreground the paste needs.
+    /// foreground the paste needs. A rich entry pastes as itself: formats
+    /// written first, then the keystroke into the restored window.
     /// </summary>
     private void PasteEntry(BarCard card)
     {
@@ -768,7 +786,18 @@ internal partial class BarWindow : Window
 
         Hide();
         _returnTo.Restore();
-        _capture.Paste(card.Text);
+
+        if (card.Html is { Length: > 0 } || card.Rtf is { Length: > 0 })
+        {
+            if (_clipboard.SetRich(card.Text, card.Html, card.Rtf))
+            {
+                _capture.PasteCurrentClipboard();
+            }
+        }
+        else
+        {
+            _capture.Paste(card.Text);
+        }
     }
 
     private void OpenOriginal(BarCard card)

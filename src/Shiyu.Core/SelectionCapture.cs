@@ -158,6 +158,23 @@ public sealed class SelectionCapture(ICapturePlatform platform, CaptureTiming? t
         }
     }
 
+    /// <summary>
+    /// Sends only the paste keystroke, for callers that have already put a
+    /// rich multi-format payload on the clipboard themselves.
+    /// </summary>
+    public bool PasteCurrentClipboard()
+    {
+        try
+        {
+            platform.SendPasteKeystroke();
+            return true;
+        }
+        catch (ClipboardUnavailableException)
+        {
+            return false;
+        }
+    }
+
     private bool Restore(string? borrowed)
     {
         try

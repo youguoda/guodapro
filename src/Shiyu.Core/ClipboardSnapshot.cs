@@ -36,4 +36,14 @@ public sealed record ClipboardSnapshot(string Text, string? SourceApp, bool Excl
     /// reason <see cref="SourceApp"/> does.
     /// </summary>
     public string? SourceExePath { get; init; }
+
+    /// <summary>
+    /// The copy's HTML form, when the source published one. Kept so a paste
+    /// back into a rich-text destination keeps its formatting; the plain
+    /// <see cref="Text"/> remains what the list shows and searches.
+    /// </summary>
+    public string? Html { get; init; }
+
+    /// <summary>The copy's RTF form, when the source published one.</summary>
+    public string? Rtf { get; init; }
 }
