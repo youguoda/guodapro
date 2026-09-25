@@ -435,6 +435,7 @@ internal partial class BarWindow : Window
         Append(_browser.Loaded);
         PinnedHost.Visibility = _pinned.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         UpdateCount();
+        EnsureActiveItem();
     }
 
     private void Append(IEnumerable<Entry> entries)
@@ -599,17 +600,24 @@ internal partial class BarWindow : Window
 
     /// <summary>Runs one hover action. Invoked from any card's tray via the container's subscription.</summary>
     public void RunHoverAction(string id, BarCard card, Button button)
+        => ExecuteAction(id, card, button);
+
+    /// <summary>
+    /// Executes one action. The keyboard uses this too, where there is no
+    /// button to give feedback on.
+    /// </summary>
+    private void ExecuteAction(string id, BarCard card, Button? feedback)
     {
         switch (id)
         {
             case "copy":
-                Confirm(button, _clipboard.SetText(card.Text));
+                Confirm(feedback, _clipboard.SetText(card.Text));
                 break;
 
             case "plain":
                 // Stored text is plain by construction; this becomes distinct
                 // when formatted entries exist (ticket 07).
-                Confirm(button, _clipboard.SetText(card.Text));
+                Confirm(feedback, _clipboard.SetText(card.Text));
                 break;
 
             case "paste":
@@ -634,6 +642,7 @@ internal partial class BarWindow : Window
                 _browser.Forget(card.Id);
                 RemoveCard(card);
                 UpdateCount();
+                EnsureActiveItem();
                 break;
         }
     }
@@ -721,8 +730,13 @@ internal partial class BarWindow : Window
     /// The success feedback: the pressed button becomes a tick for a second,
     /// and — only if the user asked — a sound joins it.
     /// </summary>
-    private void Confirm(Button button, bool succeeded)
+    private void Confirm(Button? button, bool succeeded)
     {
+        if (button is null)
+        {
+            return;
+        }
+
         if (!succeeded)
         {
             button.Content = "✗";
@@ -769,12 +783,177 @@ internal partial class BarWindow : Window
         }
     }
 
+    // --- keyboard model --------------------------------------------------------
+
+    /// <summary>Rows as displayed: pinned first, then the rest. Number keys and navigation count these.</summary>
+    private IEnumerable<BarCard> VisibleRows => _pinned.Concat(_cards);
+
+    /// <summary>Focus sits in a text field: letters belong to it, arrows move its caret.</summary>
+    private static bool IsTyping
+        => Keyboard.FocusedElement is TextBox;
+
+    /// <summary>
+    /// There is always an active row while any row exists, so Enter and the
+    /// letter actions always have something definite to act on.
+    /// </summary>
+    private void EnsureActiveItem()
+    {
+        if (_selected is { } card && (_cards.Contains(card) || _pinned.Contains(card)))
+        {
+            return;
+        }
+
+        Select(VisibleRows.FirstOrDefault());
+    }
+
+    private void Move(int delta)
+    {
+        var rows = VisibleRows.ToList();
+        if (rows.Count == 0)
+        {
+            return;
+        }
+
+        var current = _selected is { } card ? rows.IndexOf(card) : -1;
+        var next = Math.Clamp(current + delta, 0, rows.Count - 1);
+
+        Select(rows[next]);
+        Cards.ScrollIntoView(rows[next]);
+    }
+
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Escape)
+        switch (e.Key)
         {
-            Dismiss();
-            e.Handled = true;
+            case Key.Escape:
+                e.Handled = true;
+                StepEscape();
+                break;
+
+            case Key.F when Keyboard.Modifiers == ModifierKeys.Control:
+                e.Handled = true;
+                SearchBox.Focus();
+                SearchBox.SelectAll();
+                break;
+
+            // Tab trades focus navigation for filter cycling: Ctrl+F is the
+            // way back to the search box, so nothing is lost.
+            case Key.Tab:
+                e.Handled = true;
+                CycleTag(+1);
+                break;
+
+            case Key.Left when !IsTyping:
+                e.Handled = true;
+                CycleKind(-1);
+                break;
+
+            case Key.Right when !IsTyping:
+                e.Handled = true;
+                CycleKind(+1);
+                break;
+
+            case Key.Up when Keyboard.FocusedElement is not ComboBox:
+                e.Handled = true;
+                Move(-1);
+                break;
+
+            case Key.Down when Keyboard.FocusedElement is not ComboBox:
+                e.Handled = true;
+                Move(+1);
+                break;
+
+            case Key.Enter:
+                e.Handled = true;
+                if (_selected is { } enter)
+                {
+                    // Modifier+Enter pastes as plain text; for stored text the
+                    // two coincide until formatted entries exist (ticket 07).
+                    PasteEntry(enter);
+                }
+                break;
+
+            case Key.D1 or Key.NumPad1: NumberedRow(1, e); break;
+            case Key.D2 or Key.NumPad2: NumberedRow(2, e); break;
+            case Key.D3 or Key.NumPad3: NumberedRow(3, e); break;
+            case Key.D4 or Key.NumPad4: NumberedRow(4, e); break;
+            case Key.D5 or Key.NumPad5: NumberedRow(5, e); break;
+            case Key.D6 or Key.NumPad6: NumberedRow(6, e); break;
+            case Key.D7 or Key.NumPad7: NumberedRow(7, e); break;
+            case Key.D8 or Key.NumPad8: NumberedRow(8, e); break;
+            case Key.D9 or Key.NumPad9: NumberedRow(9, e); break;
+
+            // Letter actions only outside text fields — inside one, letters
+            // are the search the user is typing.
+            case Key.C when !IsTyping && Keyboard.Modifiers == ModifierKeys.None:
+                e.Handled = true;
+                if (_selected is { } copy) ExecuteAction("copy", copy, feedback: null);
+                break;
+
+            case Key.O when !IsTyping && Keyboard.Modifiers == ModifierKeys.None:
+                e.Handled = true;
+                if (_selected is { } open) ExecuteAction("open", open, feedback: null);
+                break;
+
+            case Key.P when !IsTyping && Keyboard.Modifiers == ModifierKeys.None:
+                e.Handled = true;
+                if (_selected is { } pin) ExecuteAction("pin", pin, feedback: null);
+                break;
+
+            case Key.D when !IsTyping && Keyboard.Modifiers == ModifierKeys.None:
+                e.Handled = true;
+                if (_selected is { } del) ExecuteAction("delete", del, feedback: null);
+                break;
         }
+    }
+
+    private void NumberedRow(int oneBased, KeyEventArgs e)
+    {
+        var rows = VisibleRows.ToList();
+
+        if (oneBased <= rows.Count)
+        {
+            e.Handled = true;
+            PasteEntry(rows[oneBased - 1]);
+        }
+    }
+
+    /// <summary>Escape peels the most recent layer; only an empty stack hides the window.</summary>
+    private void StepEscape()
+    {
+        var hasTag = TagFilter.SelectedItem as string is { } tag && tag != AnyTag;
+        var hasKind = KindFilter.SelectedIndex != 0;
+
+        switch (BarKeyboard.NextEscape(previewOpen: false, hasTag, hasKind))
+        {
+            case BarKeyboard.EscapeAction.ClosePreview:
+                // Preview arrives with ticket 17's window; the level is
+                // already part of the stack.
+                break;
+
+            case BarKeyboard.EscapeAction.ClearTagFilter:
+                TagFilter.SelectedItem = AnyTag;
+                break;
+
+            case BarKeyboard.EscapeAction.ClearTypeFilter:
+                KindFilter.SelectedIndex = 0;
+                break;
+
+            case BarKeyboard.EscapeAction.HideWindow:
+                Dismiss();
+                break;
+        }
+    }
+
+    private void CycleKind(int delta)
+    {
+        KindFilter.SelectedIndex = BarKeyboard.Cycle(KindFilter.SelectedIndex, delta, KindFilter.Items.Count);
+    }
+
+    private void CycleTag(int delta)
+    {
+        var index = TagFilter.Items.IndexOf(TagFilter.SelectedItem);
+        var next = BarKeyboard.Cycle(index < 0 ? 0 : index, delta, TagFilter.Items.Count);
+        TagFilter.SelectedIndex = next;
     }
 }
