@@ -112,6 +112,14 @@ public partial class App : Application
 
         StartRetention();
         ApplyStartupPreference();
+
+        // A probe convenience: SHIYU_OPEN_SETTINGS=1 opens the settings window
+        // at startup, so automated checks can drive it without hunting for the
+        // tray icon. Harmless for a user who never sets the variable.
+        if (Environment.GetEnvironmentVariable("SHIYU_OPEN_SETTINGS") == "1")
+        {
+            ShowSettings();
+        }
     }
 
     /// <summary>
@@ -163,7 +171,9 @@ public partial class App : Application
                 try
                 {
                     service.Sweep(
-                        TimeSpan.FromDays(days), _settings.ProtectFavorites, _settings.ProtectPinned);
+                        TimeSpan.FromDays(days),
+                        _settings.ProtectEntries && _settings.ProtectFavorites,
+                        _settings.ProtectEntries && _settings.ProtectPinned);
                 }
                 catch (Exception)
                 {

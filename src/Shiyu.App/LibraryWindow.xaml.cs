@@ -381,8 +381,8 @@ public partial class LibraryWindow : Window
         // Protected entries stay, and the copy says so: a number the user can
         // check beats a surprise after the fact.
         var guard = _settings();
-        var keepFavorites = guard.ProtectFavorites;
-        var keepPinned = guard.ProtectPinned;
+        var keepFavorites = guard.ProtectEntries && guard.ProtectFavorites;
+        var keepPinned = guard.ProtectEntries && guard.ProtectPinned;
         var protectedCount = _store.CountProtected(keepFavorites, keepPinned);
         var message = protectedCount > 0
             ? $"将永久删除全部 {total} 条中未受保护的 {total - protectedCount} 条，无法撤销。"
@@ -429,8 +429,8 @@ public partial class LibraryWindow : Window
         var end = new DateTimeOffset(to.Date.AddDays(1).AddTicks(-1), DateTimeOffset.Now.Offset);
 
         var guard = _settings();
-        var keepFavorites = guard.ProtectFavorites;
-        var keepPinned = guard.ProtectPinned;
+        var keepFavorites = guard.ProtectEntries && guard.ProtectFavorites;
+        var keepPinned = guard.ProtectEntries && guard.ProtectPinned;
         var protectedInRange = _store.CountProtectedBetween(start, end, keepFavorites, keepPinned);
         var rangeMessage = protectedInRange > 0
             ? $"将永久删除 {from:yyyy-MM-dd} 至 {to:yyyy-MM-dd} 之间的全部记录，无法撤销。"

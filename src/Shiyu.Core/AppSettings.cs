@@ -33,6 +33,12 @@ public sealed record AppSettings
     public int ImageRetentionDays { get; init; } = 30;
 
     /// <summary>
+    /// The master switch of delete protection — children name who is spared.
+    /// Off means protection is entirely off, whichever child stays checked.
+    /// </summary>
+    public bool ProtectEntries { get; init; } = true;
+
+    /// <summary>
     /// Favourites survive retention sweeps and bulk deletes. On by default:
     /// a starred entry is a promise the user made to themselves, and the
     /// delete entry points for it disappear rather than grey out.

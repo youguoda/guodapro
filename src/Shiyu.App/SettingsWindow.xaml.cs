@@ -2,25 +2,42 @@ using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Input;
+using System.Windows.Media;
 using Shiyu.Core;
 using Shiyu.Windows;
 
 namespace Shiyu.App;
 
 /// <summary>
-/// Everything the user can change, on one screen.
-///
-/// Deliberately short — light/dark is as far as appearance goes; no skins, no
-/// advanced panels. The fewer settings there are, the more "small and well
-/// made" is something the application can actually claim.
+/// The settings surface, rendered from the schema tree: pages by user intent,
+/// every editor built from its declaration. The window hardcodes no setting —
+/// it knows control shapes, not settings. Adding one is a schema leaf plus a
+/// value binding; this file does not change.
 /// </summary>
 public partial class SettingsWindow : Window
 {
-    private const string PatternPrefix = "re:";
-
     private readonly AppSettings _current;
     private readonly Action<AppSettings> _apply;
     private readonly BackupUi? _backup;
+
+    /// <summary>One item's edited state, whatever its control shape.</summary>
+    private sealed class Edited
+    {
+        public string Text = string.Empty;
+        public int Choice;
+        public bool Toggle;
+    }
+
+    private readonly Dictionary<string, Edited> _edited = [];
+    private readonly Dictionary<string, FrameworkElement> _rows = [];
+    private readonly Dictionary<string, TextBox> _numberBoxes = [];
+    private readonly Dictionary<string, List<(ToggleButton Button, int Index)>> _segments = [];
+
+    private TextBox? _directoryBox;
+    private TextBlock? _directoryWarning;
+    private PasswordBox? _secretBox;
 
     public SettingsWindow(AppSettings current, Action<AppSettings> apply, BackupUi? backup = null)
     {
@@ -30,122 +47,463 @@ public partial class SettingsWindow : Window
         _apply = apply;
         _backup = backup;
 
-        // ComboBox order matches the AppTheme enum: System, Light, Dark.
-        ThemeChoice.SelectedIndex = (int)current.Theme;
-
-        CaptureHotkey.Text = current.CaptureHotkey;
-        ClipboardHotkey.Text = current.ClipboardTranslateHotkey;
-        QuickBarHotkey.Text = current.QuickBarHotkey;
-        BarHotkey.Text = current.BarHotkey;
-
-        BarTextLines.Text = current.BarTextLines.ToString();
-        BarImageHeight.Text = current.BarImageHeight.ToString();
-        BarFileCount.Text = current.BarFileCount.ToString();
-
-        BarActions.Text = string.Join(",", current.BarActions.Select(HoverActions.Name));
-        ActionSound.IsChecked = current.ActionSound;
-
-        TargetLanguage.Text = current.TargetLanguage;
-        SourceLanguage.Text = current.SourceLanguage ?? string.Empty;
-
-        BackendUrl.Text = current.BackendBaseUrl;
-        BackendModel.Text = current.BackendModel;
-
-        // The stored credential is never put back into a box where it could be
-        // read over a shoulder or copied out. Leaving it blank keeps it.
-        KeyHint.Text = current.BackendApiKey.Length > 0
-            ? "已保存凭据。留空表示不改动，填入则覆盖。"
-            : "尚未填写凭据，翻译功能需要它才能工作。";
-
-        RetentionDays.Text = current.ImageRetentionDays.ToString();
-        ProtectFavorites.IsChecked = current.ProtectFavorites;
-        ProtectPinned.IsChecked = current.ProtectPinned;
-        DataDirectory.Text = current.DataDirectoryOverride;
-
-        ExclusionRules.Text = string.Join(
-            Environment.NewLine,
-            current.ExclusionRules.Select(rule => rule.Kind == ExclusionRuleKind.ContentPattern
-                ? PatternPrefix + rule.Value
-                : rule.Value));
-
-        PresetNote.Text =
-            $"另有 {ExclusionPolicy.Presets.Count} 条内置规则（常见密码管理器）始终生效，无需在此重复填写。";
-
-        // Read from Windows rather than from the settings file: the two can
-        // disagree, and what Windows actually does is the truth.
-        StartWithWindows.IsChecked = StartupRegistration.IsEnabled();
-
-        UpdateSyncWarning();
+        BuildTree();
     }
 
-    private void OnDataDirectoryChanged(object sender, TextChangedEventArgs e) => UpdateSyncWarning();
+    // --- building ----------------------------------------------------------------
+
+    private void BuildTree()
+    {
+        foreach (var page in SettingsSchema.Tree)
+        {
+            var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+            var body = new StackPanel { Margin = new Thickness(0, 4, 8, 0) };
+
+            foreach (var section in page.Sections)
+            {
+                var heading = new TextBlock { Text = section.Title, Style = (Style)FindResource("SectionHeading") };
+                body.Children.Add(heading);
+
+                foreach (var item in section.Items)
+                {
+                    var row = RowFor(item);
+                    _rows[item.Id] = row;
+                    body.Children.Add(row);
+                }
+            }
+
+            scroll.Content = body;
+            Pages.Items.Add(new TabItem { Header = page.Title, Content = scroll });
+        }
+    }
+
+    private FrameworkElement RowFor(SettingsItem item)
+    {
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(104) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.Margin = new Thickness(0, 0, 0, 6);
+
+        var label = new TextBlock
+        {
+            Text = item.Label,
+            Style = (Style)FindResource("FieldLabel"),
+            ToolTip = item.Hint,
+        };
+        Grid.SetColumn(label, 0);
+        grid.Children.Add(label);
+
+        var editor = EditorFor(item);
+        Grid.SetColumn(editor, 1);
+        grid.Children.Add(editor);
+
+        // An item under a collapsed parent is not merely greyed — it is gone,
+        // because greyed controls invite exactly the clicks they refuse.
+        if (item.Parent is { } parent && _edited.TryGetValue(parent, out var parentState))
+        {
+            grid.Visibility = parentState.Toggle ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        return grid;
+    }
+
+    private FrameworkElement EditorFor(SettingsItem item)
+    {
+        var state = new Edited();
+        _edited[item.Id] = state;
+
+        return item.Control switch
+        {
+            SettingsControl.Segmented => SegmentedFor(item, state),
+            SettingsControl.Toggle => ToggleFor(item, state),
+            SettingsControl.Number => NumberFor(item, state),
+            SettingsControl.Password => SecretFor(item, state),
+            SettingsControl.Directory => DirectoryFor(item, state),
+            SettingsControl.Multiline => TextFor(item, state, multiline: true),
+            SettingsControl.Actions => TextFor(item, state, multiline: false),
+            SettingsControl.Hotkey => TextFor(item, state, multiline: false),
+            SettingsControl.Text => TextFor(item, state, multiline: false),
+            SettingsControl.ReadOnly => ReadOnlyFor(item),
+            SettingsControl.Custom => CustomFor(item),
+            _ => new TextBlock(),
+        };
+    }
+
+    private FrameworkElement SegmentedFor(SettingsItem item, Edited state)
+    {
+        state.Choice = SettingsBindings.ReadChoice(item.Id, _current);
+
+        var host = new StackPanel { Orientation = Orientation.Horizontal };
+        var buttons = new List<(ToggleButton, int)>();
+
+        for (var index = 0; index < item.ChoiceList.Length; index++)
+        {
+            var captured = index;
+            var button = new ToggleButton
+            {
+                Content = item.ChoiceList[index],
+                Padding = new Thickness(12, 3, 12, 3),
+                Cursor = Cursors.Hand,
+            };
+            button.Click += (_, _) => SelectSegment(item.Id, captured);
+            buttons.Add((button, index));
+            host.Children.Add(button);
+        }
+
+        _segments[item.Id] = buttons;
+        PaintSegments(item.Id);
+        return host;
+    }
+
+    private void SelectSegment(string id, int index)
+    {
+        _edited[id].Choice = index;
+        PaintSegments(id);
+    }
+
+    /// <summary>A segmented control looks like what it is: one joined row of options.</summary>
+    private void PaintSegments(string id)
+    {
+        if (!_segments.TryGetValue(id, out var buttons))
+        {
+            return;
+        }
+
+        var chosen = _edited[id].Choice;
+        foreach (var (button, index) in buttons)
+        {
+            var on = index == chosen;
+            button.IsChecked = on;
+            if (on)
+            {
+                button.SetResourceReference(BackgroundProperty, "Brush.Accent");
+                button.SetResourceReference(ForegroundProperty, "Brush.TextOnAccent");
+            }
+            else
+            {
+                button.SetResourceReference(BackgroundProperty, "Brush.Surface");
+                button.SetResourceReference(ForegroundProperty, "Brush.Text");
+            }
+        }
+    }
+
+    private FrameworkElement ToggleFor(SettingsItem item, Edited state)
+    {
+        state.Toggle = item.Id == "store.start-with-windows"
+
+            // Read from Windows rather than the settings file: the two can
+            // disagree, and what Windows actually does is the truth.
+            ? StartupRegistration.IsEnabled()
+            : SettingsBindings.ReadToggle(item.Id, _current) == true;
+
+        var box = new CheckBox
+        {
+            IsChecked = state.Toggle,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            Cursor = Cursors.Hand,
+        };
+        box.Checked += (_, _) =>
+        {
+            state.Toggle = true;
+            ApplyParentVisibility(item.Id, true);
+        };
+        box.Unchecked += (_, _) =>
+        {
+            state.Toggle = false;
+            ApplyParentVisibility(item.Id, false);
+        };
+
+        return box;
+    }
+
+    private void ApplyParentVisibility(string parentId, bool on)
+    {
+        foreach (var other in SettingsSchema.Tree.SelectMany(p => p.Sections).SelectMany(s => s.Items))
+        {
+            if (other.Parent == parentId && _rows.TryGetValue(other.Id, out var row))
+            {
+                row.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+            }
+        }
+    }
+
+    private FrameworkElement NumberFor(SettingsItem item, Edited state)
+    {
+        var box = new TextBox
+        {
+            Text = SettingsBindings.ReadText(item.Id, _current) ?? string.Empty,
+            Width = 70,
+            VerticalContentAlignment = VerticalAlignment.Center,
+        };
+        box.SetResourceReference(BackgroundProperty, "Brush.SurfaceInput");
+        state.Text = box.Text;
+
+        void MarkDirty(bool dirty)
+        {
+            // The uncommitted state is visible: an accent border says "what
+            // you typed is not yet what will be saved".
+            if (dirty)
+            {
+                box.SetResourceReference(BorderBrushProperty, "Brush.Accent");
+            }
+            else
+            {
+                box.SetResourceReference(BorderBrushProperty, "Brush.Border");
+            }
+        }
+
+        box.TextChanged += (_, _) => MarkDirty(true);
+
+        void Commit()
+        {
+            if (double.TryParse(box.Text.Trim(), out var value))
+            {
+                var clamped = Math.Clamp(value, item.Min, item.Max);
+                var formatted = clamped == Math.Floor(clamped)
+                    ? ((int)clamped).ToString()
+                    : clamped.ToString("0.#");
+                state.Text = formatted;
+                box.Text = formatted;
+                MarkDirty(false);
+            }
+        }
+
+        box.LostFocus += (_, _) => Commit();
+        box.PreviewKeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Enter)
+            {
+                Commit();
+                e.Handled = true;
+            }
+        };
+
+        _numberBoxes[item.Id] = box;
+        return box;
+    }
+
+    private FrameworkElement TextFor(SettingsItem item, Edited state, bool multiline)
+    {
+        var box = new TextBox
+        {
+            Text = SettingsBindings.ReadText(item.Id, _current) ?? string.Empty,
+            Padding = new Thickness(4),
+            VerticalContentAlignment = VerticalAlignment.Center,
+        };
+        box.SetResourceReference(BackgroundProperty, "Brush.SurfaceInput");
+        state.Text = box.Text;
+
+        if (multiline)
+        {
+            box.AcceptsReturn = true;
+            box.TextWrapping = TextWrapping.Wrap;
+            box.Height = 110;
+            box.VerticalContentAlignment = VerticalAlignment.Top;
+        }
+        else if (item.Control is SettingsControl.Hotkey or SettingsControl.Text or SettingsControl.Actions)
+        {
+            box.TextChanged += (_, _) => state.Text = box.Text;
+        }
+
+        if (item.Hint is { Length: > 0 })
+        {
+            var stack = new StackPanel();
+            box.Margin = new Thickness(0, 0, 0, 2);
+            stack.Children.Add(box);
+
+            var hint = new TextBlock
+            {
+                Text = item.Hint,
+                TextWrapping = TextWrapping.Wrap,
+                FontSize = (double)FindResource("Size.Caption"),
+                Opacity = 0.75,
+            };
+            hint.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
+            stack.Children.Add(hint);
+            return stack;
+        }
+
+        return box;
+    }
+
+    private FrameworkElement SecretFor(SettingsItem item, Edited state)
+    {
+        // A credential is never echoed: the box starts empty whatever the
+        // store holds, and blank means "keep".
+        var box = new PasswordBox { Padding = new Thickness(4) };
+        box.SetResourceReference(BackgroundProperty, "Brush.SurfaceInput");
+        box.PasswordChanged += (_, _) => state.Text = box.Password;
+        _secretBox = box;
+        return WrapWithHint(box, item.Hint);
+    }
+
+    private FrameworkElement DirectoryFor(SettingsItem item, Edited state)
+    {
+        var box = new TextBox
+        {
+            Text = SettingsBindings.ReadText(item.Id, _current) ?? string.Empty,
+            Padding = new Thickness(4),
+            VerticalContentAlignment = VerticalAlignment.Center,
+        };
+        box.SetResourceReference(BackgroundProperty, "Brush.SurfaceInput");
+        state.Text = box.Text;
+        box.TextChanged += (_, _) =>
+        {
+            state.Text = box.Text;
+            UpdateSyncWarning();
+        };
+
+        var browse = new Button { Content = "浏览…", Padding = new Thickness(9, 3, 9, 3), Margin = new Thickness(6, 0, 0, 0), Cursor = Cursors.Hand };
+        browse.Click += (_, _) =>
+        {
+            var dialog = new Microsoft.Win32.OpenFolderDialog
+            {
+                Title = "选择拾语存放数据的位置",
+                InitialDirectory = Directory.Exists(box.Text) ? box.Text : AppPaths.DataDirectory,
+            };
+            if (dialog.ShowDialog(this) == true)
+            {
+                box.Text = dialog.FolderName;
+            }
+        };
+
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        row.Children.Add(box);
+        row.Children.Add(browse);
+
+        _directoryBox = box;
+        _directoryWarning = new TextBlock
+        {
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 4, 0, 0),
+            FontSize = (double)FindResource("Size.Caption"),
+            Visibility = Visibility.Collapsed,
+        };
+        _directoryWarning.SetResourceReference(TextBlock.ForegroundProperty, "Brush.Danger");
+
+        var stack = new StackPanel();
+        stack.Children.Add(row);
+        stack.Children.Add(_directoryWarning);
+        UpdateSyncWarning();
+
+        return WrapWithHint(stack, item.Hint);
+    }
+
+    private FrameworkElement ReadOnlyFor(SettingsItem item)
+        => new TextBlock
+        {
+            Text = SettingsBindings.ReadText(item.Id, _current) ?? string.Empty,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+
+    private FrameworkElement CustomFor(SettingsItem item) => item.Id switch
+    {
+        "store.backup" => BackupRow(),
+        _ => new TextBlock(),
+    };
+
+    private FrameworkElement BackupRow()
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+
+        var export = new Button { Content = "导出备份…", MinWidth = 96, Padding = new Thickness(10, 5, 10, 5), Cursor = Cursors.Hand };
+        export.Click += (_, _) => _backup?.Export(this);
+
+        var import = new Button { Content = "导入备份…", MinWidth = 96, Padding = new Thickness(10, 5, 10, 5), Margin = new Thickness(8, 0, 0, 0), Cursor = Cursors.Hand };
+        import.Click += (_, _) => _backup?.Import(this);
+
+        row.Children.Add(export);
+        row.Children.Add(import);
+        return row;
+    }
+
+    private FrameworkElement WrapWithHint(FrameworkElement editor, string? hint)
+    {
+        if (hint is not { Length: > 0 })
+        {
+            return editor;
+        }
+
+        var stack = new StackPanel();
+        editor.Margin = new Thickness(0, 0, 0, 2);
+        stack.Children.Add(editor);
+
+        var text = new TextBlock
+        {
+            Text = hint,
+            TextWrapping = TextWrapping.Wrap,
+            FontSize = (double)FindResource("Size.Caption"),
+            Opacity = 0.75,
+        };
+        text.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
+        stack.Children.Add(text);
+        return stack;
+    }
 
     private void UpdateSyncWarning()
     {
-        var folder = CloudSyncedPaths.DetectSyncFolder(DataDirectory.Text);
+        if (_directoryBox is null || _directoryWarning is null)
+        {
+            return;
+        }
 
-        SyncWarning.Visibility = folder is null ? Visibility.Collapsed : Visibility.Visible;
-        SyncWarning.Text = folder is null
+        var folder = CloudSyncedPaths.DetectSyncFolder(_directoryBox.Text);
+        _directoryWarning.Visibility = folder is null ? Visibility.Collapsed : Visibility.Visible;
+        _directoryWarning.Text = folder is null
             ? string.Empty
             : $"⚠ 这个位置在「{folder}」里，会被同步到云端。历史记录并未加密，"
               + "放在这里等于把明文的剪贴板内容交给同步服务。";
     }
 
-    private void OnBrowseDataDirectory(object sender, RoutedEventArgs e)
-    {
-        var dialog = new Microsoft.Win32.OpenFolderDialog
-        {
-            Title = "选择拾语存放数据的位置",
-            InitialDirectory = Directory.Exists(DataDirectory.Text)
-                ? DataDirectory.Text
-                : AppPaths.DataDirectory,
-        };
-
-        if (dialog.ShowDialog(this) == true)
-        {
-            DataDirectory.Text = dialog.FolderName;
-        }
-    }
+    // --- saving ------------------------------------------------------------------
 
     private void OnSave(object sender, RoutedEventArgs e)
     {
+        // Whatever a number box still holds uncommitted commits now, so the
+        // save judges the value the user can see.
+        foreach (var box in _numberBoxes.Values)
+        {
+            box.RaiseEvent(new RoutedEventArgs(LostFocusEvent, box));
+        }
+
         var problems = new List<string>();
 
-        var capture = RequireHotkey(CaptureHotkey.Text, "划词翻译", problems);
-        var clipboard = RequireHotkey(ClipboardHotkey.Text, "翻译剪贴板", problems);
-        var quickBar = RequireHotkey(QuickBarHotkey.Text, "快速条", problems);
-        var bar = RequireHotkey(BarHotkey.Text, "窄条", problems);
-
-        if (!int.TryParse(RetentionDays.Text, out var retention) || retention < 1)
+        var hotkeyNames = new Dictionary<string, string>
         {
-            problems.Add("图片保留天数需要是一个不小于 1 的整数。");
+            ["hotkey.capture"] = "划词翻译",
+            ["hotkey.clipboard"] = "翻译剪贴板",
+            ["hotkey.quickbar"] = "快速条",
+            ["hotkey.bar"] = "窄条",
+        };
+
+        var parsed = new List<HotkeySpec?>();
+        foreach (var (id, name) in hotkeyNames)
+        {
+            var spec = HotkeySpec.Parse(_edited[id].Text.Trim());
+            if (spec is null)
+            {
+                problems.Add($"{name}的快捷键无法识别，需要形如 Ctrl+Shift+Z 且至少带一个修饰键。");
+            }
+
+            parsed.Add(spec);
         }
 
-        // Density knobs: wide enough ranges that every screen and taste fits,
-        // narrow enough that nothing pathological does.
-        if (!int.TryParse(BarTextLines.Text, out var textLines) || textLines is < 1 or > 20)
+        foreach (var item in AllItems().Where(item => item.Control == SettingsControl.Number))
         {
-            problems.Add("窄条文本行数需要在 1 到 20 之间。");
+            if (!int.TryParse(_edited[item.Id].Text.Trim(), out var value) || value < item.Min || value > item.Max)
+            {
+                problems.Add($"{item.Label}需要是 {(int)item.Min} 到 {(int)item.Max} 之间的整数。");
+            }
         }
 
-        if (!int.TryParse(BarImageHeight.Text, out var imageHeight) || imageHeight is < 40 or > 400)
-        {
-            problems.Add("窄条图片高度需要在 40 到 400 之间。");
-        }
+        var actions = ParseBarActions(_edited["bar.actions"].Text, problems);
 
-        if (!int.TryParse(BarFileCount.Text, out var fileCount) || fileCount is < 1 or > 10)
-        {
-            problems.Add("窄条文件条数需要在 1 到 10 之间。");
-        }
-
-        var actions = ParseBarActions(problems);
-
-        if (TargetLanguage.Text.Trim().Length == 0)
+        if (_edited["service.target-language"].Text.Trim().Length == 0)
         {
             problems.Add("译文语言不能为空。");
         }
 
-        var chosen = new[] { capture, clipboard, quickBar, bar }.Where(h => h is not null).ToList();
+        var chosen = parsed.Where(h => h is not null).ToList();
         if (chosen.Count == 4 && chosen.Distinct().Count() != 4)
         {
             // Registering the same combination twice means the second one
@@ -159,40 +517,30 @@ public partial class SettingsWindow : Window
             return;
         }
 
-        var directory = DataDirectory.Text.Trim();
-        if (CloudSyncedPaths.DetectSyncFolder(directory) is { } folder
-            && !Confirm($"「{folder}」会被同步到云端，而历史记录并未加密。确定要把数据放在这里吗？"))
+        var directory = _edited["store.directory"].Text.Trim();
+        if (CloudSyncedPaths.DetectSyncFolder(directory) is { } synced
+            && !Confirm($"「{synced}」会被同步到云端，而历史记录并未加密。确定要把数据放在这里吗？"))
         {
             return;
         }
 
-        var updated = _current with
+        var updated = _current;
+        foreach (var item in AllItems().Where(item => item.Control
+                     is SettingsControl.Segmented
+                     or SettingsControl.Toggle
+                     or SettingsControl.Number
+                     or SettingsControl.Text
+                     or SettingsControl.Password
+                     or SettingsControl.Hotkey
+                     or SettingsControl.Actions
+                     or SettingsControl.Multiline
+                     or SettingsControl.Directory))
         {
-            CaptureHotkey = capture!.ToString(),
-            ClipboardTranslateHotkey = clipboard!.ToString(),
-            QuickBarHotkey = quickBar!.ToString(),
-            BarHotkey = bar!.ToString(),
-            BarTextLines = textLines,
-            BarImageHeight = imageHeight,
-            BarFileCount = fileCount,
-            BarActions = actions,
-            ActionSound = ActionSound.IsChecked == true,
-            TargetLanguage = TargetLanguage.Text.Trim(),
-            SourceLanguage = SourceLanguage.Text.Trim() is { Length: > 0 } source ? source : null,
-            BackendBaseUrl = BackendUrl.Text.Trim(),
-            BackendModel = BackendModel.Text.Trim(),
+            var state = _edited[item.Id];
+            updated = SettingsBindings.Apply(item.Id, updated, state.Text, state.Choice);
+        }
 
-            // Blank means "leave it as it was", so the user is not forced to
-            // retype a credential to change an unrelated setting.
-            BackendApiKey = BackendKey.Password.Length > 0 ? BackendKey.Password : _current.BackendApiKey,
-            ImageRetentionDays = retention,
-            ProtectFavorites = ProtectFavorites.IsChecked == true,
-            ProtectPinned = ProtectPinned.IsChecked == true,
-            DataDirectoryOverride = directory,
-            StartWithWindows = StartWithWindows.IsChecked == true,
-            Theme = (AppTheme)ThemeChoice.SelectedIndex,
-            ExclusionRules = ParseExclusionRules(ExclusionRules.Text),
-        };
+        updated = updated with { BarActions = actions };
 
         var startupOk = StartupRegistration.Set(
             updated.StartWithWindows, Environment.ProcessPath ?? string.Empty);
@@ -203,36 +551,18 @@ public partial class SettingsWindow : Window
             ? "已保存。"
             : "设置已保存，但开机自启没能写入系统，请检查是否有安全软件拦截。";
 
-        // Follow whatever Windows ended up doing rather than leaving the box
-        // asserting something untrue.
-        StartWithWindows.IsChecked = StartupRegistration.IsEnabled();
-        BackendKey.Clear();
-    }
-
-    private static HotkeySpec? RequireHotkey(string text, string name, List<string> problems)
-    {
-        var parsed = HotkeySpec.Parse(text);
-        if (parsed is null)
+        _secretBox?.Clear();
+        if (_edited.TryGetValue("store.start-with-windows", out var startup))
         {
-            problems.Add($"{name}的快捷键无法识别，需要形如 Ctrl+Shift+Z 且至少带一个修饰键。");
+            // Follow whatever Windows ended up doing rather than leaving the
+            // box asserting something untrue.
+            startup.Toggle = StartupRegistration.IsEnabled();
+            ApplyParentVisibility("store.start-with-windows", true);
         }
-
-        return parsed;
     }
 
-    private static List<StoredExclusionRule> ParseExclusionRules(string text)
-        => text
-            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(line => line.StartsWith(PatternPrefix, StringComparison.OrdinalIgnoreCase)
-                ? new StoredExclusionRule(ExclusionRuleKind.ContentPattern, line[PatternPrefix.Length..].Trim())
-                : new StoredExclusionRule(ExclusionRuleKind.SourceApp, line))
-            .Where(rule => rule.Value.Length > 0)
-            .ToList();
-
-    private bool Confirm(string message)
-        => MessageBox.Show(
-            this, message, "拾语", MessageBoxButton.OKCancel,
-            MessageBoxImage.Warning, MessageBoxResult.Cancel) == MessageBoxResult.OK;
+    private static IEnumerable<SettingsItem> AllItems()
+        => SettingsSchema.Tree.SelectMany(page => page.Sections).SelectMany(section => section.Items);
 
     /// <summary>
     /// Parses the comma-separated action list the user typed. Names rather
@@ -240,12 +570,12 @@ public partial class SettingsWindow : Window
     /// unrecognised is a problem rather than a silent drop, because a
     /// silently-shrinking tray looks like a bug.
     /// </summary>
-    private List<string> ParseBarActions(List<string> problems)
+    private static List<string> ParseBarActions(string text, List<string> problems)
     {
         var byName = HoverActions.All.ToDictionary(HoverActions.Name, StringComparer.Ordinal);
         var result = new List<string>();
 
-        foreach (var raw in BarActions.Text.Split([',', '，', '、'], StringSplitOptions.TrimEntries))
+        foreach (var raw in text.Split([',', '，', '、'], StringSplitOptions.TrimEntries))
         {
             if (raw.Length == 0)
             {
@@ -273,11 +603,10 @@ public partial class SettingsWindow : Window
         return result;
     }
 
-    private void OnExportBackup(object sender, RoutedEventArgs e)
-        => _backup?.Export(this);
-
-    private void OnImportBackup(object sender, RoutedEventArgs e)
-        => _backup?.Import(this);
+    private bool Confirm(string message)
+        => MessageBox.Show(
+            this, message, "拾语", MessageBoxButton.OKCancel,
+            MessageBoxImage.Warning, MessageBoxResult.Cancel) == MessageBoxResult.OK;
 
     private void OnClose(object sender, RoutedEventArgs e) => Close();
 }

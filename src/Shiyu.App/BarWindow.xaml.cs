@@ -1563,8 +1563,9 @@ internal partial class BarWindow : Window
     /// stays available, so there is no "cannot delete at all" dead end.
     /// </summary>
     private bool DeleteIsProtected(BarCard card)
-        => (_settings.ProtectFavorites && card.Favorite)
-            || (_settings.ProtectPinned && card.IsPinned);
+        => _settings.ProtectEntries
+            && ((_settings.ProtectFavorites && card.Favorite)
+                || (_settings.ProtectPinned && card.IsPinned));
 
     private void OnCardMouseEnter(object sender, MouseEventArgs e)
     {

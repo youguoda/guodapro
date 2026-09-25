@@ -1,0 +1,165 @@
+namespace Shiyu.Core;
+
+public enum SettingsControl
+{
+    /// <summary>Exclusive choice shown as one row of joined buttons.</summary>
+    Segmented,
+
+    Toggle,
+    Number,
+    Text,
+
+    /// <summary>A secret: never echoed back, blank means keep the stored one.</summary>
+    Password,
+
+    /// <summary>A hotkey combination, written like Ctrl+Shift+Z.</summary>
+    Hotkey,
+
+    /// <summary>An ordered list of named actions, comma separated.</summary>
+    Actions,
+
+    /// <summary>Free-form text across lines.</summary>
+    Multiline,
+
+    /// <summary>A folder path, with a browse affordance.</summary>
+    Directory,
+
+    /// <summary>Shown, not edited.</summary>
+    ReadOnly,
+
+    /// <summary>A row the window builds itself (e.g. the backup buttons).</summary>
+    Custom,
+}
+
+/// <summary>
+/// One setting as data: what it is, how it is edited, where its words live.
+/// The interface renders the tree and nothing else — adding a setting adds a
+/// leaf here plus a value binding, and the renderer never learns about it.
+/// </summary>
+public sealed record SettingsItem(
+    string Id,
+    string Label,
+    SettingsControl Control,
+    string? Hint = null,
+    double Min = 0,
+    double Max = 0,
+    string[]? Choices = null,
+    string? Parent = null,
+    string[]? Keywords = null)
+{
+    public string[] ChoiceList => Choices ?? [];
+    public string[] KeywordList => Keywords ?? [];
+}
+
+public sealed record SettingsSection(string Id, string Title, params SettingsItem[] Items);
+
+public sealed record SettingsPage(string Id, string Title, params SettingsSection[] Sections);
+
+public static class SettingsSchema
+{
+    /// <summary>
+    /// The whole settings surface, organised by what the user came to do —
+    /// record, act, look, press, serve, store — never by code module, so the
+    /// page names are directions rather than implementation.
+    /// </summary>
+    public static readonly IReadOnlyList<SettingsPage> Tree =
+    [
+        new SettingsPage("record", "记录",
+            new SettingsSection("record.exclusions", "不记录",
+                new SettingsItem(
+                    "exclusions", "排除规则", SettingsControl.Multiline,
+                    Hint: "一行一条：应用名精确匹配，或 re: 开头的正则匹配内容。常见密码管理器始终排除，无需重复填写。",
+                    Keywords: ["排除", "隐私", "密码", "不记录", "敏感"]))),
+
+        new SettingsPage("actions", "动作",
+            new SettingsSection("actions.hover", "悬停动作",
+                new SettingsItem(
+                    "bar.actions", "动作清单", SettingsControl.Actions,
+                    Hint: "逗号分隔，顺序即显示顺序。对某条记录不适用的动作会自动隐藏。",
+                    Keywords: ["悬停", "托盘", "按钮", "复制", "粘贴", "删除"])),
+            new SettingsSection("actions.feedback", "反馈",
+                new SettingsItem(
+                    "action.sound", "动作完成后播放提示音", SettingsControl.Toggle,
+                    Hint: "默认只显示对勾。",
+                    Keywords: ["声音", "提示音", "反馈"]))),
+
+        new SettingsPage("look", "界面",
+            new SettingsSection("look.appearance", "外观",
+                new SettingsItem(
+                    "theme", "主题", SettingsControl.Segmented,
+                    Choices: ["跟随系统", "浅色", "深色"],
+                    Keywords: ["主题", "深色", "浅色", "夜间"])),
+            new SettingsSection("look.density", "密度",
+                new SettingsItem(
+                    "bar.text-lines", "文本行数", SettingsControl.Number, Min: 1, Max: 20,
+                    Hint: "窄条里每张文本卡最多显示的行数。",
+                    Keywords: ["行数", "密度", "文本"]),
+                new SettingsItem(
+                    "bar.image-height", "图片高度", SettingsControl.Number, Min: 40, Max: 400,
+                    Keywords: ["图片", "高度", "密度"]),
+                new SettingsItem(
+                    "bar.file-count", "文件条数", SettingsControl.Number, Min: 1, Max: 10,
+                    Hint: "文件卡里最多列出的文件行数。",
+                    Keywords: ["文件", "条数", "密度"]))),
+
+        new SettingsPage("hotkeys", "快捷键",
+            new SettingsSection("hotkeys.all", "全局",
+                new SettingsItem("hotkey.capture", "划词翻译", SettingsControl.Hotkey, Keywords: ["划词", "翻译", "快捷键"]),
+                new SettingsItem("hotkey.clipboard", "翻译剪贴板", SettingsControl.Hotkey, Keywords: ["剪贴板", "翻译", "快捷键"]),
+                new SettingsItem("hotkey.quickbar", "快速条", SettingsControl.Hotkey, Keywords: ["快速条", "快捷键"]),
+                new SettingsItem("hotkey.bar", "窄条", SettingsControl.Hotkey, Keywords: ["窄条", "快捷键"]))),
+
+        new SettingsPage("service", "服务",
+            new SettingsSection("service.languages", "翻译语言",
+                new SettingsItem("service.target-language", "译文语言", SettingsControl.Text, Keywords: ["语言", "翻译", "目标"]),
+                new SettingsItem(
+                    "service.source-language", "源语言", SettingsControl.Text,
+                    Hint: "留空表示自动检测。",
+                    Keywords: ["语言", "源", "自动"])),
+            new SettingsSection("service.backend", "模型服务",
+                new SettingsItem("service.base-url", "服务地址", SettingsControl.Text, Keywords: ["接口", "地址", "服务", "后端"]),
+                new SettingsItem("service.model", "模型", SettingsControl.Text, Keywords: ["模型", "服务"]),
+                new SettingsItem(
+                    "service.api-key", "凭据", SettingsControl.Password,
+                    Hint: "已保存的凭据不回显。留空表示不改动，填入则覆盖。",
+                    Keywords: ["凭据", "密钥", "api", "key"]))),
+
+        new SettingsPage("store", "数据",
+            new SettingsSection("store.retention", "清理",
+                new SettingsItem(
+                    "store.retention-days", "图片保留", SettingsControl.Number, Min: 1, Max: 36500,
+                    Hint: "天后清理原图；文本永不清理。",
+                    Keywords: ["保留", "清理", "图片", "原图"]),
+                new SettingsItem(
+                    "store.protect", "删除保护", SettingsControl.Toggle,
+                    Hint: "受收藏/置顶保护的条目不参与自动清理与批量删除，也不显示删除入口；取消标记即可删除。",
+                    Keywords: ["保护", "收藏", "置顶", "删除"]),
+                new SettingsItem(
+                    "store.protect-favorites", "保护收藏", SettingsControl.Toggle,
+                    Parent: "store.protect", Keywords: ["保护", "收藏"]),
+                new SettingsItem(
+                    "store.protect-pinned", "保护置顶", SettingsControl.Toggle,
+                    Parent: "store.protect", Keywords: ["保护", "置顶"])),
+            new SettingsSection("store.location", "位置与启动",
+                new SettingsItem(
+                    "store.directory", "数据位置", SettingsControl.Directory,
+                    Hint: "历史与图片存在这里；留空用默认位置。",
+                    Keywords: ["位置", "目录", "数据", "移动"]),
+                new SettingsItem(
+                    "store.start-with-windows", "开机自启", SettingsControl.Toggle,
+                    Keywords: ["开机", "自启", "启动"]),
+                new SettingsItem(
+                    "store.backup", "备份", SettingsControl.Custom,
+                    Hint: "导出全部历史、图片原图与设置；可加密。导入可合并或覆盖。",
+                    Keywords: ["备份", "导出", "导入", "加密"]))),
+
+        new SettingsPage("about", "关于",
+            new SettingsSection("about.app", "拾语",
+                new SettingsItem("about.version", "版本", SettingsControl.ReadOnly, Keywords: ["版本"]))),
+    ];
+
+    public static SettingsItem? Find(string id)
+        => Tree.SelectMany(page => page.Sections)
+            .SelectMany(section => section.Items)
+            .FirstOrDefault(item => item.Id == id);
+}
