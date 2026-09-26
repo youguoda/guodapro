@@ -58,6 +58,8 @@ internal static class SettingsBindings
     {
         "action.sound" => settings.ActionSound,
         "look.lightweight" => settings.LightweightWhenHidden,
+        "record.images" => settings.RecordImages,
+        "record.files" => settings.RecordFiles,
         "store.protect" => settings.ProtectEntries,
         "store.protect-favorites" => settings.ProtectFavorites,
         "store.protect-pinned" => settings.ProtectPinned,
@@ -75,6 +77,8 @@ internal static class SettingsBindings
         "theme" => current with { Theme = (AppTheme)choice },
         "action.sound" => current with { ActionSound = AsBool(text) },
         "look.lightweight" => current with { LightweightWhenHidden = AsBool(text) },
+        "record.images" => current with { RecordImages = AsBool(text) },
+        "record.files" => current with { RecordFiles = AsBool(text) },
         "store.protect" => current with { ProtectEntries = AsBool(text) },
         "store.protect-favorites" => current with { ProtectFavorites = AsBool(text) },
         "store.protect-pinned" => current with { ProtectPinned = AsBool(text) },

@@ -82,7 +82,11 @@ public partial class App : Application
         _images = new ImageArchive(AppPaths.ImageDirectory);
         _pipeline = new ClipboardPipeline(
             _clipboard, _store, TimeProvider.System, _exclusions, _images,
-            icons: new SourceIconCache(_store, new WindowsSourceIcons()));
+            icons: new SourceIconCache(_store, new WindowsSourceIcons()))
+        {
+            RecordImages = _settings.RecordImages,
+            RecordFiles = _settings.RecordFiles,
+        };
         _pipeline.ImageFailed += reason
             => _tray?.ShowNotification("拾语", $"复制的图片没能保存：{reason}");
 
@@ -119,6 +123,26 @@ public partial class App : Application
         if (Environment.GetEnvironmentVariable("SHIYU_OPEN_SETTINGS") == "1")
         {
             ShowSettings();
+        }
+
+        // The first-run guide asks the few things only the user knows. A
+        // history that already exists says this is not a first run — the
+        // guide stays away and never nags an upgrading user.
+        if (!_settings.OnboardingCompleted && _store.Count() == 0)
+        {
+            var wizard = new OnboardingWindow(_settings, settings =>
+            {
+                _settings = settings;
+                _settings.Save(AppPaths.SettingsFile);
+                _exclusions = settings.BuildExclusionPolicy();
+                _pipeline?.UseExclusions(_exclusions);
+                if (_pipeline is not null)
+                {
+                    _pipeline.RecordImages = settings.RecordImages;
+                    _pipeline.RecordFiles = settings.RecordFiles;
+                }
+            });
+            wizard.Show();
         }
     }
 
@@ -226,6 +250,11 @@ public partial class App : Application
             // copy is judged by them.
             _exclusions = updated.BuildExclusionPolicy();
             _pipeline?.UseExclusions(_exclusions);
+            if (_pipeline is not null)
+            {
+                _pipeline.RecordImages = updated.RecordImages;
+                _pipeline.RecordFiles = updated.RecordFiles;
+            }
 
             // Hotkeys are dropped and taken again as a set: working out which
             // individual ones changed would be more code than redoing all three.

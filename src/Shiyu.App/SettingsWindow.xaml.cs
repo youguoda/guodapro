@@ -23,15 +23,7 @@ public partial class SettingsWindow : Window
     private readonly Action<AppSettings> _apply;
     private readonly BackupUi? _backup;
 
-    /// <summary>One item's edited state, whatever its control shape.</summary>
-    private sealed class Edited
-    {
-        public string Text = string.Empty;
-        public int Choice;
-        public bool Toggle;
-    }
-
-    private readonly Dictionary<string, Edited> _edited = [];
+    private readonly Dictionary<string, ItemState> _edited = [];
     private readonly Dictionary<string, FrameworkElement> _rows = [];
     private readonly Dictionary<string, TextBox> _numberBoxes = [];
     private readonly Dictionary<string, List<(ToggleButton Button, int Index)>> _segments = [];
@@ -305,7 +297,7 @@ public partial class SettingsWindow : Window
 
     private FrameworkElement EditorFor(SettingsItem item)
     {
-        var state = new Edited();
+        var state = new ItemState();
         _edited[item.Id] = state;
 
         return item.Control switch
@@ -325,7 +317,7 @@ public partial class SettingsWindow : Window
         };
     }
 
-    private FrameworkElement SegmentedFor(SettingsItem item, Edited state)
+    private FrameworkElement SegmentedFor(SettingsItem item, ItemState state)
     {
         state.Choice = SettingsBindings.ReadChoice(item.Id, _current);
 
@@ -383,33 +375,13 @@ public partial class SettingsWindow : Window
         }
     }
 
-    private FrameworkElement ToggleFor(SettingsItem item, Edited state)
+    private FrameworkElement ToggleFor(SettingsItem item, ItemState state)
     {
-        state.Toggle = item.Id == "store.start-with-windows"
-
-            // Read from Windows rather than the settings file: the two can
-            // disagree, and what Windows actually does is the truth.
-            ? StartupRegistration.IsEnabled()
-            : SettingsBindings.ReadToggle(item.Id, _current) == true;
-
-        var box = new CheckBox
-        {
-            IsChecked = state.Toggle,
-            VerticalContentAlignment = VerticalAlignment.Center,
-            Cursor = Cursors.Hand,
-        };
-        box.Checked += (_, _) =>
-        {
-            state.Toggle = true;
-            ApplyParentVisibility(item.Id, true);
-        };
-        box.Unchecked += (_, _) =>
-        {
-            state.Toggle = false;
-            ApplyParentVisibility(item.Id, false);
-        };
-
-        return box;
+        // Built by the shared factory: settings and onboarding render the
+        // same tree with the same hands.
+        return ItemEditors.Toggle(
+            item, _current, state,
+            changed: () => ApplyParentVisibility(item.Id, state.Toggle));
     }
 
     private void ApplyParentVisibility(string parentId, bool on)
@@ -423,7 +395,7 @@ public partial class SettingsWindow : Window
         }
     }
 
-    private FrameworkElement NumberFor(SettingsItem item, Edited state)
+    private FrameworkElement NumberFor(SettingsItem item, ItemState state)
     {
         var box = new TextBox
         {
@@ -478,62 +450,17 @@ public partial class SettingsWindow : Window
         return box;
     }
 
-    private FrameworkElement TextFor(SettingsItem item, Edited state, bool multiline)
+    private FrameworkElement TextFor(SettingsItem item, ItemState state, bool multiline)
+        => ItemEditors.Text(item, _current, state);
+
+    private FrameworkElement SecretFor(SettingsItem item, ItemState state)
     {
-        var box = new TextBox
-        {
-            Text = SettingsBindings.ReadText(item.Id, _current) ?? string.Empty,
-            Padding = new Thickness(4),
-            VerticalContentAlignment = VerticalAlignment.Center,
-        };
-        box.SetResourceReference(BackgroundProperty, "Brush.SurfaceInput");
-        state.Text = box.Text;
-
-        if (multiline)
-        {
-            box.AcceptsReturn = true;
-            box.TextWrapping = TextWrapping.Wrap;
-            box.Height = 110;
-            box.VerticalContentAlignment = VerticalAlignment.Top;
-        }
-        else if (item.Control is SettingsControl.Hotkey or SettingsControl.Text or SettingsControl.Actions)
-        {
-            box.TextChanged += (_, _) => state.Text = box.Text;
-        }
-
-        if (item.Hint is { Length: > 0 })
-        {
-            var stack = new StackPanel();
-            box.Margin = new Thickness(0, 0, 0, 2);
-            stack.Children.Add(box);
-
-            var hint = new TextBlock
-            {
-                Text = item.Hint,
-                TextWrapping = TextWrapping.Wrap,
-                FontSize = (double)FindResource("Size.Caption"),
-                Opacity = 0.75,
-            };
-            hint.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
-            stack.Children.Add(hint);
-            return stack;
-        }
-
-        return box;
-    }
-
-    private FrameworkElement SecretFor(SettingsItem item, Edited state)
-    {
-        // A credential is never echoed: the box starts empty whatever the
-        // store holds, and blank means "keep".
-        var box = new PasswordBox { Padding = new Thickness(4) };
-        box.SetResourceReference(BackgroundProperty, "Brush.SurfaceInput");
-        box.PasswordChanged += (_, _) => state.Text = box.Password;
+        var (editor, box) = ItemEditors.Password(item, _current, state);
         _secretBox = box;
-        return WrapWithHint(box, item.Hint);
+        return editor;
     }
 
-    private FrameworkElement DirectoryFor(SettingsItem item, Edited state)
+    private FrameworkElement DirectoryFor(SettingsItem item, ItemState state)
     {
         var box = new TextBox
         {
@@ -596,8 +523,28 @@ public partial class SettingsWindow : Window
     {
         "store.backup" => BackupRow(),
         "store.usage" => StorageUsagePanel(),
+        "about.onboarding" => OnboardingRow(),
         _ => new TextBlock(),
     };
+
+    private FrameworkElement OnboardingRow()
+    {
+        var run = new Button
+        {
+            Content = "重新运行引导",
+            Padding = new Thickness(10, 4, 10, 4),
+            Cursor = Cursors.Hand,
+        };
+        run.Click += (_, _) =>
+        {
+            var wizard = new OnboardingWindow(_current, updated => { _apply(updated); })
+            {
+                Owner = this,
+            };
+            wizard.ShowDialog();
+        };
+        return run;
+    }
 
     /// <summary>
     /// What Shiyu actually takes from the disk, measured where it lies —

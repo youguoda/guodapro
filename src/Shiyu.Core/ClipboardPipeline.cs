@@ -57,6 +57,15 @@ public sealed class ClipboardPipeline : IDisposable
     /// </summary>
     public void UseExclusions(ExclusionPolicy exclusions) => _exclusions = exclusions;
 
+    /// <summary>
+    /// Whether copied file lists are recorded. Off means a file copy leaves
+    /// no entry — the choice is "not recorded", never "recorded and hidden".
+    /// </summary>
+    public bool RecordFiles { get; set; } = true;
+
+    /// <summary>Whether copied images are recorded. Text is always recorded.</summary>
+    public bool RecordImages { get; set; } = true;
+
     private void OnClipboardChanged(ClipboardSnapshot snapshot)
     {
         // Checked first, and before anything is written or even read back:
@@ -78,6 +87,11 @@ public sealed class ClipboardPipeline : IDisposable
         // than duplicating it.
         if (snapshot.Files is { Count: > 0 } files)
         {
+            if (!RecordFiles)
+            {
+                return;
+            }
+
             var newest = _store.MostRecent();
             if (newest is { Kind: EntryKind.Files } && newest.Files.SequenceEqual(files))
             {
@@ -91,6 +105,11 @@ public sealed class ClipboardPipeline : IDisposable
 
         if (snapshot.Image is { } image && _images is not null)
         {
+            if (!RecordImages)
+            {
+                return;
+            }
+
             // Chained rather than fired and forgotten, so two quick copies are
             // recorded in the order they happened rather than whichever
             // encodes faster.

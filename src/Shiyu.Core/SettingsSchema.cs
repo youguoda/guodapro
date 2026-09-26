@@ -65,6 +65,15 @@ public static class SettingsSchema
     public static readonly IReadOnlyList<SettingsPage> Tree =
     [
         new SettingsPage("record", "记录",
+            new SettingsSection("record.kinds", "记录什么",
+                new SettingsItem(
+                    "record.images", "记录图片", SettingsControl.Toggle,
+                    Hint: "复制图片内容时是否入库。",
+                    Keywords: ["图片", "截图", "记录"]),
+                new SettingsItem(
+                    "record.files", "记录文件", SettingsControl.Toggle,
+                    Hint: "复制文件时是否入库（文件列表与图片文件预览）。",
+                    Keywords: ["文件", "记录"])),
             new SettingsSection("record.exclusions", "不记录",
                 new SettingsItem(
                     "exclusions", "排除规则", SettingsControl.Multiline,
@@ -163,7 +172,11 @@ public static class SettingsSchema
 
         new SettingsPage("about", "关于",
             new SettingsSection("about.app", "拾语",
-                new SettingsItem("about.version", "版本", SettingsControl.ReadOnly, Keywords: ["版本"]))),
+                new SettingsItem("about.version", "版本", SettingsControl.ReadOnly, Keywords: ["版本"]),
+                new SettingsItem(
+                    "about.onboarding", "新手引导", SettingsControl.Custom,
+                    Hint: "重新运行首次启动时的引导。",
+                    Keywords: ["引导", "首次", "新手"]))),
     ];
 
     public static SettingsItem? Find(string id)

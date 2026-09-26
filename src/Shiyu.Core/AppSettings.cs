@@ -51,9 +51,18 @@ public sealed record AppSettings
     /// <summary>
     /// When the bar hides, drop its realised cards and trim the process —
     /// a resident tray tool should cost pennies while idle. Recording never
-    /// pauses: the listener and pipeline do not live in the window.
+    /// pauses: the listener and the pipeline do not live in the window.
     /// </summary>
     public bool LightweightWhenHidden { get; init; } = true;
+
+    /// <summary>Whether copied images are recorded. Text always is — without it there is no tool.</summary>
+    public bool RecordImages { get; init; } = true;
+
+    /// <summary>Whether copied file lists are recorded.</summary>
+    public bool RecordFiles { get; init; } = true;
+
+    /// <summary>Set once the first-run guide has run or been skipped; it never returns on its own.</summary>
+    public bool OnboardingCompleted { get; init; }
 
     /// <summary>
     /// A tray tool nobody starts is a tray tool nobody has; on by default,
