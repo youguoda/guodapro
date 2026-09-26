@@ -38,6 +38,14 @@ internal partial class PreviewWindow : Window
 
     public event Action? PointerLeftPanel;
 
+    /// <summary>
+    /// The panel's rectangle in physical pixels, every time it settles or
+    /// glides a step (ticket 18's connector follows it). First raise happens
+    /// with the panel already in place — the connector teleports on open,
+    /// exactly as the panel does.
+    /// </summary>
+    public event Action<ScreenRect>? PanelMoved;
+
     public PreviewWindow(FileTypeIcons fileIcons)
     {
         InitializeComponent();
@@ -138,6 +146,11 @@ internal partial class PreviewWindow : Window
             _ = helper.EnsureHandle();
             TransientWindow.MoveTo(helper.Handle, placed);
             Show();
+            PanelMoved?.Invoke(new ScreenRect(
+                placed.X,
+                placed.Y,
+                placed.X + (int)Math.Ceiling(width * scaleX),
+                placed.Y + (int)Math.Ceiling(height * scaleY)));
             return;
         }
 
@@ -148,11 +161,17 @@ internal partial class PreviewWindow : Window
             // The glide is driven in physical pixels on purpose — WPF's
             // Left/Top know nothing of a window positioned by SetWindowPos
             // and would snap it back to a stale value mid-animation.
-            SlideTo(placed);
+            SlideTo(placed, (int)Math.Ceiling(width * scaleX), (int)Math.Ceiling(height * scaleY));
         }
         else
         {
-            TransientWindow.MoveTo(new WindowInteropHelper(this).Handle, placed);
+            var handle = new WindowInteropHelper(this).Handle;
+            TransientWindow.MoveTo(handle, placed);
+            PanelMoved?.Invoke(new ScreenRect(
+                placed.X,
+                placed.Y,
+                placed.X + (int)Math.Ceiling(width * scaleX),
+                placed.Y + (int)Math.Ceiling(height * scaleY)));
         }
     }
 
@@ -161,9 +180,10 @@ internal partial class PreviewWindow : Window
     /// <summary>
     /// Lerps the window to its new spot with SetWindowPos over the standard
     /// fast duration — reduced motion lands here as one instant step, the
-    /// same deal every other motion in the app gets.
+    /// same deal every other motion in the app gets. Each step announces the
+    /// new rectangle so the connector glides in step with the panel.
     /// </summary>
-    private void SlideTo(ScreenPoint target)
+    private void SlideTo(ScreenPoint target, int physicalWidth, int physicalHeight)
     {
         _slide?.Stop();
 
@@ -172,8 +192,14 @@ internal partial class PreviewWindow : Window
         {
             var start = new ScreenPoint(current.Left, current.Top);
             var duration = MotionPlan.Duration(animationsAllowed: true);
-            var elapsed = TimeSpan.Zero;
             var clock = Stopwatch.StartNew();
+
+            void Step(ScreenPoint at)
+            {
+                TransientWindow.MoveTo(handle, at);
+                PanelMoved?.Invoke(new ScreenRect(
+                    at.X, at.Y, at.X + physicalWidth, at.Y + physicalHeight));
+            }
 
             _slide = new System.Windows.Threading.DispatcherTimer
             {
@@ -182,18 +208,18 @@ internal partial class PreviewWindow : Window
 
             _slide.Tick += (_, _) =>
             {
-                elapsed = clock.Elapsed;
+                var elapsed = clock.Elapsed;
                 if (elapsed >= duration)
                 {
                     _slide.Stop();
-                    TransientWindow.MoveTo(handle, target);
+                    Step(target);
                     return;
                 }
 
                 var progress = duration.Ticks == 0 ? 1.0 : (double)elapsed.Ticks / duration.Ticks;
                 var eased = 1 - Math.Pow(1 - progress, 3);
 
-                TransientWindow.MoveTo(handle, new ScreenPoint(
+                Step(new ScreenPoint(
                     (int)Math.Round(start.X + (target.X - start.X) * eased),
                     (int)Math.Round(start.Y + (target.Y - start.Y) * eased)));
             };

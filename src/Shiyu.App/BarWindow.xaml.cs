@@ -2200,20 +2200,28 @@ internal partial class BarWindow : Window
         switch (command)
         {
             case PreviewCommand.Open when CardById(_previewPolicy.Card) is { } opening:
-                EnsurePreview().ShowFor(opening, AnchorFor(opening) ?? WindowRect(), slide: false,
+                _connectorAnchor = AnchorFor(opening) ?? WindowRect();
+                EnsurePreview().ShowFor(opening, _connectorAnchor.Value, slide: false,
                     scaleX: scale.M11, scaleY: scale.M22);
                 break;
 
             case PreviewCommand.Retarget when CardById(_previewPolicy.Card) is { } moving:
-                EnsurePreview().ShowFor(moving, AnchorFor(moving) ?? WindowRect(), slide: true,
+                _connectorAnchor = AnchorFor(moving) ?? WindowRect();
+                EnsurePreview().ShowFor(moving, _connectorAnchor.Value, slide: true,
                     scaleX: scale.M11, scaleY: scale.M22);
                 break;
 
             case PreviewCommand.Close:
                 _preview?.TakeDown();
+                _connector?.HideCurve();
                 break;
         }
     }
+
+    private ConnectorWindow? _connector;
+
+    /// <summary>The row the panel (and its connector) currently belongs beside.</summary>
+    private ScreenRect? _connectorAnchor;
 
     private PreviewWindow EnsurePreview()
     {
@@ -2222,9 +2230,26 @@ internal partial class BarWindow : Window
             _preview = new PreviewWindow(_fileIcons);
             _preview.PointerRestingOnPanel += () => RunPreviewCommand(_previewPolicy.PreviewEntered());
             _preview.PointerLeftPanel += () => RunPreviewCommand(_previewPolicy.PreviewLeft());
+            _preview.PanelMoved += OnPreviewPanelMoved;
         }
 
         return _preview;
+    }
+
+    /// <summary>
+    /// The connector redraws with every step the panel takes — first arrival
+    /// included, which is the teleport the ticket asks for: a line flying in
+    /// from the previous row's position would read as a glitch, not as craft.
+    /// </summary>
+    private void OnPreviewPanelMoved(ScreenRect panel)
+    {
+        if (_connectorAnchor is not { } anchor)
+        {
+            return;
+        }
+
+        _connector ??= new ConnectorWindow();
+        _connector.ShowCurve(anchor, panel, new System.Windows.Interop.WindowInteropHelper(_preview).Handle);
     }
 
     /// <summary>The panel follows the pointer only between realised cards; off-list the bar anchors it.</summary>

@@ -128,10 +128,12 @@ public sealed class PreviewPolicy
                 _trigger = PreviewTrigger.Hover;
                 return PreviewCommand.Retarget;
 
-            case State.Open when _trigger == PreviewTrigger.Keyboard:
+            case State.Open when _trigger == PreviewTrigger.Keyboard && Card == card:
                 // The pointer arrived on the held card: ownership passes to
                 // the hover rules, so releasing the key leaves it standing
-                // rather than snapping it shut under a resting pointer.
+                // rather than snapping it shut under a resting pointer. Only
+                // this card — a held preview does not become hover-owned
+                // merely because the pointer swept across the neighbours.
                 _trigger = PreviewTrigger.Hover;
                 return PreviewCommand.None;
 
