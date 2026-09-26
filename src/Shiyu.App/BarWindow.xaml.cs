@@ -251,6 +251,14 @@ internal sealed class BarCard : INotifyPropertyChanged
 
     public string Preview { get; init; } = string.Empty;
 
+    /// <summary>How to drag out, shown under the preview in the tooltip.</summary>
+    public string DragHint { get; init; } = string.Empty;
+
+    /// <summary>The card's tooltip: its content, and what holding it does.</summary>
+    public string DragToolTip => string.IsNullOrEmpty(Preview)
+        ? DragHint
+        : Preview + Environment.NewLine + Environment.NewLine + DragHint;
+
     public string KindText { get; init; } = string.Empty;
 
     public string WhenText { get; init; } = string.Empty;
@@ -353,8 +361,7 @@ internal sealed class BarCard : INotifyPropertyChanged
     /// <summary>What the body shows: the note by default, the original on hover.</summary>
     public string Face
     {
-        get => _face;
-        set
+        get => _face;        set
         {
             _face = value;
             Changed(nameof(Face));
@@ -669,6 +676,7 @@ internal partial class BarWindow : Window
             Kind = entry.Kind,
             Text = entry.Text,
             Preview = collapsed.Length > 500 ? collapsed[..500] + "…" : collapsed,
+            DragHint = "🖱 按住左键拖出：文本入编辑器（带格式）、图片入聊天窗、文件入资源管理器",
             KindText = entry.Kind switch
             {
                 EntryKind.Image => "图片",
@@ -1520,6 +1528,10 @@ internal partial class BarWindow : Window
         // Handled, so the press does not turn into a window drag.
         e.Handled = true;
 
+        // The press origin arms the drag: only movement beyond the system's
+        // minimum distance is a carry, everything shorter stays a click.
+        _dragOrigin = e.GetPosition(null);
+
         if (((FrameworkElement)sender).DataContext is not BarCard card)
         {
             return;
@@ -1544,27 +1556,100 @@ internal partial class BarWindow : Window
     }
 
     /// <summary>
-    /// A file card dragged with the left button carries its living paths out
-    /// to the file system. Dead paths are left behind: a drag that silently
-    /// produces nothing is worse than one that visibly carries less.
+    /// Any card dragged with the left button carries what it is out to
+    /// wherever the user drops it — text (with formatting and a plain
+    /// fallback), images as pictures, files as files. Dead paths stay behind:
+    /// a drag that silently produces nothing is worse than one that visibly
+    /// carries less, and an all-dead card says so through a toast.
     /// </summary>
+
+    // Where the current button press began, so a jitter during a click never
+    // turns into a drag: the system's own minimum drag distance decides.
+    private Point? _dragOrigin;
+
     private void OnCardMouseMove(object sender, MouseEventArgs e)
     {
-        if (e.LeftButton != MouseButtonState.Pressed
-            || ((FrameworkElement)sender).DataContext is not BarCard { Kind: EntryKind.Files } card)
+        if (e.LeftButton != MouseButtonState.Pressed)
+        {
+            _dragOrigin = null;
+            return;
+        }
+
+        if (_dragOrigin is not { } origin)
         {
             return;
         }
 
-        var alive = card.Files.Where(File.Exists).ToList();
-        if (alive.Count == 0)
+        var here = e.GetPosition(null);
+        if (Math.Abs(here.X - origin.X) < SystemParameters.MinimumHorizontalDragDistance
+            && Math.Abs(here.Y - origin.Y) < SystemParameters.MinimumVerticalDragDistance)
         {
             return;
         }
 
-        var data = new DataObject(DataFormats.FileDrop, alive.ToArray());
+        // One drag attempt per press: repeated moves must not re-enter the
+        // modal loop the moment it closes.
+        _dragOrigin = null;
+
+        if (((FrameworkElement)sender).DataContext is not BarCard card)
+        {
+            return;
+        }
+
+        // A drag begins on movement with the button held — the user's intent
+        // to carry, not to click. Everything the entry is rides along: text
+        // with its formatting and a plain fallback, images as pictures,
+        // files as files.
+        var data = new DataObject();
+        switch (card.Kind)
+        {
+            case EntryKind.Text:
+                data.SetText(card.Text, TextDataFormat.UnicodeText);
+
+                // Rich destinations get the RTF form; plain ones quietly use
+                // the text above — one payload, both worlds. (HTML is left
+                // out: WPF writes it header-less and targets mangle it.)
+                if (card.Rtf is { Length: > 0 } rtf)
+                {
+                    data.SetText(rtf, TextDataFormat.Rtf);
+                }
+
+                break;
+
+            case EntryKind.Image:
+                if (card.Thumbnail is BitmapSource picture)
+                {
+                    data.SetImage(picture);
+                    data.SetText(card.Text, TextDataFormat.UnicodeText);
+                }
+                else
+                {
+                    return;
+                }
+
+                break;
+
+            default:
+                var alive = card.Files.Where(File.Exists).ToList();
+                if (alive.Count == 0)
+                {
+                    // Every path gone: a drag that silently produces nothing
+                    // reads as breakage. One quiet toast says why not.
+                    DeadDragNotice?.Invoke("原文件已不存在，无法拖出。");
+                    return;
+                }
+
+                var dropList = new System.Collections.Specialized.StringCollection();
+                dropList.AddRange([.. alive]);
+                data.SetFileDropList(dropList);
+                break;
+        }
+
         DragDrop.DoDragDrop((DependencyObject)sender, data, DragDropEffects.Copy);
     }
+
+    /// <summary>Sent upward so the tray can say what the card cannot.</summary>
+    public event Action<string>? DeadDragNotice;
 
     private static void OpenUri(BarCard card)
     {

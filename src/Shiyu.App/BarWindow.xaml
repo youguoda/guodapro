@@ -132,7 +132,7 @@
                                    LineHeight="{DynamicResource Line.Body}"
                                    LineStackingStrategy="BlockLineHeight"
                                    Foreground="{DynamicResource Brush.Text}"
-                                   ToolTip="{Binding Preview}"/>
+                                   ToolTip="{Binding DragToolTip}"/>
                         <Border x:Name="ImageBody" MaxHeight="{Binding ImageHeight}"
                                 CornerRadius="{DynamicResource Radius.Small}"
                                 Background="{DynamicResource Brush.SurfaceSubtle}"

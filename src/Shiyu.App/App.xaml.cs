@@ -317,6 +317,7 @@ public partial class App : Application
             _bar = new BarWindow(_store, _icons, _writer, _capture, _settings, _fileIcons!);
             _bar.GeometryChanged += OnBarGeometryChanged;
             _bar.DataSettingsRequested += OpenSettingsAt;
+            _bar.DeadDragNotice += notice => _tray?.ShowNotification("拾语", notice);
         }
 
         _bar.Toggle();
