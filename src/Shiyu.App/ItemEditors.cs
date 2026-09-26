@@ -58,6 +58,11 @@ internal static class ItemEditors
             ? StartupRegistration.IsEnabled()
             : SettingsBindings.ReadToggle(item.Id, current) == true;
 
+        // The save path reads Text ("1"/"0"), so it must be true from the
+        // very first moment: an untouched toggle saving as "off" silently
+        // zeroes settings the user never touched.
+        state.Text = state.Toggle ? "1" : "0";
+
         var box = new CheckBox
         {
             IsChecked = state.Toggle,
@@ -68,11 +73,13 @@ internal static class ItemEditors
         box.Checked += (_, _) =>
         {
             state.Toggle = true;
+            state.Text = "1";
             changed?.Invoke();
         };
         box.Unchecked += (_, _) =>
         {
             state.Toggle = false;
+            state.Text = "0";
             changed?.Invoke();
         };
 
