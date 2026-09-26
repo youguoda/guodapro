@@ -32,7 +32,23 @@ public sealed class WinVHook : IDisposable
     {
         _proc = OnHook;
         _context = SynchronizationContext.Current;
-        _filter.Triggered += () => _context?.Post(_ => Triggered?.Invoke(), null);
+
+        // The mask is the trick that lets the real Win release pass through
+        // (so the key never sticks) without the Start menu popping: once the
+        // shell has seen "some key happened while Win was down", it opens
+        // nothing on the release. VK 0xFF is an unassigned no-op nothing
+        // processes.
+        //
+        // Both the mask and the app trigger run POSTED, never inside the hook
+        // callback: injecting input from within a low-level hook callback
+        // re-enters the hook on the same thread — the callback stalls, the
+        // system times the hook out, and the app can die outright.
+        _filter.Triggered += () => _context?.Post(_ =>
+        {
+            NativeMethods.keybd_event(0xFF, 0, 0, UIntPtr.Zero);
+            NativeMethods.keybd_event(0xFF, 0, 2, UIntPtr.Zero);
+            Triggered?.Invoke();
+        }, null);
 
         _hook = NativeMethods.SetWindowsHookExW(
             WhKeyboardLl, _proc, NativeMethods.GetModuleHandleW(null), 0);
@@ -118,6 +134,9 @@ public sealed class WinVHook : IDisposable
         [DllImport("user32.dll")]
         public static extern IntPtr CallNextHookEx(
             IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        public static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
 
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
         public static extern IntPtr GetModuleHandleW(string? lpModuleName);

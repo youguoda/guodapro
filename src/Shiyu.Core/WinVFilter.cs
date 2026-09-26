@@ -24,17 +24,23 @@ public enum KeyDirection
 /// Decides, key event by key event, what a Win+V takeover does with it.
 ///
 /// The rules that must never slip, because each slip is felt system-wide:
-/// Win+V (either Win) is swallowed and triggers; the V and the Win releases
-/// that follow a takeover are swallowed too (releasing the Win later would
-/// pop the Start menu open); every other key — Win alone, Win+anything-else,
-/// plain typing — passes untouched.
+/// Win+V (either Win) is swallowed and triggers; the V releases that follow
+/// a takeover are swallowed too; every other key — Win alone, Win+anything-
+/// else, plain typing — passes untouched.
+///
+/// The Win RELEASE is deliberately passed, not swallowed. Swallowing it
+/// leaves the system believing Win is held forever (a stuck modifier: the
+/// next E opens Explorer, L locks the screen). The Start menu that a bare
+/// Win release would pop is prevented another way: the caller injects a
+/// harmless mask keystroke at takeover time, so the shell saw "some key
+/// was pressed while Win was down" and opens nothing on the release.
 /// </summary>
 public sealed class WinVFilter
 {
     private bool _winHeld;
     private bool _tookOver;
 
-    /// <summary>True while the Win releases after a takeover still need swallowing.</summary>
+    /// <summary>True while the V releases after a takeover still need swallowing.</summary>
     public bool TookOver => _tookOver;
 
     public KeyFlow Feed(SpecialKey key, KeyDirection direction)
@@ -51,14 +57,6 @@ public sealed class WinVFilter
                 }
 
                 _winHeld = winDown;
-                if (!winDown && _tookOver)
-                {
-                    // The last act of a takeover: the Win release is eaten so
-                    // the Start menu never learns the key was touched.
-                    _tookOver = false;
-                    return KeyFlow.Swallow;
-                }
-
                 return KeyFlow.Pass;
 
             case SpecialKey.V when direction == KeyDirection.Down && _winHeld:
@@ -76,6 +74,11 @@ public sealed class WinVFilter
                 return KeyFlow.Swallow;
 
             case SpecialKey.V when direction == KeyDirection.Up && _tookOver:
+                // Eaten because the down was eaten: letting the up through
+                // alone would type 'v' into whatever has focus. This is also
+                // the takeover's natural end — later V presses (without Win)
+                // are ordinary typing and must pass whole.
+                _tookOver = false;
                 return KeyFlow.Swallow;
 
             default:

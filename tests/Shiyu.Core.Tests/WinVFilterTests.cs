@@ -4,8 +4,10 @@ namespace Shiyu.Core.Tests;
 
 /// <summary>
 /// A system key is being borrowed: the filter must swallow exactly Win+V and
-/// its trailing releases, and let every other keystroke through untouched —
-/// plain typing, Win alone, and other Win combinations included.
+/// its trailing V release, and let every other keystroke through untouched —
+/// including the Win release itself, whose free passage is what keeps the
+/// key from sticking system-wide (the Start menu is suppressed by an
+/// injected mask keystroke instead, one layer up).
 /// </summary>
 public class WinVFilterTests
 {
@@ -13,7 +15,7 @@ public class WinVFilterTests
         => filter.Feed(key, direction);
 
     [Fact]
-    public void Win_then_V_triggers_and_swallows()
+    public void Win_then_V_triggers_and_swallows_but_Win_release_passes()
     {
         var filter = new WinVFilter();
         var fired = 0;
@@ -23,9 +25,11 @@ public class WinVFilterTests
         Assert.Equal(KeyFlow.Swallow, Feed(filter, SpecialKey.V, KeyDirection.Down));
         Assert.Equal(1, fired);
 
-        // The takeover's tail: both releases eaten so Start never opens.
+        // The V release is eaten (its down was eaten); the Win release PASSES
+        // so the key never sticks — the Start menu is prevented by the mask
+        // the hook injects, not by withholding the release.
         Assert.Equal(KeyFlow.Swallow, Feed(filter, SpecialKey.V, KeyDirection.Up));
-        Assert.Equal(KeyFlow.Swallow, Feed(filter, SpecialKey.LeftWin, KeyDirection.Up));
+        Assert.Equal(KeyFlow.Pass, Feed(filter, SpecialKey.LeftWin, KeyDirection.Up));
     }
 
     [Fact]
@@ -37,18 +41,29 @@ public class WinVFilterTests
 
         Assert.Equal(KeyFlow.Pass, Feed(filter, SpecialKey.RightWin, KeyDirection.Down));
         Assert.Equal(KeyFlow.Swallow, Feed(filter, SpecialKey.V, KeyDirection.Down));
-        Assert.Equal(KeyFlow.Swallow, Feed(filter, SpecialKey.RightWin, KeyDirection.Up));
+        Assert.Equal(KeyFlow.Swallow, Feed(filter, SpecialKey.V, KeyDirection.Up));
+        Assert.Equal(KeyFlow.Pass, Feed(filter, SpecialKey.RightWin, KeyDirection.Up));
         Assert.Equal(1, fired);
     }
 
     [Fact]
-    public void Plain_typing_passes_completely()
+    public void Plain_typing_passes_completely_even_after_a_takeover()
     {
         var filter = new WinVFilter();
 
         Assert.Equal(KeyFlow.Pass, Feed(filter, SpecialKey.V, KeyDirection.Down));
         Assert.Equal(KeyFlow.Pass, Feed(filter, SpecialKey.V, KeyDirection.Up));
         Assert.Equal(KeyFlow.Pass, Feed(filter, SpecialKey.Other, KeyDirection.Down));
+
+        // After one takeover, a later plain V press must not lose its release
+        // to a stale takeover flag.
+        Feed(filter, SpecialKey.LeftWin, KeyDirection.Down);
+        Feed(filter, SpecialKey.V, KeyDirection.Down);
+        Feed(filter, SpecialKey.V, KeyDirection.Up);
+        Feed(filter, SpecialKey.LeftWin, KeyDirection.Up);
+
+        Assert.Equal(KeyFlow.Pass, Feed(filter, SpecialKey.V, KeyDirection.Down));
+        Assert.Equal(KeyFlow.Pass, Feed(filter, SpecialKey.V, KeyDirection.Up));
     }
 
     [Fact]
@@ -77,11 +92,12 @@ public class WinVFilterTests
         Assert.Equal(KeyFlow.Pass, Feed(filter, SpecialKey.LeftWin, KeyDirection.Down));
         Assert.Equal(KeyFlow.Pass, Feed(filter, SpecialKey.LeftWin, KeyDirection.Up));
         Assert.Equal(KeyFlow.Pass, Feed(filter, SpecialKey.V, KeyDirection.Down));
+        Assert.Equal(KeyFlow.Pass, Feed(filter, SpecialKey.V, KeyDirection.Up));
         Assert.Equal(0, fired);
     }
 
     [Fact]
-    public void Second_V_while_holding_is_swallowed_without_retrigger()
+    public void Held_repeats_swallow_without_retrigger_but_a_real_second_press_triggers()
     {
         var filter = new WinVFilter();
         var fired = 0;
@@ -89,18 +105,32 @@ public class WinVFilterTests
 
         Assert.Equal(KeyFlow.Pass, Feed(filter, SpecialKey.LeftWin, KeyDirection.Down));
         Assert.Equal(KeyFlow.Swallow, Feed(filter, SpecialKey.V, KeyDirection.Down));
-        Assert.Equal(KeyFlow.Swallow, Feed(filter, SpecialKey.V, KeyDirection.Up));
 
-        // Win still held, V pressed again: swallowed (handing it to the
-        // system would pop the Windows clipboard panel), but no re-trigger
-        // (auto-repeat must not toggle the bar).
+        // Auto-repeat: down after down, no release between — swallowed, no
+        // re-trigger (auto-repeat must not toggle the bar).
         Assert.Equal(KeyFlow.Swallow, Feed(filter, SpecialKey.V, KeyDirection.Down));
-        Assert.Equal(KeyFlow.Swallow, Feed(filter, SpecialKey.V, KeyDirection.Up));
+        Assert.Equal(KeyFlow.Swallow, Feed(filter, SpecialKey.V, KeyDirection.Down));
         Assert.Equal(1, fired);
+        Assert.Equal(KeyFlow.Swallow, Feed(filter, SpecialKey.V, KeyDirection.Up));
 
-        // The tail is still eaten, and the filter comes out clean.
-        Assert.Equal(KeyFlow.Swallow, Feed(filter, SpecialKey.LeftWin, KeyDirection.Up));
-        Assert.Equal(KeyFlow.Pass, Feed(filter, SpecialKey.LeftWin, KeyDirection.Down));
+        // A genuine second press — full down/up pair — triggers again: the
+        // bar toggles, and nothing reaches the system.
+        Assert.Equal(KeyFlow.Swallow, Feed(filter, SpecialKey.V, KeyDirection.Down));
+        Assert.Equal(2, fired);
+        Assert.Equal(KeyFlow.Swallow, Feed(filter, SpecialKey.V, KeyDirection.Up));
+        Assert.Equal(KeyFlow.Pass, Feed(filter, SpecialKey.LeftWin, KeyDirection.Up));
+    }
+
+    [Fact]
+    public void V_released_after_Win_still_gets_its_up_eaten_once()
+    {
+        var filter = new WinVFilter();
+
+        Feed(filter, SpecialKey.LeftWin, KeyDirection.Down);
+        Feed(filter, SpecialKey.V, KeyDirection.Down);
+        // Fast fingers: Win released before V.
+        Assert.Equal(KeyFlow.Pass, Feed(filter, SpecialKey.LeftWin, KeyDirection.Up));
+        Assert.Equal(KeyFlow.Swallow, Feed(filter, SpecialKey.V, KeyDirection.Up));
     }
 
     [Fact]
