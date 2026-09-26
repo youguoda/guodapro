@@ -8,7 +8,7 @@ DesignTokens/ThemeManager 架构上——**不引第三方 UI 库**。
 用户原话锚定：「需要的都是比较现代化的，有些控件可以参考 Windows 11 的设计」；
 硬约束：「项目的功能都是完好的」——每一步改造挂现有测试与实机探针回归。
 
-## 设计目标："现代化 + 融入 Win11" 由四件事构成
+## 设计目标："现代化 + 融入 Win11" 由五件事构成
 
 1. **材质分层**——原生感的最大来源。Mica（不透明、采样壁纸）给长寿命窗；
    Acrylic（实时模糊）给瞬态浮层。拾语六个窗口恰好二分。
@@ -17,6 +17,8 @@ DesignTokens/ThemeManager 架构上——**不引第三方 UI 库**。
    对齐（Caption 12 / Body 14）。
 4. **静谧动效**——现有 MotionPlan（160/300ms、遵守系统"减少动画"）已对齐，
    本票只做曲线与对象收敛，不新做动效系统。
+5. **图标**——系统级符号字体（Segoe Fluent Icons），见下节；杜绝自绘位图
+   与第三方图标风格混入。
 
 ## 标杆整理（网络调研，好评共识）
 
@@ -37,6 +39,28 @@ DesignTokens/ThemeManager 架构上——**不引第三方 UI 库**。
   需 Win11 22H2+）+ `DWMWA_USE_IMMERSIVE_DARK_MODE(20)` 同步暗色；
   参考 [tvc-16 实测指南](https://tvc-16.science/mica-wpf.html)、[dotnet/wpf#8545](https://github.com/dotnet/wpf/issues/8545)
   （WPF 一等支持仍在追踪，本票走 DWM 直调）。
+
+## 图标体系：系统级符号字体（SF Symbols 的 Windows 对等物）
+
+需求原话：图标要求"系统级 SF Symbols"。**SF Symbols 是 Apple 生态的专属
+符号系统**，Windows 上不存在亦不可授权使用；它的系统级对等物是
+**Segoe Fluent Icons**（Windows 11 自带的官方符号字体，在 Windows 里的地位
+与 SF Symbols 在 macOS 上完全对应）。本票据此落规则：
+
+- 全部图标用系统字形：`FontFamily="Segoe Fluent Icons"` + 官方字形码位；
+  Win10 经 FontFamily 回退链落到 `Segoe MDL2 Assets`（同码位、字形略旧），
+  不写系统版本分支。
+- 实施时对照微软官方 Segoe Fluent Icons 字形表逐一核对；个别 Segoe 缺失的
+  符号用微软开源 **Fluent UI System Icons**（同一设计语言）补位——仍然不引
+  第三方风格图标集。
+- 已可钉死的核心字形（实施时全表核对）：复制 E8C8、粘贴 E77F、删除 E74D、
+  置顶 E718 / 取消 E77A、收藏 ☆E734 / ★E735、搜索 E721、设置 E713、
+  标签 E8EC、打开 E8E5、刷新 E895、完成 E73E、关闭 E711、警告 E7BA、信息 E946。
+- **悬停托盘按钮从"单汉字"（复/贴/删…）升级为系统字形图标**；汉字键帽提示
+  不丢——C/O/P/S/N/G/D 键徽标体系（票 14/15）与右键菜单快捷键列原样保留，
+  字形只接管"看得见的那一层"。
+- 图标颜色随前景语义走（Brush.Text / Brush.TextSecondary / Brush.Danger），
+  不引入独立彩色图标。
 
 ## 技术路径：票 03 已实测定案，本票零技术不确定性
 
@@ -75,6 +99,9 @@ ThemeManager 即时换肤已成型；引库会架空 DesignTokens 并带来风�
 - 字号向官方字阶微调：Hint/Caption 12、Secondary 13、Body 14、BodyLarge 16
   （现 11–15 档整体偏小一档）。
 - 阴影收敛：浮层用 Win11 式"低扩散、大模糊、低不透明度"单阴影，去掉多重叠加。
+- 图标令牌：`FamilyIcon = "Segoe Fluent Icons"`、`FamilyIconFallback = "Segoe
+  MDL2 Assets"`（FontFamily 回退链），图标字号槽 IconSmall 12 / Icon 16 /
+  IconLarge 20。
 
 ## 逐界面改造要点
 
@@ -85,6 +112,9 @@ ThemeManager 即时换肤已成型；引库会架空 DesignTokens 并带来风�
 - **管理窗**：Mica 底 + 列表行 40px 节奏 + 工具栏去边框化（按钮 ghost 化）。
 - **翻译面板/快速条/徽标**：Acrylic + CornerRadius 8~12 + 阴影收敛（03 配方直接套）。
 - **右键菜单**：Popup 表面换 Acrylic 底 + 4px 行叠加态。
+- **图标落点**：窄条头部（搜索 E721、清除 E711、★ 收藏筛选 E734/735）、悬停
+  托盘十动作字形化、管理窗工具栏（ghost 按钮 + 字形）、设置窗页头、右键菜单；
+  来源应用的程序图标是位图缓存（票 09），不属于符号字体体系，保持不动。
 
 ## 实施顺序（小步，每步功能完好）
 
@@ -110,4 +140,6 @@ ThemeManager 即时换肤已成型；引库会架空 DesignTokens 并带来风�
 - [ ] 每界面改造后现有实机探针全绿（窄条 UIA+真鼠标、翻译面板、设置、向导、
       轻量模式内存、备份往返）
 - [ ] 全程测试套件绿；不引第三方 UI 库；键盘模型与快捷键行为不变
+- [ ] 图标全部走 Segoe Fluent Icons（FontFamily 回退链落 MDL2），零自绘位图
+      图标、零第三方风格混入；汉字键帽提示体系（C/O/P/S/N/G/D）不回退
 - [ ] Win10 未验证项保持记录（沿 03 约定）
