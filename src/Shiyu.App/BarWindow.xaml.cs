@@ -608,6 +608,14 @@ internal partial class BarWindow : Window
         Activate();
         SearchBox.Focus();
         SearchBox.SelectAll();
+
+        // First-use teaching: the interactions are good but invisible — the
+        // footer mentions them for the first few summons, then never again.
+        if (FirstUseHints.ShowOnSummon)
+        {
+            FirstUseHints.RegisterSummon();
+            ShowFirstUseHint();
+        }
     }
 
     /// <summary>
@@ -660,6 +668,7 @@ internal partial class BarWindow : Window
         // out reads as "text first, then a grey sheet" — the user's words —
         // and the system's Win+V panel, the benchmark surface, closes with no
         // exit either. For a 3-second tool, speed *is* the polish.
+        DismissFirstUseHint();
         Hide();
         _returnTo.Restore();
         EnterLightweightIfEnabled();
@@ -955,7 +964,7 @@ internal partial class BarWindow : Window
     /// </summary>
     private void UpdateFooter()
     {
-        if (_feedbackHostOpen)
+        if (_feedbackHostOpen || _hintShowing)
         {
             return;
         }
@@ -1031,6 +1040,33 @@ internal partial class BarWindow : Window
         ClearFeedback();
         ApplyFilter();
         ShowFeedback($"已恢复 {items.Count} 条");
+    }
+
+    // --- first-use hints ---------------------------------------------------------
+
+    /// <summary>Whether the footer is currently teaching instead of counting.</summary>
+    private bool _hintShowing;
+
+    private void ShowFirstUseHint()
+    {
+        _hintShowing = true;
+        FeedbackLabel.Text = FirstUseHints.Text();
+        UndoButton.Visibility = Visibility.Collapsed;
+        FeedbackHost.Visibility = Visibility.Visible;
+        CountLabel.Visibility = Visibility.Collapsed;
+    }
+
+    private void DismissFirstUseHint()
+    {
+        if (!_hintShowing)
+        {
+            return;
+        }
+
+        _hintShowing = false;
+        FeedbackHost.Visibility = Visibility.Collapsed;
+        CountLabel.Visibility = Visibility.Visible;
+        UpdateFooter();
     }
 
     private void ReloadIfBehind(bool force = false)
@@ -1274,18 +1310,19 @@ internal partial class BarWindow : Window
             var chip = new ToggleButton
             {
                 Content = $"{group.Icon ?? "组"} {group.Name}",
-                Padding = new Thickness(8, 2, 8, 2),
-                Margin = new Thickness(0, 0, 6, 0),
-                FontSize = FindResource("Size.Caption") as double? ?? 12,
                 Cursor = Cursors.Hand,
                 ToolTip = $"只看「{group.Name}」——再点一次回到全部",
+
+                // Tabs, not boxes: groups share the kind tabs' underline
+                // idiom so the two rows read as one family.
+                Style = TryFindResource("KindTab") as Style ?? new Style(typeof(ToggleButton)),
             };
             chip.Click += OnGroupChipClicked;
             GroupRow.Children.Insert(GroupRow.Children.Count - 1, chip);
             _groupChips.Add((group, chip));
         }
 
-        GroupHost.Visibility = groups.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        GroupHostBorder.Visibility = groups.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         SyncGroupChipStates();
         FitGroupRow();
     }
@@ -1312,7 +1349,7 @@ internal partial class BarWindow : Window
     /// </summary>
     private void FitGroupRow()
     {
-        if (_fittingGroups || GroupHost.Visibility != Visibility.Visible)
+        if (_fittingGroups || GroupHostBorder.Visibility != Visibility.Visible)
         {
             return;
         }
@@ -1460,13 +1497,9 @@ internal partial class BarWindow : Window
             }
         }
 
-        // The overflow button speaks for the drawer hidden inside it.
-        GroupOverflow.SetResourceReference(BorderBrushProperty, selectedIsOverflowed
-            ? "Brush.Accent"
-            : "Brush.Border");
-        GroupOverflow.Foreground = selectedIsOverflowed
-            ? FindResource("Brush.Accent") as Brush
-            : null;
+        // The overflow button speaks for the drawer hidden inside it: with
+        // the tab idiom, "checked" IS the accent underline.
+        GroupOverflow.IsChecked = selectedIsOverflowed;
     }
 
     /// <summary>The 归组 tray action: file this card into a pile, or back out of one.</summary>
@@ -2075,6 +2108,15 @@ internal partial class BarWindow : Window
     /// </summary>
     private void ExecuteAction(string id, BarCard card, Button? feedback)
     {
+        // A real action is the strongest "user has found it" signal: the
+        // teaching row steps aside and the counter ticks toward never-again.
+        if (_hintShowing)
+        {
+            DismissFirstUseHint();
+        }
+
+        FirstUseHints.RegisterAction();
+
         switch (id)
         {
             case "copy":

@@ -400,26 +400,29 @@
                                FontSize="{DynamicResource Size.IconSmall}"/>
                 </Button>
                 </StackPanel>
-
-                <!--
-                  Groups switch, tags filter: the chips below are drawers
-                  (picking one shows only its pile), the tag combo above is a
-                  label that stacks on top of whatever else is asked.
-                -->
-                <ScrollViewer x:Name="GroupHost" HorizontalScrollBarVisibility="Hidden"
-                              VerticalScrollBarVisibility="Disabled" Margin="0,6,0,0"
-                              SizeChanged="OnGroupHostResized" Visibility="Collapsed">
-                    <StackPanel x:Name="GroupRow" Orientation="Horizontal">
-                        <ToggleButton x:Name="AllGroupChip" Content="全部" Padding="8,2" Margin="0,0,6,0"
-                                      FontSize="{DynamicResource Size.Caption}" Cursor="Hand"
-                                      Click="OnGroupChipClicked" ToolTip="不看特定分组"/>
-                        <ToggleButton x:Name="GroupOverflow" Content="⋯" Padding="0,2" Width="30"
-                                      FontSize="{DynamicResource Size.Caption}" Cursor="Hand"
-                                      Click="OnGroupOverflowClicked" ToolTip="收起的分组"
-                                      Visibility="Collapsed"/>
-                    </StackPanel>
-                </ScrollViewer>
             </StackPanel>
+        </Border>
+
+        <!--
+          Groups switch, tags filter: the tabs below are drawers (picking one
+          shows only its pile), the tag combo above is a label that stacks on
+          top of whatever else is asked.
+        -->
+        <Border x:Name="GroupHostBorder" DockPanel.Dock="Top" Padding="10,0,10,6"
+                Visibility="Collapsed">
+            <ScrollViewer x:Name="GroupHost" HorizontalScrollBarVisibility="Hidden"
+                          VerticalScrollBarVisibility="Disabled"
+                          SizeChanged="OnGroupHostResized">
+                <StackPanel x:Name="GroupRow" Orientation="Horizontal">
+                    <ToggleButton x:Name="AllGroupChip" Content="全部" Padding="7,0" Margin="0,0,2,0"
+                                  Style="{StaticResource KindTab}"
+                                  Click="OnGroupChipClicked" ToolTip="不看特定分组"/>
+                    <ToggleButton x:Name="GroupOverflow" Content="⋯" Width="26"
+                                  Style="{StaticResource KindTab}"
+                                  Click="OnGroupOverflowClicked" ToolTip="收起的分组"
+                                  Visibility="Collapsed"/>
+                </StackPanel>
+            </ScrollViewer>
         </Border>
 
         <Border x:Name="PinnedHost" DockPanel.Dock="Top" Padding="8,6,8,0"
