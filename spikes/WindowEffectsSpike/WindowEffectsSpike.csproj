@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Spike for issue 03. Not part of the product: it exists to answer, on
+    Windows 11, which recipe gives a rounded, translucent, backdrop-blurred,
+    non-activating floating panel — and what the fallback looks like when DWM
+    blur is off the table. Kept in the repository so the answer stays
+    reproducible.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>WindowEffectsSpike</AssemblyName>
+    <RootNamespace>WindowEffectsSpike</RootNamespace>
+  </PropertyGroup>
+
+</Project>
