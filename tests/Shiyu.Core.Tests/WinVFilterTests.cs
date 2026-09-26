@@ -81,19 +81,26 @@ public class WinVFilterTests
     }
 
     [Fact]
-    public void Second_V_while_holding_does_not_retrigger()
+    public void Second_V_while_holding_is_swallowed_without_retrigger()
     {
         var filter = new WinVFilter();
         var fired = 0;
         filter.Triggered += () => fired++;
 
-        Feed(filter, SpecialKey.LeftWin, KeyDirection.Down);
+        Assert.Equal(KeyFlow.Pass, Feed(filter, SpecialKey.LeftWin, KeyDirection.Down));
         Assert.Equal(KeyFlow.Swallow, Feed(filter, SpecialKey.V, KeyDirection.Down));
+        Assert.Equal(KeyFlow.Swallow, Feed(filter, SpecialKey.V, KeyDirection.Up));
 
-        // Auto-repeat: already in a takeover, the repeats pass (the trigger
-        // fired once; more swallows would only starve a possible repeat).
-        Assert.Equal(KeyFlow.Pass, Feed(filter, SpecialKey.V, KeyDirection.Down));
+        // Win still held, V pressed again: swallowed (handing it to the
+        // system would pop the Windows clipboard panel), but no re-trigger
+        // (auto-repeat must not toggle the bar).
+        Assert.Equal(KeyFlow.Swallow, Feed(filter, SpecialKey.V, KeyDirection.Down));
+        Assert.Equal(KeyFlow.Swallow, Feed(filter, SpecialKey.V, KeyDirection.Up));
         Assert.Equal(1, fired);
+
+        // The tail is still eaten, and the filter comes out clean.
+        Assert.Equal(KeyFlow.Swallow, Feed(filter, SpecialKey.LeftWin, KeyDirection.Up));
+        Assert.Equal(KeyFlow.Pass, Feed(filter, SpecialKey.LeftWin, KeyDirection.Down));
     }
 
     [Fact]

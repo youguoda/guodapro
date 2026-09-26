@@ -61,9 +61,18 @@ public sealed class WinVFilter
 
                 return KeyFlow.Pass;
 
-            case SpecialKey.V when direction == KeyDirection.Down && _winHeld && !_tookOver:
-                _tookOver = true;
-                Triggered?.Invoke();
+            case SpecialKey.V when direction == KeyDirection.Down && _winHeld:
+                // First press takes over; repeats while Win is still held are
+                // swallowed too — passing one through would hand the system a
+                // Win+V and pop its clipboard panel over ours. They do not
+                // re-trigger: keyboard auto-repeat would then toggle the bar
+                // wildly for as long as the key is down.
+                if (!_tookOver)
+                {
+                    _tookOver = true;
+                    Triggered?.Invoke();
+                }
+
                 return KeyFlow.Swallow;
 
             case SpecialKey.V when direction == KeyDirection.Up && _tookOver:
