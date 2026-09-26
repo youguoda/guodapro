@@ -722,7 +722,19 @@ internal partial class BarWindow : Window
         var work = SystemParameters.WorkArea;
         Height = Math.Clamp(_settings.BarHeight ?? 620, 320, work.Height);
 
-        if (Left + Width > work.Right || Top + Height > work.Bottom || Left < work.Left - Width)
+        // Strand check against the WHOLE virtual desktop, not the primary
+        // work area: the bar legitimately lives on either monitor of this
+        // dual-screen desk, and a primary-only check yanked it back every
+        // restart — the cross-screen disconnect the user reported. Two
+        // monitors at different scales make the DIU→physical mapping loose,
+        // so the containment test carries generous slack by design.
+        var vx = SystemParameters.VirtualScreenLeft;
+        var vy = SystemParameters.VirtualScreenTop;
+        var vw = SystemParameters.VirtualScreenWidth;
+        var vh = SystemParameters.VirtualScreenHeight;
+        var onScreen = Left + Width > vx && Left < vx + vw && Top + Height > vy && Top < vy + vh;
+
+        if (!onScreen)
         {
             // A monitor layout change between sessions can strand the bar off
             // every screen; a stranded bar looks exactly like a broken hotkey.
