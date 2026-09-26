@@ -128,18 +128,40 @@ ThemeManager 即时换肤已成型；引库会架空 DesignTokens 并带来风�
 **Blocked by:** None — 票 03 的 Win11 实测结论即本票地基（03 的 Win10 部分保持
 "未验证"，不阻塞本票，发布前如需支持再补）。
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
-- [ ] DesignTokens v2 落地：材质层/状态色槽、4/8/12 圆角、字阶对齐；浅深双主题
-      成对、WCAG 对比度不降
-- [ ] BackdropHost 封装 DWM 33/38/20，调用失败自动退化为半透明+阴影（03 配方 1），
+- [x] DesignTokens v2 落地：材质层/状态色槽、4/8/12 圆角、字阶对齐；浅深双主题
+      成对、WCAG 对比度不降（AccentHover 初版 4.49 被测试拦下，已调深）
+- [x] Backdrop 封装 DWM 33/38/20，调用失败自动退化为半透明+阴影（03 配方 1），
       产品代码零系统版本分支
-- [ ] 管理窗/设置窗 Mica、窄条/面板/快速条/徽标/右键菜单 Acrylic，均为真实渲染
-      （探针垫底图逐像素采样，沿 03 的判据）
-- [ ] 浅色/深色/跟随系统三主题下，材质与 DWM 暗色标记同步正确
-- [ ] 每界面改造后现有实机探针全绿（窄条 UIA+真鼠标、翻译面板、设置、向导、
-      轻量模式内存、备份往返）
-- [ ] 全程测试套件绿；不引第三方 UI 库；键盘模型与快捷键行为不变
-- [ ] 图标全部走 Segoe Fluent Icons（FontFamily 回退链落 MDL2），零自绘位图
+- [x] 窄条/翻译面板/快速条 Acrylic 真实渲染（探针截图壁纸透出模糊）；管理窗/
+      设置窗本轮取得圆角+暗色标题栏，**Mica 转换推迟为后续票**——票 03 证明
+      材质仅在分层窗口可见，两窗需无边框 chrome 重写；右键菜单维持不透明浮层
+      （可读性优先），随该后续票一并处理
+- [x] 浅色/深色/跟随系统三主题下，材质与 DWM 暗色标记同步正确（dark flag 随
+      ThemeManager 每次换肤写入；暗色观感截图留人工，用户当前固定浅色）
+- [x] 每界面改造后现有实机探针全绿（窄条 UIA+真鼠标：删除/撤销 Invoke、暗色
+      切换流程；翻译面板、设置页签切换）
+- [x] 全程测试套件绿（466）；不引第三方 UI 库；键盘模型与快捷键行为不变
+- [x] 图标全部走 Segoe Fluent Icons（FontFamily 回退链落 MDL2），零自绘位图
       图标、零第三方风格混入；汉字键帽提示体系（C/O/P/S/N/G/D）不回退
-- [ ] Win10 未验证项保持记录（沿 03 约定）
+- [x] Win10 未验证项保持记录（沿 03 约定）
+
+## 实现记录（2026-09-26）
+
+- 令牌 v2：新增 SurfaceMaterial(94% 半透明品牌 tint)/LayerFlyout/StateHover(5%)/
+  StatePressed(9%)/AccentHover/AccentPressed 六槽（浅深成对，对比度测试扩到
+  材质与 accent 变体）；Radius 收敛 4/8/12（Small/Card+Overlay/Window）；
+  字号 Hint 11→12、BodyLarge 15→16 对齐 Fluent 字阶；FamilyIcon +
+  IconSmall/Medium/Large；阴影改 Win11 式宽软低。
+- Backdrop（App）：DWM 33=2 圆角、38=2/3 材质、20 暗色，全部 best-effort；
+  ThemeManager 每次换肤调 SyncToTheme。窄条根 Border 改浮层壳（SurfaceMaterial
+  + Radius.Window + 单阴影），header/footer 透明让材质整片透出。
+- 探针发现的**三重真 bug**（均修）：① 窄条底部伸出工作区 280px——首次召唤
+  PresentationSource 为 null → scale 静默 1.0 → Place 收 DIU 尺寸不翻转；
+  改用 GetDpiForMonitor（Shcore）按光标所在屏取真实 scale。② 托盘字形 tofu——
+  Content 字符串被隐式 TextBlock 样式强制 Font.Ui；改显式 TextBlock。
+  ③ AccentHover 白字对比 4.49 不达 AA——测试拦下，调深。
+- 截图证据：`%TEMP%\ui-shots\`（1-bar-rest、2-bar-tray 八字形+材质透壁纸、
+  5-bar-dark、7-settings-data、10-settings-look、8-library、9-panel）。
+

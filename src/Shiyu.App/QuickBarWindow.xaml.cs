@@ -35,6 +35,8 @@ public partial class QuickBarWindow : Window
         _store = store;
         _capture = capture;
         Items.ItemsSource = _items;
+
+        Backdrop.Attach(this, () => BackdropKind.Acrylic);
     }
 
     /// <summary>Shows the bar beside the cursor, ready for the keyboard.</summary>

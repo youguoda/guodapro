@@ -622,6 +622,51 @@ public sealed partial class EntryStore : IDisposable
 
         using var command = _connection.CreateCommand();
 
+        BuildFilterConditions(filter, command, conditions);
+
+        var where = conditions.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", conditions);
+
+        command.CommandText = $"""
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from, image_width, image_height,
+                   (SELECT group_concat(t.name, char(31)) FROM tags t
+                      JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
+            FROM entries
+            {where}
+            ORDER BY pinned DESC, created_at DESC, id DESC
+            LIMIT $limit OFFSET $offset;
+            """;
+        command.Parameters.AddWithValue("$limit", limit);
+        command.Parameters.AddWithValue("$offset", offset);
+
+        return ReadEntries(command);
+    }
+
+    /// <summary>
+    /// How many entries the filter matches in total — the number a filtered
+    /// list's footer owes the user ("3 / 161 条"), which a paged list cannot
+    /// know from memory: it only holds the loaded page.
+    /// </summary>
+    public int CountMatching(HistoryFilter filter)
+    {
+        var conditions = new List<string>();
+
+        using var command = _connection.CreateCommand();
+
+        BuildFilterConditions(filter, command, conditions);
+
+        var where = conditions.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", conditions);
+
+        command.CommandText = $"SELECT COUNT(*) FROM entries {where};";
+        return Convert.ToInt32(command.ExecuteScalar());
+    }
+
+    /// <summary>
+    /// The WHERE clauses a filter compiles to, with their parameters bound onto
+    /// <paramref name="command"/>. Shared by the paged reader and the counter
+    /// so the two can never disagree about what a filter means.
+    /// </summary>
+    private static void BuildFilterConditions(HistoryFilter filter, SqliteCommand command, List<string> conditions)
+    {
         if (!string.IsNullOrWhiteSpace(filter.Query))
         {
             // The note is searchable alongside the text: "the brand blue one"
@@ -683,22 +728,6 @@ public sealed partial class EntryStore : IDisposable
             conditions.Add("group_id = $group");
             command.Parameters.AddWithValue("$group", group);
         }
-
-        var where = conditions.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", conditions);
-
-        command.CommandText = $"""
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from, image_width, image_height,
-                   (SELECT group_concat(t.name, char(31)) FROM tags t
-                      JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
-            FROM entries
-            {where}
-            ORDER BY pinned DESC, created_at DESC, id DESC
-            LIMIT $limit OFFSET $offset;
-            """;
-        command.Parameters.AddWithValue("$limit", limit);
-        command.Parameters.AddWithValue("$offset", offset);
-
-        return ReadEntries(command);
     }
 
     /// <summary>

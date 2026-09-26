@@ -294,6 +294,9 @@ internal sealed class BarCard : INotifyPropertyChanged
 
     public string WhenText { get; init; } = string.Empty;
 
+    /// <summary>The absolute stamp (and usage count) behind the relative one.</summary>
+    public string WhenToolTip { get; init; } = string.Empty;
+
     /// <summary>
     /// The number key that pastes this row, when it is one of the first ten
     /// displayed rows; null otherwise. Assigned from display position.
@@ -557,6 +560,10 @@ internal partial class BarWindow : Window
         _previewTick = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
         _previewTick.Tick += (_, _) => RunPreviewCommand(_previewPolicy.Tick());
 
+        // Win11 material behind the sheet (ticket 30): the window went layered
+        // in XAML, which is the only surface the backdrop renders on.
+        Backdrop.Attach(this, () => BackdropKind.Acrylic);
+
         PinnedList.ItemsSource = _pinned;
         Cards.ItemsSource = _cards;
 
@@ -614,22 +621,25 @@ internal partial class BarWindow : Window
         var cursor = ScreenGeometry.CursorPosition();
         var workArea = ScreenGeometry.WorkAreaAt(cursor);
 
-        var source = PresentationSource.FromVisual(this);
-        var scaleX = source?.CompositionTarget?.TransformToDevice.M11 ?? 1.0;
-        var scaleY = source?.CompositionTarget?.TransformToDevice.M22 ?? 1.0;
+        // The scale comes from the monitor itself (GetDpiForMonitor), not from
+        // WPF: on the first summon the PresentationSource does not exist yet,
+        // and its silent 1.0 fallback made Place see DIU-sized dimensions —
+        // no flip, no clamp, the bar's real bottom off the work area (ticket
+        // 30's screenshot probe).
+        var (scaleX, scaleY) = ScreenGeometry.ScaleAt(cursor);
 
-        // The height the user has settled on, capped by the screen: near the
-        // cursor still means fully on it.
+        // Declared Width/Height, never Actual*: nothing has been laid out on
+        // the first summon, so the Actual values are 0.
+        var width = Width;
         var height = Math.Min(Height, workArea.Height / scaleY);
         var placed = BadgePlacement.Place(
             cursor,
-            (int)Math.Ceiling(ActualWidth * scaleX),
+            (int)Math.Ceiling(width * scaleX),
             (int)Math.Ceiling(height * scaleY),
             workArea);
 
-        // The very first summon happens before the window was ever shown,
-        // when the handle does not exist yet — asking for it creates the
-        // HWND without showing the window.
+        // The very first summon happens before the window was ever shown, when
+        // the handle does not exist yet — asking for it creates the HWND.
         var helper = new System.Windows.Interop.WindowInteropHelper(this);
         _ = helper.EnsureHandle();
         TransientWindow.MoveTo(helper.Handle, placed);
@@ -778,8 +788,13 @@ internal partial class BarWindow : Window
                 EntryKind.Image => "图片",
                 EntryKind.Files => "文件",
                 _ => entry.TranslatedFrom is null ? "文本" : "译文 · 译自原文",
-            } + (entry.UseCount > 0 ? $" · 用过 {entry.UseCount} 次" : ""),
-            WhenText = entry.CreatedAt.ToLocalTime().ToString("MM-dd HH:mm"),
+            },
+
+            // Relative for the scan, absolute (plus the usage count, which is
+            // a reward rather than an identity) for the hover.
+            WhenText = RelativeTime.For(entry.CreatedAt, DateTimeOffset.Now),
+            WhenToolTip = $"{entry.CreatedAt.ToLocalTime():yyyy-MM-dd HH:mm}"
+                + (entry.UseCount > 0 ? $"\n用过 {entry.UseCount} 次" : ""),
             Icon = _icons.For(entry.SourceApp),
             Thumbnail = entry.Kind == EntryKind.Image
                 ? AppIconCache.Decode(entry.ThumbnailPng, 320)
@@ -919,8 +934,91 @@ internal partial class BarWindow : Window
         }
     }
 
-    private void UpdateCount()
-        => CountLabel.Text = $"共 {_store.Count()} 条 · Esc 隐藏";
+    /// <summary>
+    /// The footer's three voices: the count (total, or "3 / 161" when a filter
+    /// is on — a paged list cannot count itself), the action feedback, and the
+    /// Esc hint, which follows the escape stack instead of asserting one
+    /// behaviour while another is in force.
+    /// </summary>
+    private void UpdateFooter()
+    {
+        if (_feedbackHostOpen)
+        {
+            return;
+        }
+
+        var total = _store.Count();
+        var filtered = _store.CountMatching(_browser.Filter);
+        var escHint = _browser.Filter.IsEmpty ? "Esc 隐藏" : "Esc 清除筛选";
+
+        CountLabel.Text = filtered == total
+            ? $"共 {total} 条 · {escHint}"
+            : $"{filtered} / {total} 条 · {escHint}";
+    }
+
+    private void UpdateCount() => UpdateFooter();
+
+    /// <summary>Whether a feedback row is on show (and owns the footer).</summary>
+    private bool _feedbackHostOpen;
+
+    private System.Windows.Threading.DispatcherTimer? _feedbackTimer;
+
+    private IReadOnlyList<(Entry Entry, string? Group)>? _undoPending;
+
+    /// <summary>
+    /// One feedback row at a time; an undo keeps it on show for the full five
+    /// seconds the user was promised, a plain confirmation leaves quickly.
+    /// </summary>
+    private void ShowFeedback(string text, IReadOnlyList<(Entry Entry, string? Group)>? undo = null)
+    {
+        _feedbackTimer?.Stop();
+        _feedbackHostOpen = true;
+        _undoPending = undo;
+
+        FeedbackLabel.Text = text;
+        UndoButton.Visibility = undo is null ? Visibility.Collapsed : Visibility.Visible;
+        FeedbackHost.Visibility = Visibility.Visible;
+        CountLabel.Visibility = Visibility.Collapsed;
+
+        _feedbackTimer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = undo is null ? TimeSpan.FromSeconds(1.6) : TimeSpan.FromSeconds(5),
+        };
+        _feedbackTimer.Tick += (_, _) => ClearFeedback();
+        _feedbackTimer.Start();
+    }
+
+    private void ClearFeedback()
+    {
+        _feedbackTimer?.Stop();
+        _feedbackTimer = null;
+        _feedbackHostOpen = false;
+        _undoPending = null;
+        FeedbackHost.Visibility = Visibility.Collapsed;
+        CountLabel.Visibility = Visibility.Visible;
+        UpdateFooter();
+    }
+
+    private void OnUndoDelete(object sender, RoutedEventArgs e) => RestoreUndo();
+
+    private void RestoreUndo()
+    {
+        if (_undoPending is not { } items)
+        {
+            return;
+        }
+
+        foreach (var (entry, group) in items)
+        {
+            // Re-filing by group name recreates the group if it went away
+            // mid-window, which is the same promise delete made about entries.
+            _store.ImportEntry(entry, group);
+        }
+
+        ClearFeedback();
+        ApplyFilter();
+        ShowFeedback($"已恢复 {items.Count} 条");
+    }
 
     private void ReloadIfBehind(bool force = false)
     {
@@ -1852,7 +1950,15 @@ internal partial class BarWindow : Window
         {
             case "copy":
                 _store.BumpUse(card.Id);
-                Confirm(feedback, CopyCard(card));
+                if (CopyCard(card))
+                {
+                    Confirm(feedback, true);
+                    ShowFeedback("已复制");
+                }
+                else
+                {
+                    Confirm(feedback, false);
+                }
                 break;
 
             case "plain":
@@ -1860,7 +1966,15 @@ internal partial class BarWindow : Window
                 // lands carries no styling from where it came. Never offered
                 // for file entries — there is no plain form to strip.
                 _store.BumpUse(card.Id);
-                Confirm(feedback, _clipboard.SetText(card.Text));
+                if (_clipboard.SetText(card.Text))
+                {
+                    Confirm(feedback, true);
+                    ShowFeedback("已按纯文本复制");
+                }
+                else
+                {
+                    Confirm(feedback, false);
+                }
                 break;
 
             case "paste":
@@ -1904,13 +2018,32 @@ internal partial class BarWindow : Window
                     return;
                 }
 
+                // Snapshot before the delete: the undo re-inserts the whole
+                // row — content, tags, group, note, pin — under a new id.
+                var snapshot = _store.Get(card.Id);
+                var groupName = snapshot is null ? null : _store.GroupOf(snapshot)?.Name;
+
                 _store.Delete(card.Id);
                 _browser.Forget(card.Id);
                 RemoveCard(card);
-                UpdateCount();
+                UpdateFooter();
                 EnsureActiveItem();
+
+                if (snapshot is not null)
+                {
+                    ShowFeedback($"已删除「{TruncateFeedback(snapshot)}」",
+                        [(snapshot, groupName)]);
+                }
                 break;
         }
+    }
+
+    /// <summary>The feedback row is one line: keep a deleted name honest to it.</summary>
+    private static string TruncateFeedback(Entry entry)
+    {
+        var text = entry.Note is { Length: > 0 } note ? note : entry.Text;
+        text = text.Split('\n')[0].Trim();
+        return text.Length <= 12 ? text : text[..12] + "…";
     }
 
     /// <summary>
@@ -2574,6 +2707,13 @@ internal partial class BarWindow : Window
             case Key.D when !IsTyping && Keyboard.Modifiers == ModifierKeys.None:
                 e.Handled = true;
                 if (_selected is { } del) ExecuteAction("delete", del, feedback: null);
+                break;
+
+            // The undo window is narrow on purpose: it answers only while the
+            // footer is still showing the deletion it would reverse.
+            case Key.Z when !IsTyping && Keyboard.Modifiers == ModifierKeys.None && _undoPending is not null:
+                e.Handled = true;
+                RestoreUndo();
                 break;
         }
     }

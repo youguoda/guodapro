@@ -137,14 +137,17 @@
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,12,0,0">
             <Button Content="复制" Style="{StaticResource Toolbutton}" Click="OnCopySelected" />
-            <Button Content="删除" Style="{StaticResource Toolbutton}" Click="OnDeleteSelected" />
+            <Button x:Name="DeleteSelectedButton" Content="删除" Style="{StaticResource Toolbutton}" Click="OnDeleteSelected" />
             <Button x:Name="PinButton" Content="置顶" Style="{StaticResource Toolbutton}" Click="OnTogglePin" />
-            <Button Content="清空全部历史" Style="{StaticResource Toolbutton}" Click="OnClearAll" />
+            <Button x:Name="ClearAllButton" Content="清空全部历史" Style="{StaticResource Toolbutton}" Click="OnClearAll" />
 
             <TextBox x:Name="TagBox" Width="112" Margin="14,0,6,0" Padding="6,4"
                      VerticalContentAlignment="Center" KeyDown="OnTagBoxKeyDown" />
-            <Button Content="加标签" Style="{StaticResource Toolbutton}" Click="OnAddTag" />
-            <Button Content="去标签" Style="{StaticResource Toolbutton}" Click="OnRemoveTag" />
+            <Button x:Name="AddTagButton" Content="加标签" Style="{StaticResource Toolbutton}" Click="OnAddTag" />
+            <Button x:Name="RemoveTagButton" Content="去标签" Style="{StaticResource Toolbutton}" Click="OnRemoveTag" />
+            <Button x:Name="UndoDeleteButton" Content="撤销删除" Style="{StaticResource Toolbutton}"
+                    Margin="14,0,0,0" Click="OnUndoDelete" IsEnabled="False"
+                    ToolTip="恢复刚删除的条目（5 秒内）"/>
         </StackPanel>
 
         <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,10,0,0"

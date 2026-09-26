@@ -63,12 +63,21 @@ public partial class LibraryWindow : Window
         _icons = icons;
         _settings = settings ?? (() => new AppSettings());
 
+        // No backdrop material on the standard chrome yet (ticket 30's Mica
+        // conversion needs a borderless rewrite first); rounding and the
+        // dark-mode titlebar still apply through the same host.
+        Backdrop.Attach(this, () => BackdropKind.None);
+
         _searchDebounce = new DispatcherTimer { Interval = SearchDelay };
         _searchDebounce.Tick += (_, _) =>
         {
             _searchDebounce.Stop();
             ApplyFilter();
         };
+
+        // An undo left open when the window goes away must not leak the
+        // kept-back original files: the expiry commits them.
+        Closed += (_, _) => CommitUndoExpiry();
 
         EntryList.ItemsSource = _items;
         RefreshTagChoices();
@@ -354,12 +363,11 @@ public partial class LibraryWindow : Window
 
         var index = EntryList.SelectedIndex;
 
-        // The original goes with the entry. Leaving it behind would accumulate
-        // files nothing references and nothing will ever clean up.
-        if (item.OriginalPath is { Length: > 0 } original)
-        {
-            _images.Delete(original);
-        }
+        // Snapshot before the delete; the original image file deliberately
+        // stays on disk until the undo window closes — an undo that cannot
+        // bring the picture back is not an undo.
+        var snapshot = _store.Get(item.Id);
+        var groupName = snapshot is null ? null : _store.GroupOf(snapshot)?.Name;
 
         _store.Delete(item.Id);
         _browser.Forget(item.Id);
@@ -368,7 +376,78 @@ public partial class LibraryWindow : Window
         // Keep the user where they were rather than sending them to the top.
         EntryList.SelectedIndex = System.Math.Min(index, _items.Count - 1);
         UpdateChrome();
-        Status("已删除 1 条");
+
+        if (snapshot is not null)
+        {
+            OfferUndo([(snapshot, groupName)]);
+            Status("已删除 1 条 — 5 秒内可撤销");
+        }
+        else
+        {
+            Status("已删除 1 条");
+        }
+    }
+
+    private List<(Entry Entry, string? Group)>? _undoItems;
+
+    private DispatcherTimer? _undoTimer;
+
+    /// <summary>
+    /// Holds a deletion open for five seconds. The kept-back original file is
+    /// removed only when the window closes without an undo, so "撤销" restores
+    /// everything the delete took away.
+    /// </summary>
+    private void OfferUndo(List<(Entry Entry, string? Group)> items)
+    {
+        _undoItems = items;
+        UndoDeleteButton.IsEnabled = true;
+
+        _undoTimer?.Stop();
+        _undoTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+        _undoTimer.Tick += (_, _) => CommitUndoExpiry();
+        _undoTimer.Start();
+    }
+
+    private void CommitUndoExpiry()
+    {
+        _undoTimer?.Stop();
+        _undoTimer = null;
+
+        if (_undoItems is { } items)
+        {
+            foreach (var (entry, _) in items)
+            {
+                if (entry.OriginalPath is { Length: > 0 } original)
+                {
+                    _images.Delete(original);
+                }
+            }
+
+            _undoItems = null;
+        }
+
+        UndoDeleteButton.IsEnabled = false;
+    }
+
+    private void OnUndoDelete(object sender, RoutedEventArgs e)
+    {
+        if (_undoItems is not { } items)
+        {
+            return;
+        }
+
+        _undoTimer?.Stop();
+        _undoTimer = null;
+
+        foreach (var (entry, group) in items)
+        {
+            _store.ImportEntry(entry, group);
+        }
+
+        _undoItems = null;
+        UndoDeleteButton.IsEnabled = false;
+        Reload();
+        Status($"已恢复 {items.Count} 条");
     }
 
     private void OnClearAll(object sender, RoutedEventArgs e)
@@ -600,6 +679,10 @@ public partial class LibraryWindow : Window
         TranslateBatchButton.IsEnabled = false;
         TranslateCancelButton.Visibility = Visibility.Visible;
 
+        // A background batch reading the store must not race a user clicking
+        // destructive or mutating buttons over the same rows (ticket 32).
+        SetWriteButtonsEnabled(false);
+
         var progress = new Progress<(int Done, int Total)>(step =>
             Status($"批量翻译 {step.Done}/{step.Total}……"));
 
@@ -632,11 +715,22 @@ public partial class LibraryWindow : Window
             _translateBatch = null;
             TranslateBatchButton.IsEnabled = true;
             TranslateCancelButton.Visibility = Visibility.Collapsed;
+            SetWriteButtonsEnabled(true);
         }
     }
 
     private void OnCancelTranslateBatch(object sender, RoutedEventArgs e)
         => _translateBatch?.Cancel();
+
+    /// <summary>Write buttons that would race a running batch over the store.</summary>
+    private void SetWriteButtonsEnabled(bool enabled)
+    {
+        DeleteSelectedButton.IsEnabled = enabled;
+        ClearAllButton.IsEnabled = enabled;
+        PinButton.IsEnabled = enabled;
+        AddTagButton.IsEnabled = enabled;
+        RemoveTagButton.IsEnabled = enabled;
+    }
 
     private sealed record EntryItem(
         long Id,

@@ -4,7 +4,7 @@
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         ShowActivated="False" ShowInTaskbar="False" Topmost="True"
         ResizeMode="NoResize" SizeToContent="Height" Width="420" Opacity="0">
-    <Border CornerRadius="{DynamicResource Radius.Card}" Background="{DynamicResource Brush.Surface}"
+    <Border CornerRadius="{DynamicResource Radius.Window}" Background="{DynamicResource Brush.SurfaceMaterial}"
             BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1">
         <Border.Effect>
             <StaticResource ResourceKey="Shadow.Floating"/>
@@ -30,9 +30,13 @@
 
             <Separator Margin="0,8" />
 
-            <TextBlock x:Name="TranslatedText" FontSize="{DynamicResource Size.BodyLarge}"
-                       TextWrapping="Wrap" LineHeight="{DynamicResource Line.BodyLarge}"
-                       LineStackingStrategy="BlockLineHeight" MaxHeight="260" />
+            <ScrollViewer x:Name="TranslationScroll" MaxHeight="260"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled">
+                <TextBlock x:Name="TranslatedText" FontSize="{DynamicResource Size.BodyLarge}"
+                           TextWrapping="Wrap" LineHeight="{DynamicResource Line.BodyLarge}"
+                           LineStackingStrategy="BlockLineHeight" />
+            </ScrollViewer>
 
             <TextBlock x:Name="StatusText" FontSize="{DynamicResource Size.Caption}" Margin="0,8,0,0"
                        TextWrapping="Wrap" Foreground="{DynamicResource Brush.Danger}"
@@ -43,13 +47,13 @@
                            FontSize="{DynamicResource Size.Hint}"
                            Foreground="{DynamicResource Brush.TextTertiary}"
                            Text="Esc 关闭" VerticalAlignment="Center" />
-                <Button x:Name="CopyButton" DockPanel.Dock="Right" Content="复制译文"
-                        FontSize="{DynamicResource Size.Caption}" Padding="10,4" Cursor="Hand"
-                        Click="OnCopy" />
                 <Button x:Name="SaveButton" DockPanel.Dock="Right" Content="存入历史" IsEnabled="False"
                         FontSize="{DynamicResource Size.Caption}" Padding="10,4" Margin="0,0,6,0"
                         Cursor="Hand" Click="OnSaveToHistory"
                         ToolTip="译文存为一条记录，并关联原文条目"/>
+                <Button x:Name="CopyButton" DockPanel.Dock="Right" Content="复制译文"
+                        FontSize="{DynamicResource Size.Caption}" Padding="10,4" Cursor="Hand"
+                        Click="OnCopy" />
             </DockPanel>
         </StackPanel>
     </Border>

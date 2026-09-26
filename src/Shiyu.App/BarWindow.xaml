@@ -4,10 +4,10 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:Shiyu.App"
         Title="拾语 · 窄条" Width="360" Height="620"
-        WindowStyle="None" ResizeMode="NoResize"
+        WindowStyle="None" ResizeMode="NoResize" AllowsTransparency="True"
         ShowInTaskbar="False" Topmost="True"
         WindowStartupLocation="Manual"
-        Background="{DynamicResource Brush.Background}"
+        Background="Transparent"
         FontSize="{DynamicResource Size.Body}"
         PreviewKeyDown="OnPreviewKeyDown"
         PreviewKeyUp="OnPreviewKeyUp"
@@ -32,17 +32,16 @@
         <!-- The tray buttons' look; their motion lives in code (ActionTray). -->
         <Style x:Key="TrayButtonStyle" TargetType="Button">
             <Setter Property="Padding" Value="0"/>
-            <Setter Property="FontSize" Value="{DynamicResource Size.Hint}"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
                         <Border x:Name="Chrome" CornerRadius="{DynamicResource Radius.Thumb}"
-                                Background="{DynamicResource Brush.SurfaceSubtle}">
+                                Background="Transparent">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Brush.SurfaceInput}"/>
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Brush.StateHover}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -57,6 +56,19 @@
             <Setter Property="Width" Value="16"/>
             <Setter Property="Height" Value="16"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+
+        <!-- The resize grip is a hit area, not a face: the default Thumb
+             template paints a raised lump that has nothing to do with the
+             sheet it sits on. -->
+        <Style x:Key="InvisibleGrip" TargetType="Thumb">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Thumb">
+                        <Border Background="Transparent"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
         <!-- Rows are plain; the card visuals live in the item template. -->
@@ -107,7 +119,8 @@
                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                             <local:HandoverText Text="{Binding WhenText}" FontSize="{DynamicResource Size.Caption}"
                                                 Foreground="{DynamicResource Brush.TextSecondary}"
-                                                VerticalAlignment="Center"/>
+                                                VerticalAlignment="Center"
+                                                ToolTip="{Binding WhenToolTip}"/>
                             <local:ActionTray Margin="6,0,0,0"/>
                         </StackPanel>
                         <TextBlock Text="{Binding KindText}" FontSize="{DynamicResource Size.Caption}"
@@ -133,7 +146,8 @@
                                    LineStackingStrategy="BlockLineHeight"
                                    Foreground="{DynamicResource Brush.Text}"
                                    ToolTip="{Binding DragToolTip}"/>
-                        <Border x:Name="ImageBody" MaxHeight="{Binding ImageHeight}"
+                        <Border x:Name="ImageBody" Height="{Binding ImageHeight}"
+                                ClipToBounds="True"
                                 CornerRadius="{DynamicResource Radius.Small}"
                                 Background="{DynamicResource Brush.SurfaceSubtle}"
                                 Visibility="{Binding ImageVisibility}">
@@ -145,11 +159,12 @@
                              list, not after a paste that produced nothing.
                              A copy made only of pictures previews as one. -->
                         <StackPanel x:Name="FilesBody" Visibility="{Binding FilesVisibility}">
-                            <Border MaxHeight="{Binding ImageHeight}"
+                            <Border Height="{Binding ImageHeight}"
+                                    ClipToBounds="True"
                                     CornerRadius="{DynamicResource Radius.Small}"
                                     Background="{DynamicResource Brush.SurfaceSubtle}"
                                     Visibility="{Binding FilePreviewVisibility}"
-                                    Margin="0,0,0,3">
+                                    Margin="0,0,0,4">
                                 <Image Source="{Binding FilePreviewSource}" Stretch="Uniform"
                                        RenderOptions.BitmapScalingMode="HighQuality"/>
                             </Border>
@@ -231,6 +246,19 @@
         </DataTemplate>
     </Window.Resources>
 
+    <!--
+      The floating Win11 shell: a translucent brand tint over the DWM Acrylic
+      backdrop (ticket 03's recipe — the material renders only on a layered
+      window, which this now is), rounded at the Window tier, one soft shadow.
+      The header and footer draw nothing themselves so the material reads as
+      one continuous sheet behind everything.
+    -->
+    <Border CornerRadius="{DynamicResource Radius.Window}"
+            Background="{DynamicResource Brush.SurfaceMaterial}"
+            BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1">
+        <Border.Effect>
+            <StaticResource ResourceKey="Shadow.Floating"/>
+        </Border.Effect>
     <DockPanel>
         <!--
           Background dragging hangs off the window alone: a bubbling press
@@ -239,7 +267,7 @@
           modal loop, and the outer loop then waits forever for a mouse-up
           the inner one consumed - the whole dispatcher freezes.
         -->
-        <Border x:Name="Header" DockPanel.Dock="Top" Background="{DynamicResource Brush.Surface}"
+        <Border x:Name="Header" DockPanel.Dock="Top"
                 Padding="10,8">
             <StackPanel>
                 <Grid>
@@ -337,14 +365,26 @@
             </StackPanel>
         </Border>
 
-        <Border DockPanel.Dock="Bottom" Background="{DynamicResource Brush.Surface}"
-                Padding="10,4">
+        <Border DockPanel.Dock="Bottom" Padding="10,4">
             <Grid>
                 <TextBlock x:Name="CountLabel" FontSize="{DynamicResource Size.Hint}"
                            Foreground="{DynamicResource Brush.TextTertiary}"
                            VerticalAlignment="Center"/>
-                <Thumb x:Name="SizeGrip" HorizontalAlignment="Right" Width="14" Height="10"
-                       Cursor="SizeNS" DragDelta="OnGripDrag" Background="Transparent"/>
+                <DockPanel x:Name="FeedbackHost" LastChildFill="False"
+                           VerticalAlignment="Center" Visibility="Collapsed">
+                    <Button x:Name="UndoButton" DockPanel.Dock="Right" Content="撤销"
+                            Padding="8,1" FontSize="{DynamicResource Size.Caption}"
+                            Cursor="Hand" Click="OnUndoDelete"
+                            Margin="0,0,24,0"
+                            Visibility="Collapsed"
+                            ToolTip="恢复刚删除的条目（Ctrl+Z）"/>
+                    <TextBlock x:Name="FeedbackLabel" VerticalAlignment="Center"
+                               FontSize="{DynamicResource Size.Hint}"
+                               Foreground="{DynamicResource Brush.TextSecondary}"/>
+                </DockPanel>
+                <Thumb x:Name="SizeGrip" HorizontalAlignment="Right" Width="22" Height="14"
+                       Cursor="SizeNS" DragDelta="OnGripDrag" Background="Transparent"
+                       Style="{StaticResource InvisibleGrip}"/>
             </Grid>
         </Border>
 
@@ -385,4 +425,5 @@
             </Border>
         </Grid>
     </DockPanel>
+    </Border>
 </Window>

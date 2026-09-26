@@ -63,10 +63,12 @@ internal static class ItemEditors
         // zeroes settings the user never touched.
         state.Text = state.Toggle ? "1" : "0";
 
+        // The checkbox carries no text: the row label already names the item,
+        // and a long hint as checkbox content truncates mid-sentence. The
+        // hint reads beneath, full width.
         var box = new CheckBox
         {
             IsChecked = state.Toggle,
-            Content = item.Hint,
             VerticalContentAlignment = VerticalAlignment.Center,
             Cursor = Cursors.Hand,
         };
@@ -83,7 +85,24 @@ internal static class ItemEditors
             changed?.Invoke();
         };
 
-        return box;
+        if (item.Hint is not { Length: > 0 })
+        {
+            return box;
+        }
+
+        var stack = new StackPanel();
+        stack.Children.Add(box);
+        var hint = new TextBlock
+        {
+            Text = item.Hint,
+            TextWrapping = TextWrapping.Wrap,
+            FontSize = 12,
+            Opacity = 0.75,
+            Margin = new Thickness(0, 2, 0, 0),
+        };
+        hint.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
+        stack.Children.Add(hint);
+        return stack;
     }
 
     /// <summary>Returns the editor and the box, so callers can clear it after a save.</summary>

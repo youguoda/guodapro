@@ -42,6 +42,8 @@ public partial class SettingsWindow : Window
         _apply = apply;
         _backup = backup;
 
+        Backdrop.Attach(this, () => BackdropKind.None);
+
         BuildTree();
     }
 
@@ -332,6 +334,10 @@ public partial class SettingsWindow : Window
                 Content = item.ChoiceList[index],
                 Padding = new Thickness(12, 3, 12, 3),
                 Cursor = Cursors.Hand,
+
+                // Checked/hover/pressed states live in the shared style; the
+                // local value here would override the style's triggers.
+                Style = (Style)FindResource("SegmentChip"),
             };
             button.Click += (_, _) => SelectSegment(item.Id, captured);
             buttons.Add((button, index));
@@ -360,18 +366,9 @@ public partial class SettingsWindow : Window
         var chosen = _edited[id].Choice;
         foreach (var (button, index) in buttons)
         {
-            var on = index == chosen;
-            button.IsChecked = on;
-            if (on)
-            {
-                button.SetResourceReference(BackgroundProperty, "Brush.Accent");
-                button.SetResourceReference(ForegroundProperty, "Brush.TextOnAccent");
-            }
-            else
-            {
-                button.SetResourceReference(BackgroundProperty, "Brush.Surface");
-                button.SetResourceReference(ForegroundProperty, "Brush.Text");
-            }
+            // All visuals — checked accent, hover overlay, pressed — come from
+            // the SegmentChip style's triggers; only the state moves here.
+            button.IsChecked = index == chosen;
         }
     }
 
@@ -490,9 +487,15 @@ public partial class SettingsWindow : Window
             }
         };
 
-        var row = new StackPanel { Orientation = Orientation.Horizontal };
-        row.Children.Add(box);
-        row.Children.Add(browse);
+        // A two-column row so the path box stretches with the page instead of
+        // squeezing into its own minimum width.
+        var rowGrid = new Grid();
+        rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        Grid.SetColumn(box, 0);
+        Grid.SetColumn(browse, 1);
+        rowGrid.Children.Add(box);
+        rowGrid.Children.Add(browse);
 
         _directoryBox = box;
         _directoryWarning = new TextBlock
@@ -505,7 +508,7 @@ public partial class SettingsWindow : Window
         _directoryWarning.SetResourceReference(TextBlock.ForegroundProperty, "Brush.Danger");
 
         var stack = new StackPanel();
-        stack.Children.Add(row);
+        stack.Children.Add(rowGrid);
         stack.Children.Add(_directoryWarning);
         UpdateSyncWarning();
 

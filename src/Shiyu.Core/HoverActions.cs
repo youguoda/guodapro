@@ -46,6 +46,28 @@ public static class HoverActions
         _ => "?",
     };
 
+    /// <summary>
+    /// The system symbol glyph for the tray button, from Segoe Fluent Icons
+    /// (the codepoints are shared with Segoe MDL2 Assets on Windows 10). The
+    /// single-character Chinese mark stays in the tooltip and the key-badge
+    /// system as the app's brand — the symbol carries recognition, the mark
+    /// carries identity.
+    /// </summary>
+    public static string IconGlyph(string id) => id switch
+    {
+        "copy" => "\uE8C8",   // Copy
+        "paste" => "\uE77F",  // Paste
+        "plain" => "\uE8D2",  // Font — text without formatting
+        "open" => "\uE8E5",   // OpenFile
+        "locate" => "\uE702", // MapPin
+        "pin" => "\uE718",    // Pin
+        "favorite" => "\uE735", // FavoriteStarFill
+        "note" => "\uE70B",   // QuickNote
+        "group" => "\uE8B7",  // Folder — a pile to file into
+        "delete" => "\uE74D", // Delete
+        _ => Glyph(id),
+    };
+
     /// <summary>Deleting cannot be undone, so it never looks like its neighbours.</summary>
     public static bool IsDestructive(string id) => id == "delete";
 

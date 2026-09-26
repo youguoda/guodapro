@@ -21,7 +21,7 @@ namespace Shiyu.App;
 /// </summary>
 internal sealed class ActionTray : StackPanel
 {
-    private const int ButtonSize = 20;
+    private const int ButtonSize = 24;
 
     public ActionTray()
     {
@@ -45,6 +45,18 @@ internal sealed class ActionTray : StackPanel
 
     private Button MakeButton(string id, BarCard card)
     {
+        var key = BarKeys.TrayKey(id);
+
+        // The symbol is a TextBlock we own, not a bare string: a string would
+        // be presented through a TextBlock that the implicit TextBlock style
+        // forces onto Font.Ui, and symbol codepoints render as tofu boxes.
+        var label = new TextBlock
+        {
+            Text = HoverActions.IconGlyph(id),
+            FontFamily = IconFont,
+            FontSize = 14,
+        };
+
         var button = new Button
         {
             Width = 0,
@@ -52,9 +64,15 @@ internal sealed class ActionTray : StackPanel
             ClipToBounds = true,
             Focusable = false,
             Tag = id,
-            Content = HoverActions.Glyph(id),
+            Content = label,
+
+            // The system symbol carries recognition (Segoe Fluent Icons —
+            // ticket 30); the single Chinese mark stays as the brand, in the
+            // tooltip beside the key, and the key badges keep their letters.
             Cursor = Cursors.Hand,
-            ToolTip = HoverActions.Name(id),
+            ToolTip = key is null
+                ? $"{HoverActions.Name(id)}（{HoverActions.Glyph(id)}）"
+                : $"{HoverActions.Name(id)}（{HoverActions.Glyph(id)} · {key}）",
             RenderTransform = new TransformGroup
             {
                 Children = { new ScaleTransform(0.9, 0.9), new TranslateTransform(4, 0) },
@@ -90,22 +108,29 @@ internal sealed class ActionTray : StackPanel
     /// <summary>
     /// While Ctrl is held, buttons that answer to a letter show the letter
     /// instead of their glyph — the badge and the key handler both read
-    /// <see cref="BarKeys"/>, so they cannot disagree. Buttons without a key
-    /// keep their glyph.
+    /// <see cref="BarKeys"/>, so they cannot disagree. Letters are UI-font
+    /// text, not symbol-font codepoints, so the family swaps with the content.
+    /// Buttons without a key keep their glyph.
     /// </summary>
     public void ShowHints(bool on)
     {
         foreach (var button in Children.OfType<Button>())
         {
-            if (button.Tag is not string id)
+            if (button.Tag is not string id || button.Content is not TextBlock label)
             {
                 continue;
             }
 
             var key = BarKeys.TrayKey(id);
-            button.Content = on && key is not null ? key : HoverActions.Glyph(id);
+            var letter = on && key is not null;
+            label.Text = letter ? key : HoverActions.IconGlyph(id);
+            label.FontFamily = letter ? UiFont : IconFont;
         }
     }
+
+    private static FontFamily? IconFont => Application.Current.TryFindResource("Font.Icon") as FontFamily;
+
+    private static FontFamily? UiFont => Application.Current.TryFindResource("Font.Ui") as FontFamily;
 
     public void Open() => Animate(open: true);
 

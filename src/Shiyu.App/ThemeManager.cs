@@ -35,6 +35,9 @@ internal sealed class ThemeManager : IDisposable
     private AppTheme _mode;
     private string _applied;
 
+    /// <summary>Whether the palette currently applied is Dark — Backdrop reads it.</summary>
+    public static bool CurrentIsDark { get; private set; }
+
     public ThemeManager()
     {
         _applied = string.Empty;
@@ -86,6 +89,7 @@ internal sealed class ThemeManager : IDisposable
     private void SwapTo(ThemePalette palette)
     {
         _applied = palette.Name;
+        CurrentIsDark = palette.Name == "Dark";
 
         var dictionaries = Application.Current.Resources.MergedDictionaries;
 
@@ -94,6 +98,10 @@ internal sealed class ThemeManager : IDisposable
         // than clearing keys in place) lets WPF hand every DynamicResource the
         // new brushes atomically.
         dictionaries[0] = BuildValues(palette);
+
+        // The DWM backdrop's dark flag rides along with every palette swap:
+        // a Mica/Acrylic surface left in the wrong mode is instantly wrong.
+        Backdrop.SyncToTheme(CurrentIsDark);
     }
 
     private static ResourceDictionary BuildValues(ThemePalette palette)
@@ -109,12 +117,16 @@ internal sealed class ThemeManager : IDisposable
 
         values["Font.Ui"] = new FontFamily(DesignTokens.FamilyUi);
         values["Font.Mono"] = new FontFamily(DesignTokens.FamilyMono);
+        values["Font.Icon"] = new FontFamily(DesignTokens.FamilyIcon);
 
         values["Size.Hint"] = DesignTokens.FontHint;
         values["Size.Caption"] = DesignTokens.FontCaption;
         values["Size.Secondary"] = DesignTokens.FontSecondary;
         values["Size.Body"] = DesignTokens.FontBody;
         values["Size.BodyLarge"] = DesignTokens.FontBodyLarge;
+        values["Size.IconSmall"] = DesignTokens.IconSmall;
+        values["Size.IconMedium"] = DesignTokens.IconMedium;
+        values["Size.IconLarge"] = DesignTokens.IconLarge;
 
         values["Line.Secondary"] = DesignTokens.LineHeightFor(DesignTokens.FontSecondary);
         values["Line.Body"] = DesignTokens.LineHeightFor(DesignTokens.FontBody);

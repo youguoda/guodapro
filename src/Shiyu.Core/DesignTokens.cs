@@ -36,11 +36,29 @@ public static class DesignTokens
     public const string Surface = "Surface";
     public const string SurfaceInput = "SurfaceInput";
     public const string SurfaceSubtle = "SurfaceSubtle";
+
+    /// <summary>
+    /// The translucent brand tint drawn over a DWM material (ticket 03's
+    /// recipe): the material paints behind the window, this tint keeps text
+    /// readable and the brand present. Alpha carries the meaning — an opaque
+    /// value here would switch the material off.
+    /// </summary>
+    public const string SurfaceMaterial = "SurfaceMaterial";
+
+    /// <summary>The elevated, opaque surface for menus and popups.</summary>
+    public const string LayerFlyout = "LayerFlyout";
+
+    /// <summary>Interaction-state overlays: drawn over whatever is beneath.</summary>
+    public const string StateHover = "StateHover";
+    public const string StatePressed = "StatePressed";
+
     public const string Border = "Border";
     public const string Text = "Text";
     public const string TextSecondary = "TextSecondary";
     public const string TextTertiary = "TextTertiary";
     public const string Accent = "Accent";
+    public const string AccentHover = "AccentHover";
+    public const string AccentPressed = "AccentPressed";
     public const string AccentFloating = "AccentFloating";
     public const string TextOnAccent = "TextOnAccent";
     public const string Danger = "Danger";
@@ -48,9 +66,10 @@ public static class DesignTokens
     /// <summary>The slots every palette must define, and the only slots any window may use.</summary>
     public static readonly string[] Slots =
     [
-        Background, Surface, SurfaceInput, SurfaceSubtle, Border,
+        Background, Surface, SurfaceInput, SurfaceSubtle, SurfaceMaterial, LayerFlyout,
+        StateHover, StatePressed, Border,
         Text, TextSecondary, TextTertiary,
-        Accent, AccentFloating, TextOnAccent, Danger,
+        Accent, AccentHover, AccentPressed, AccentFloating, TextOnAccent, Danger,
     ];
 
     /// <summary>
@@ -68,7 +87,15 @@ public static class DesignTokens
         (TextTertiary, Surface),
         (Text, SurfaceInput),
         (TextSecondary, SurfaceSubtle),
+
+        // The material tint is translucent: the test blends it over the theme's
+        // Background, which is what the acrylic behind the window effectively is.
+        (Text, SurfaceMaterial),
+        (TextSecondary, SurfaceMaterial),
+
         (TextOnAccent, Accent),
+        (TextOnAccent, AccentHover),
+        (TextOnAccent, AccentPressed),
         (Danger, Background),
         (Danger, Surface),
     ];
@@ -79,11 +106,17 @@ public static class DesignTokens
         [Surface] = "#FFFFFFFF",
         [SurfaceInput] = "#FFEAECEF",
         [SurfaceSubtle] = "#FFE9EDF1",
+        [SurfaceMaterial] = "#F0FCFCFD",
+        [LayerFlyout] = "#FFFDFDFE",
+        [StateHover] = "#0D1F2328",
+        [StatePressed] = "#171F2328",
         [Border] = "#FFD0D7DE",
         [Text] = "#FF1F2328",
         [TextSecondary] = "#FF57606A",
         [TextTertiary] = "#FF62707B",
         [Accent] = "#FF1A66DB",
+        [AccentHover] = "#FF2A6FD8",
+        [AccentPressed] = "#FF1557C4",
         [AccentFloating] = "#EE1A66DB",
         [TextOnAccent] = "#FFFFFFFF",
         [Danger] = "#FFC0392B",
@@ -95,11 +128,17 @@ public static class DesignTokens
         [Surface] = "#FF22272E",
         [SurfaceInput] = "#FF2A3038",
         [SurfaceSubtle] = "#FF262C34",
+        [SurfaceMaterial] = "#F01E242C",
+        [LayerFlyout] = "#FF252B33",
+        [StateHover] = "#0DE6E8EB",
+        [StatePressed] = "#17E6E8EB",
         [Border] = "#FF3D444D",
         [Text] = "#FFE6E8EB",
         [TextSecondary] = "#FFB5BCC4",
         [TextTertiary] = "#FF9BA4AD",
         [Accent] = "#FF4C8DFF",
+        [AccentHover] = "#FF669DFF",
+        [AccentPressed] = "#FF3B7DF2",
         [AccentFloating] = "#EE4C8DFF",
         [TextOnAccent] = "#FF0B1220",
         [Danger] = "#FFF0675C",
@@ -113,11 +152,24 @@ public static class DesignTokens
     /// <summary>Mono-first for code, colours, hotkeys, paths — then CJK for the mixed cases.</summary>
     public const string FamilyMono = "Cascadia Mono, Consolas, Microsoft YaHei UI";
 
-    public const double FontHint = 11;
+    /// <summary>
+    /// The system symbol font, Windows 11's answer to what SF Symbols is on the
+    /// Mac: glyphs that ship with the OS and follow its design language. The
+    /// fallback keeps Windows 10 on the same codepoints (Segoe MDL2 Assets)
+    /// without a version branch anywhere in the interface code.
+    /// </summary>
+    public const string FamilyIcon = "Segoe Fluent Icons, Segoe MDL2 Assets";
+
+    public const double FontHint = 12;
     public const double FontCaption = 12;
     public const double FontSecondary = 13;
     public const double FontBody = 14;
-    public const double FontBodyLarge = 15;
+    public const double FontBodyLarge = 16;
+
+    /// <summary>Sizes for the symbol font: inline with text, standard, feature.</summary>
+    public const double IconSmall = 12;
+    public const double IconMedium = 14;
+    public const double IconLarge = 16;
 
     /// <summary>Chinese body line height. A floor, not a suggestion — see DesignTokenTests.</summary>
     public const double BodyLineRatio = 1.7;
@@ -127,18 +179,27 @@ public static class DesignTokens
 
     // --- shape ----------------------------------------------------------------
 
-    /// <summary>Corner radii, named by where they belong rather than by pixel value.</summary>
+    /// <summary>
+    /// Corner radii, named by where they belong rather than by pixel value.
+    /// The 4/8 pair is Windows 11's ControlCornerRadius / OverlayCornerRadius;
+    /// 12 is the floating-window tier the tickets settled on.
+    /// </summary>
     public static readonly IReadOnlyDictionary<string, double> Radius = new Dictionary<string, double>
     {
         ["Thumb"] = 3,
-        ["Small"] = 6,
-        ["Card"] = 10,
+        ["Small"] = 4,
+        ["Card"] = 8,
+        ["Overlay"] = 8,
+        ["Window"] = 12,
         ["Pill"] = 13,
     };
 
-    /// <summary>Drop shadows: (blur radius, depth, opacity). Two strengths, no more.</summary>
-    public static readonly (double Blur, double Depth, double Opacity) ShadowFloating = (18, 2, 0.25);
-    public static readonly (double Blur, double Depth, double Opacity) ShadowBadge = (10, 1, 0.35);
+    /// <summary>
+    /// Drop shadows: (blur radius, depth, opacity). Two strengths, no more —
+    /// tuned to the Windows 11 flyout look: wide, soft, low.
+    /// </summary>
+    public static readonly (double Blur, double Depth, double Opacity) ShadowFloating = (26, 5, 0.2);
+    public static readonly (double Blur, double Depth, double Opacity) ShadowBadge = (14, 3, 0.3);
 
     /// <summary>
     /// The spacing scale. Anything not on it is layout, not spacing — values
@@ -156,6 +217,13 @@ public static class DesignTokens
 
     public static TimeSpan MotionFast => TimeSpan.FromMilliseconds(MotionFastMs);
     public static TimeSpan MotionSlow => TimeSpan.FromMilliseconds(MotionSlowMs);
+
+    /// <summary>
+    /// Content-layer entrance for transient surfaces: the window's own opacity
+    /// stays at 1 (a layered window fading from transparent never composites —
+    /// ticket 04's badge finding), so the entrance moves the content instead.
+    /// </summary>
+    public const double EntranceShift = 8;
 }
 
 /// <summary>

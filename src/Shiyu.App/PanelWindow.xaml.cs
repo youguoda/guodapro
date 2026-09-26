@@ -43,6 +43,8 @@ public partial class PanelWindow : Window
         _saveTranslation = saveTranslation;
         _target = settings.TargetLanguage;
         _source = settings.SourceLanguage;
+
+        Backdrop.Attach(this, () => BackdropKind.Acrylic);
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -58,6 +60,7 @@ public partial class PanelWindow : Window
         OriginalText.Text = text;
         TranslatedText.Text = string.Empty;
         StatusText.Visibility = Visibility.Collapsed;
+        SaveButton.Content = "存入历史";
         UpdateDirectionLabel();
 
         if (!IsVisible)
@@ -98,6 +101,14 @@ public partial class PanelWindow : Window
 
             TranslatedText.Text = session.Text;
 
+            // A stream reads like a conversation: follow the newest line
+            // unless the user scrolled up to re-read.
+            if (TranslationScroll.ScrollableHeight > 0
+                && TranslationScroll.VerticalOffset >= TranslationScroll.ScrollableHeight - 24)
+            {
+                TranslationScroll.ScrollToEnd();
+            }
+
             if (session.State == TranslationState.Failed && session.Error is { } error)
             {
                 // The partial text stays on screen beneath the error: two
@@ -134,6 +145,7 @@ public partial class PanelWindow : Window
 
         _saveTranslation(_original, translated);
         SaveButton.IsEnabled = false;
+        SaveButton.Content = "✓ 已存入";
     }
 
     private void MoveBesideCursor()

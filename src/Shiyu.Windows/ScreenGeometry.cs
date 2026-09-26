@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Shiyu.Core;
 
 namespace Shiyu.Windows;
@@ -34,4 +35,36 @@ public static class ScreenGeometry
 
         return new ScreenRect(info.rcWork.Left, info.rcWork.Top, info.rcWork.Right, info.rcWork.Bottom);
     }
+
+    /// <summary>
+    /// The monitor's DPI scale at the point, as (x, y) multipliers from
+    /// device-independent units to physical pixels. Asked through
+    /// GetDpiForMonitor rather than WPF's PresentationSource so it answers
+    /// correctly before a window has a handle — the first summon happens
+    /// exactly there, and a silently wrong scale put the bar's bottom off
+    /// the work area (ticket 30's screenshot probe).
+    /// </summary>
+    public static (double ScaleX, double ScaleY) ScaleAt(ScreenPoint point)
+    {
+        var monitor = NativeMethods.MonitorFromPoint(
+            new NativeMethods.Point { X = point.X, Y = point.Y },
+            NativeMethods.MonitorDefaultToNearest);
+
+        if (GetDpiForMonitor(monitor, DpiType.Effective, out var dpiX, out var dpiY) != 0)
+        {
+            return (1.0, 1.0);
+        }
+
+        return (dpiX / 96.0, dpiY / 96.0);
+    }
+
+    private enum DpiType
+    {
+        Effective = 0,
+        Angular = 1,
+        Raw = 2,
+    }
+
+    [DllImport("Shcore.dll")]
+    private static extern int GetDpiForMonitor(IntPtr monitor, DpiType type, out uint dpiX, out uint dpiY);
 }
