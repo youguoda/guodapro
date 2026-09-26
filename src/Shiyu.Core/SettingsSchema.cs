@@ -120,7 +120,12 @@ public static class SettingsSchema
                 new SettingsItem("hotkey.capture", "划词翻译", SettingsControl.Hotkey, Keywords: ["划词", "翻译", "快捷键"]),
                 new SettingsItem("hotkey.clipboard", "翻译剪贴板", SettingsControl.Hotkey, Keywords: ["剪贴板", "翻译", "快捷键"]),
                 new SettingsItem("hotkey.quickbar", "快速条", SettingsControl.Hotkey, Keywords: ["快速条", "快捷键"]),
-                new SettingsItem("hotkey.bar", "窄条", SettingsControl.Hotkey, Keywords: ["窄条", "快捷键"]))),
+                new SettingsItem("hotkey.bar", "窄条", SettingsControl.Hotkey, Keywords: ["窄条", "快捷键"])),
+            new SettingsSection("hotkeys.winv", "系统按键",
+                new SettingsItem(
+                    "winv.takeover", "接管 Win+V", SettingsControl.Toggle,
+                    Hint: "让 Win+V 唤起拾语窄条，代替系统剪贴板面板。默认关闭；关闭即刻还原，拾语退出或被强杀时 Win+V 自动回到系统行为。与「窄条」热键并存：两者都开时，Win+V 与该热键都能唤起窄条。其它 Win 组合键不受影响。",
+                    Keywords: ["win", "winv", "接管", "系统", "剪贴板", "面板", "热键"]))),
 
         new SettingsPage("service", "服务",
             new SettingsSection("service.languages", "翻译语言",

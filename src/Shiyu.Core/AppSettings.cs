@@ -65,6 +65,14 @@ public sealed record AppSettings
     public bool OnboardingCompleted { get; init; }
 
     /// <summary>
+    /// Take Win+V away from the system clipboard panel. Off by default: a
+    /// system key is being borrowed, so only the user's explicit choice does
+    /// it — and the hook lives in-process, so closing or killing Shiyu hands
+    /// the key back to Windows by itself.
+    /// </summary>
+    public bool TakeOverWinV { get; init; }
+
+    /// <summary>
     /// A tray tool nobody starts is a tray tool nobody has; on by default,
     /// and the user can switch it off.
     /// </summary>

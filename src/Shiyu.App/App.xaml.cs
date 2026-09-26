@@ -32,6 +32,7 @@ public partial class App : Application
     private AppIconCache? _icons;
     private FileTypeIcons? _fileIcons;
     private System.Windows.Threading.DispatcherTimer? _barGeometrySave;
+    private WinVHook? _winV;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -106,6 +107,7 @@ public partial class App : Application
         _capture = new SelectionCapture(_capturePlatform);
         _hotkeys = new HotkeyRegistry(_messageWindow);
         RegisterHotkeys();
+        ApplyWinVTakeover();
 
         _singleInstance.WatchForOtherInstances(_messageWindow);
 
@@ -261,6 +263,7 @@ public partial class App : Application
             _hotkeys?.Dispose();
             _hotkeys = new HotkeyRegistry(_messageWindow!);
             RegisterHotkeys();
+            ApplyWinVTakeover();
 
             if (movedData)
             {
@@ -287,6 +290,7 @@ public partial class App : Application
             _hotkeys?.Dispose();
             _hotkeys = new HotkeyRegistry(_messageWindow!);
             RegisterHotkeys();
+            ApplyWinVTakeover();
         }
     }
 
@@ -493,9 +497,32 @@ public partial class App : Application
         _messageWindow?.Dispose();
         _store?.Dispose();
         _hotkeys?.Dispose();
+        _winV?.Dispose();
         _singleInstance?.Dispose();
 
         base.OnExit(e);
+    }
+
+    /// <summary>
+    /// Installs or removes the Win+V takeover to match the setting, on the
+    /// spot — no restart, and the unhook is immediate. The hook lives in this
+    /// process, so if the process dies the key returns to Windows by itself.
+    /// </summary>
+    private void ApplyWinVTakeover()
+    {
+        if (_settings.TakeOverWinV)
+        {
+            if (_winV is null)
+            {
+                _winV = new WinVHook();
+                _winV.Triggered += ToggleBar;
+            }
+        }
+        else if (_winV is not null)
+        {
+            _winV.Dispose();
+            _winV = null;
+        }
     }
 
     private void RegisterHotkeys()
