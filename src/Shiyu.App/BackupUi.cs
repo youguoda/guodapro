@@ -104,6 +104,8 @@ public sealed class BackupUi(
             ResizeMode = ResizeMode.NoResize,
             ShowInTaskbar = false,
             Background = (Brush)Application.Current.FindResource("Brush.Background"),
+            FontFamily = (FontFamily)Application.Current.FindResource("Font.Ui"),
+            FontSize = (double)Application.Current.FindResource("Size.Body"),
         };
 
         var root = new StackPanel { Margin = new Thickness(14) };
@@ -161,6 +163,8 @@ public sealed class BackupUi(
             ResizeMode = ResizeMode.NoResize,
             ShowInTaskbar = false,
             Background = (Brush)Application.Current.FindResource("Brush.Background"),
+            FontFamily = (FontFamily)Application.Current.FindResource("Font.Ui"),
+            FontSize = (double)Application.Current.FindResource("Size.Body"),
         };
 
         var root = new StackPanel { Margin = new Thickness(14) };
@@ -278,6 +282,8 @@ public sealed class BackupUi(
             ResizeMode = ResizeMode.NoResize,
             ShowInTaskbar = false,
             Background = (Brush)Application.Current.FindResource("Brush.Background"),
+            FontFamily = (FontFamily)Application.Current.FindResource("Font.Ui"),
+            FontSize = (double)Application.Current.FindResource("Size.Body"),
         };
 
         var root = new StackPanel { Margin = new Thickness(14) };

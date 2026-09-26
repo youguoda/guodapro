@@ -54,7 +54,7 @@ internal sealed class ActionTray : StackPanel
         {
             Text = HoverActions.IconGlyph(id),
             FontFamily = IconFont,
-            FontSize = 15,
+            FontSize = 16,
         };
 
         var button = new Button

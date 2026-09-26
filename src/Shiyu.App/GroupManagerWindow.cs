@@ -34,6 +34,8 @@ internal sealed class GroupManagerWindow : Window
         ShowInTaskbar = false;
         MinWidth = 380;
         Background = (Brush)Application.Current.FindResource("Brush.Background");
+        FontFamily = (FontFamily)Application.Current.FindResource("Font.Ui");
+        FontSize = (double)Application.Current.FindResource("Size.Body");
 
         var root = new StackPanel { Margin = new Thickness(12) };
 

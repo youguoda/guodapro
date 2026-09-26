@@ -96,7 +96,7 @@ internal static class ItemEditors
         {
             Text = item.Hint,
             TextWrapping = TextWrapping.Wrap,
-            FontSize = 12,
+            FontSize = 14,
             Opacity = 0.75,
             Margin = new Thickness(0, 2, 0, 0),
         };
@@ -133,7 +133,7 @@ internal static class ItemEditors
         {
             Text = hint,
             TextWrapping = TextWrapping.Wrap,
-            FontSize = 12,
+            FontSize = 14,
             Opacity = 0.75,
         };
         text.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");

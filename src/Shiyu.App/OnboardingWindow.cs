@@ -45,12 +45,14 @@ internal sealed class OnboardingWindow : Window
         ResizeMode = ResizeMode.NoResize;
         ShowInTaskbar = false;
         Background = (Brush)Application.Current.FindResource("Brush.Background");
+        FontFamily = (FontFamily)Application.Current.FindResource("Font.Ui");
+        FontSize = (double)Application.Current.FindResource("Size.Body");
 
         BuildSteps();
 
         var root = new StackPanel { Margin = new Thickness(18) };
 
-        _heading.FontSize = 16;
+        _heading.FontSize = 18;
         _heading.FontWeight = FontWeights.SemiBold;
         _heading.SetResourceReference(TextBlock.ForegroundProperty, "Brush.Text");
         root.Children.Add(_heading);
@@ -68,7 +70,7 @@ internal sealed class OnboardingWindow : Window
         root.Children.Add(_body);
 
         _stepLabel.Margin = new Thickness(0, 10, 0, 0);
-        _stepLabel.FontSize = 12;
+        _stepLabel.FontSize = 13;
         _stepLabel.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextTertiary");
         root.Children.Add(_stepLabel);
 
@@ -112,7 +114,7 @@ internal sealed class OnboardingWindow : Window
         {
             Text = item.Label,
             VerticalAlignment = VerticalAlignment.Center,
-            FontSize = 13,
+            FontSize = 14,
         };
         label.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
         Grid.SetColumn(label, 0);
@@ -142,7 +144,7 @@ internal sealed class OnboardingWindow : Window
             Text = "⚠ 两个快捷键相同，第二个永远不会生效。",
             Visibility = Visibility.Collapsed,
             Margin = new Thickness(0, 4, 0, 0),
-            FontSize = 12,
+            FontSize = 13,
         };
         conflict.SetResourceReference(TextBlock.ForegroundProperty, "Brush.Danger");
 
@@ -270,7 +272,7 @@ internal sealed class OnboardingWindow : Window
         panel.Children.Add(new TextBlock
         {
             Text = "勾选与手填的名字都会写进设置的排除规则，随时可改。",
-            FontSize = 12,
+            FontSize = 13,
             Opacity = 0.7,
             Margin = new Thickness(0, 6, 0, 0),
         });

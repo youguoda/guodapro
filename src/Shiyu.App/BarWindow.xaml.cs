@@ -1165,7 +1165,7 @@ internal partial class BarWindow : Window
 
         _subtypePopup = new Popup
         {
-            Child = host,
+            Child = WithPopupFont(host),
             PlacementTarget = SubtypeButton,
             Placement = PlacementMode.Bottom,
             StaysOpen = false,
@@ -1422,7 +1422,7 @@ internal partial class BarWindow : Window
 
         _overflowPopup = new Popup
         {
-            Child = host,
+            Child = WithPopupFont(host),
             PlacementTarget = GroupOverflow,
             Placement = PlacementMode.Bottom,
             StaysOpen = false,
@@ -1536,7 +1536,7 @@ internal partial class BarWindow : Window
 
         _groupChooser = new Popup
         {
-            Child = host,
+            Child = WithPopupFont(host),
             PlacementTarget = anchor,
             Placement = anchor is null ? PlacementMode.MousePoint : PlacementMode.Bottom,
             StaysOpen = false,
@@ -1637,7 +1637,7 @@ internal partial class BarWindow : Window
 
         _cardMenu = new Popup
         {
-            Child = MenuSurface(panel),
+            Child = WithPopupFont(MenuSurface(panel)),
             PlacementTarget = anchor,
             Placement = PlacementMode.RelativePoint,
             PlacementRectangle = new Rect(at.X, at.Y, 0, 0),
@@ -1767,7 +1767,7 @@ internal partial class BarWindow : Window
 
             _cardSubMenu = new Popup
             {
-                Child = MenuSurface(list),
+                Child = WithPopupFont(MenuSurface(list)),
                 PlacementTarget = row,
                 Placement = PlacementMode.Right,
                 StaysOpen = false,
@@ -1781,9 +1781,12 @@ internal partial class BarWindow : Window
 
     private static Border MenuSurface(StackPanel panel)
     {
+        // The WithPopupFont wrapper carries the font: a popup lives in its own
+        // HWND with no property inheritance from the bar, and its text would
+        // otherwise fall back to the 12px system font.
         var border = new Border
         {
-            Child = panel,
+            Child = WithPopupFont(panel),
             Padding = new Thickness(4),
             CornerRadius = new CornerRadius(6),
         };
@@ -1792,6 +1795,29 @@ internal partial class BarWindow : Window
         border.BorderThickness = new Thickness(1);
         return border;
     }
+
+    /// <summary>
+    /// A popup lives in its own HWND with no property inheritance from the
+    /// bar — its text would fall back to the 12px system font. Neither Popup
+    /// nor Border nor StackPanel is a Control, so the font rides on a
+    /// ContentControl wrapper, which every child inherits from.
+    /// </summary>
+    private static ContentControl WithPopupFont(FrameworkElement content)
+    {
+        return new ContentControl
+        {
+            Content = content,
+            FontFamily = PopupFont,
+            FontSize = PopupText,
+        };
+    }
+
+    /// <summary>The popup font stack (tokens), shared by every self-built menu.</summary>
+    private static FontFamily PopupFont
+        => (FontFamily)Application.Current.FindResource("Font.Ui");
+
+    private static double PopupText
+        => (double)Application.Current.FindResource("Size.Body");
 
     /// <summary>
     /// A menu that would hang off the screen edge is nudged back in — measured

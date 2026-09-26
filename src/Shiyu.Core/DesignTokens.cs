@@ -160,16 +160,16 @@ public static class DesignTokens
     /// </summary>
     public const string FamilyIcon = "Segoe Fluent Icons, Segoe MDL2 Assets";
 
-    public const double FontHint = 13;
-    public const double FontCaption = 13;
-    public const double FontSecondary = 14;
-    public const double FontBody = 15;
-    public const double FontBodyLarge = 17;
+    public const double FontHint = 14;
+    public const double FontCaption = 14;
+    public const double FontSecondary = 15;
+    public const double FontBody = 16;
+    public const double FontBodyLarge = 18;
 
     /// <summary>Sizes for the symbol font: inline with text, standard, feature.</summary>
-    public const double IconSmall = 13;
-    public const double IconMedium = 15;
-    public const double IconLarge = 18;
+    public const double IconSmall = 14;
+    public const double IconMedium = 16;
+    public const double IconLarge = 19;
 
     /// <summary>Chinese body line height. A floor, not a suggestion — see DesignTokenTests.</summary>
     public const double BodyLineRatio = 1.7;
