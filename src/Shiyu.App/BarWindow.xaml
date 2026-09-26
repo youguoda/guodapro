@@ -253,7 +253,7 @@
       The header and footer draw nothing themselves so the material reads as
       one continuous sheet behind everything.
     -->
-    <Border CornerRadius="{DynamicResource Radius.Window}"
+    <Border x:Name="Shell" CornerRadius="{DynamicResource Radius.Window}"
             Background="{DynamicResource Brush.SurfaceMaterial}"
             BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1">
         <Border.Effect>
@@ -271,33 +271,45 @@
                 Padding="10,8">
             <StackPanel>
                 <Grid>
-                    <TextBox x:Name="SearchBox" Padding="8,6" TextChanged="OnSearchChanged"
+                    <TextBox x:Name="SearchBox" Padding="8,6,32,6" TextChanged="OnSearchChanged"
                              VerticalContentAlignment="Center"/>
                     <!-- F: focus search. -->
                     <Border x:Name="SearchKeyBadge" Style="{StaticResource KeyBadge}"
-                            HorizontalAlignment="Right" Margin="0,0,6,0" Visibility="Collapsed">
+                            HorizontalAlignment="Right" Margin="0,0,34,0" Visibility="Collapsed">
                         <TextBlock Text="F" FontSize="{DynamicResource Size.Hint}"
                                    Foreground="{DynamicResource Brush.TextOnAccent}"
                                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
+                    <!-- 只看收藏 lives inside the search line: it is the most
+                         common single-condition filter, Win11-style. -->
+                    <ToggleButton x:Name="FavoriteOnly" HorizontalAlignment="Right" Width="26" Height="22"
+                                  Margin="0,0,4,0" Content="★" FontSize="{DynamicResource Size.Caption}"
+                                  Cursor="Hand" Checked="OnFilterChanged" Unchecked="OnFilterChanged"
+                                  ToolTip="只看收藏"/>
                 </Grid>
                 <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
-                    <Grid>
-                        <ComboBox x:Name="KindFilter" Width="64" SelectedIndex="0"
-                                  SelectionChanged="OnFilterChanged">
-                            <ComboBoxItem Content="全部" />
-                            <ComboBoxItem Content="文本" />
-                            <ComboBoxItem Content="图片" />
-                            <ComboBoxItem Content="文件" />
-                        </ComboBox>
-                        <!-- Arrows: cycle the type filter. -->
+                    <!-- Kind as a segmented control: four fixed values the user
+                         cycles with ←→, each state visible at a glance. -->
+                    <StackPanel Orientation="Horizontal" x:Name="KindChips">
+                        <ToggleButton x:Name="KindChipAll" Content="全部" Tag="0"
+                                      Style="{StaticResource SegmentChip}" Padding="10,3"
+                                      Cursor="Hand" Click="OnKindChipClicked"/>
+                        <ToggleButton x:Name="KindChipText" Content="文本" Tag="1" Margin="4,0,0,0"
+                                      Style="{StaticResource SegmentChip}" Padding="10,3"
+                                      Cursor="Hand" Click="OnKindChipClicked"/>
+                        <ToggleButton x:Name="KindChipImage" Content="图片" Tag="2" Margin="4,0,0,0"
+                                      Style="{StaticResource SegmentChip}" Padding="10,3"
+                                      Cursor="Hand" Click="OnKindChipClicked"/>
+                        <ToggleButton x:Name="KindChipFiles" Content="文件" Tag="3" Margin="4,0,0,0"
+                                      Style="{StaticResource SegmentChip}" Padding="10,3"
+                                      Cursor="Hand" Click="OnKindChipClicked"/>
                         <Border x:Name="KindKeyBadge" Style="{StaticResource KeyBadge}"
-                                HorizontalAlignment="Right" Margin="0,0,18,0" Visibility="Collapsed">
+                                Margin="6,0,0,0" Visibility="Collapsed">
                             <TextBlock Text="←→" FontSize="{DynamicResource Size.Hint}"
                                        Foreground="{DynamicResource Brush.TextOnAccent}"
                                        HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
-                    </Grid>
+                    </StackPanel>
                     <Grid Margin="6,0,0,0">
                         <ComboBox x:Name="TagFilter" Width="104"
                                   SelectionChanged="OnFilterChanged"/>
@@ -321,10 +333,6 @@
                     <Button x:Name="ClearFilters" Content="清除" Margin="6,0,0,0" Padding="8,2"
                             FontSize="{DynamicResource Size.Caption}" Cursor="Hand"
                             Click="OnClearFilters"/>
-                    <ToggleButton x:Name="FavoriteOnly" Content="★" Margin="4,0,0,0" Width="30"
-                                  FontSize="{DynamicResource Size.Caption}" Cursor="Hand"
-                                  Checked="OnFilterChanged" Unchecked="OnFilterChanged"
-                                  ToolTip="只看收藏"/>
                 </StackPanel>
 
                 <!--

@@ -4,7 +4,7 @@
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         ShowActivated="False" ShowInTaskbar="False" Topmost="True"
         ResizeMode="NoResize" SizeToContent="Height" Width="420" Opacity="0">
-    <Border CornerRadius="{DynamicResource Radius.Window}" Background="{DynamicResource Brush.SurfaceMaterial}"
+    <Border x:Name="Shell" CornerRadius="{DynamicResource Radius.Window}" Background="{DynamicResource Brush.SurfaceMaterial}"
             BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1">
         <Border.Effect>
             <StaticResource ResourceKey="Shadow.Floating"/>

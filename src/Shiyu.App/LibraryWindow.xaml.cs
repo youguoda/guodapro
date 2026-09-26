@@ -80,6 +80,12 @@ public partial class LibraryWindow : Window
         Closed += (_, _) => CommitUndoExpiry();
 
         EntryList.ItemsSource = _items;
+
+        // Danger buttons set themselves apart by colour, permanently — the
+        // confirmation dialog is the second warning, not the first.
+        DeleteSelectedButton.SetResourceReference(ForegroundProperty, "Brush.Danger");
+        ClearAllButton.SetResourceReference(ForegroundProperty, "Brush.Danger");
+        ApplyDetailLayout(ActualWidth >= DualPaneThreshold);
         RefreshTagChoices();
         Reload();
     }
@@ -188,9 +194,121 @@ public partial class LibraryWindow : Window
     /// reads "置顶" while pointing at a pinned entry invites the wrong click.
     /// </summary>
     private void OnSelectionChanged(object sender, SelectionChangedEventArgs e)
-        => PinButton.Content = EntryList.SelectedItem is EntryItem { IsPinned: true }
+    {
+        PinButton.Content = EntryList.SelectedItem is EntryItem { IsPinned: true }
             ? "取消置顶"
             : "置顶";
+
+        UpdateDetail();
+    }
+
+    private const double DualPaneThreshold = 1080;
+
+    /// <summary>
+    /// Two columns only when there is room for both: below the threshold the
+    /// detail panel folds away and the window reads as before.
+    /// </summary>
+    private void OnWindowSizeChanged(object sender, SizeChangedEventArgs e)
+        => ApplyDetailLayout(e.NewSize.Width >= DualPaneThreshold);
+
+    private void ApplyDetailLayout(bool wide)
+    {
+        ListColumn.Width = wide ? new GridLength(3, GridUnitType.Star) : new GridLength(1, GridUnitType.Star);
+        DetailColumn.Width = wide ? new GridLength(2, GridUnitType.Star) : new GridLength(0);
+        DetailHost.Visibility = wide ? Visibility.Visible : Visibility.Collapsed;
+        if (!wide)
+        {
+            return;
+        }
+
+        UpdateDetail();
+    }
+
+    /// <summary>
+    /// Single selection previews in full on the right: the whole text, the
+    /// whole picture, the whole file list — the list row is for scanning, the
+    /// detail pane is for reading.
+    /// </summary>
+    private void UpdateDetail()
+    {
+        if (DetailHost.Visibility != Visibility.Visible || _store is null)
+        {
+            return;
+        }
+
+        var multi = EntryList.SelectedItems.Count;
+        if (multi >= 2)
+        {
+            Status($"已选 {multi} 条");
+        }
+
+        if (EntryList.SelectedItem is not EntryItem item || multi != 1)
+        {
+            DetailMeta.Text = string.Empty;
+            DetailText.Text = string.Empty;
+            DetailImage.Visibility = Visibility.Collapsed;
+            DetailFiles.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var entry = _store.Get(item.Id);
+        DetailMeta.Text = item.Meta;
+
+        if (entry is null)
+        {
+            DetailText.Text = item.Preview;
+            DetailImage.Visibility = Visibility.Collapsed;
+            DetailFiles.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        DetailText.Text = entry.Kind == EntryKind.Files
+            ? string.Join(Environment.NewLine, entry.Files)
+            : entry.Text;
+
+        if (entry.Kind == EntryKind.Image)
+        {
+            try
+            {
+                if (entry.HasOriginal)
+                {
+                    var full = new System.Windows.Media.Imaging.BitmapImage();
+                    full.BeginInit();
+                    full.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                    full.DecodePixelWidth = 640;
+                    full.UriSource = new Uri(entry.OriginalPath!);
+                    full.EndInit();
+                    full.Freeze();
+                    DetailImage.Source = full;
+                }
+                else
+                {
+                    DetailImage.Source = AppIconCache.Decode(entry.ThumbnailPng, 480);
+                }
+
+                DetailImage.Visibility = Visibility.Visible;
+            }
+            catch (Exception)
+            {
+                DetailImage.Visibility = Visibility.Collapsed;
+            }
+        }
+        else
+        {
+            DetailImage.Visibility = Visibility.Collapsed;
+        }
+
+        if (entry.Kind == EntryKind.Files && entry.Files.Count > 0)
+        {
+            DetailFiles.ItemsSource = entry.Files;
+            DetailFiles.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            DetailFiles.ItemsSource = null;
+            DetailFiles.Visibility = Visibility.Collapsed;
+        }
+    }
 
     private void OnTogglePin(object sender, RoutedEventArgs e)
     {

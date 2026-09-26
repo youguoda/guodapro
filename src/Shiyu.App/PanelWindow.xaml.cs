@@ -77,6 +77,10 @@ public partial class PanelWindow : Window
         UpdateLayout();
         MoveBesideCursor();
 
+        // The entrance lives on the content, not the window: same rule,
+        // opposite side — the sheet fades and rises, the window stays solid.
+        Entrance.Play(Shell);
+
         HoldEscape();
         await RunTranslation();
     }

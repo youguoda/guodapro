@@ -34,6 +34,9 @@ public partial class SettingsWindow : Window
     private TextBlock? _directoryWarning;
     private PasswordBox? _secretBox;
 
+    /// <summary>The page the user last had open, kept per session.</summary>
+    private static int _lastTabIndex;
+
     public SettingsWindow(AppSettings current, Action<AppSettings> apply, BackupUi? backup = null)
     {
         InitializeComponent();
@@ -45,6 +48,11 @@ public partial class SettingsWindow : Window
         Backdrop.Attach(this, () => BackdropKind.None);
 
         BuildTree();
+
+        // Reopen where the user left off; the index is clamped by the count
+        // so a future schema shrink cannot select a ghost page.
+        Pages.SelectionChanged += (_, _) => _lastTabIndex = Pages.SelectedIndex;
+        Pages.SelectedIndex = Math.Clamp(_lastTabIndex, 0, Pages.Items.Count - 1);
     }
 
     // --- building ----------------------------------------------------------------
@@ -311,12 +319,93 @@ public partial class SettingsWindow : Window
             SettingsControl.Directory => DirectoryFor(item, state),
             SettingsControl.Multiline => TextFor(item, state, multiline: true),
             SettingsControl.Actions => TextFor(item, state, multiline: false),
-            SettingsControl.Hotkey => TextFor(item, state, multiline: false),
+            SettingsControl.Hotkey => HotkeyCapture(item, state),
             SettingsControl.Text => TextFor(item, state, multiline: false),
             SettingsControl.ReadOnly => ReadOnlyFor(item),
             SettingsControl.Custom => CustomFor(item),
             _ => new TextBlock(),
         };
+    }
+
+    /// <summary>
+    /// The hotkey editor as a capture control: click it, press the combination,
+    /// done — the same interaction the system's own settings use, and one that
+    /// cannot produce the typos a hand-typed "Ctrl+Shift+Z" can. Only letters
+    /// and digits register (the spec registers nothing else globally); Esc
+    /// leaves the box without changing anything.
+    /// </summary>
+    private FrameworkElement HotkeyCapture(SettingsItem item, ItemState state)
+    {
+        var box = new TextBox
+        {
+            Text = SettingsBindings.ReadText(item.Id, _current) ?? string.Empty,
+            Padding = new Thickness(4),
+            VerticalContentAlignment = VerticalAlignment.Center,
+            Cursor = Cursors.Hand,
+            ToolTip = "点击后直接按下组合键；Esc 取消。仅支持字母/数字键加修饰键。",
+        };
+        box.SetResourceReference(BackgroundProperty, "Brush.SurfaceInput");
+        state.Text = box.Text;
+
+        box.GotFocus += (_, _) => box.SetResourceReference(BorderBrushProperty, "Brush.Accent");
+        box.LostFocus += (_, _) => box.SetResourceReference(BorderBrushProperty, "Brush.Border");
+
+        box.PreviewKeyDown += (_, e) =>
+        {
+            var key = e.Key == Key.System ? e.SystemKey : e.Key;
+
+            // Modifier keys alone are the "listening" state: swallowed so
+            // nothing types while the user composes the combination.
+            if (key is Key.LeftCtrl or Key.RightCtrl or Key.LeftShift or Key.RightShift
+                or Key.LeftAlt or Key.RightAlt or Key.LWin or Key.RWin)
+            {
+                e.Handled = true;
+                return;
+            }
+
+            if (key == Key.Escape)
+            {
+                e.Handled = true;
+                Keyboard.ClearFocus();
+                return;
+            }
+
+            var mods = Keyboard.Modifiers;
+            if (mods == ModifierKeys.None || e.IsRepeat)
+            {
+                e.Handled = true;
+                return;
+            }
+
+            char? letter = key switch
+            {
+                >= Key.A and <= Key.Z => (char)('A' + (key - Key.A)),
+                >= Key.D0 and <= Key.D9 => (char)('0' + (key - Key.D0)),
+                >= Key.NumPad0 and <= Key.NumPad9 => (char)('0' + (key - Key.NumPad0)),
+                _ => null,
+            };
+
+            // Unsupported keys (F-keys, punctuation) are refused silently:
+            // the spec cannot register them globally anyway.
+            if (letter is not { } digit)
+            {
+                e.Handled = true;
+                return;
+            }
+
+            var parts = new List<string>();
+            if (mods.HasFlag(ModifierKeys.Control)) parts.Add("Ctrl");
+            if (mods.HasFlag(ModifierKeys.Shift)) parts.Add("Shift");
+            if (mods.HasFlag(ModifierKeys.Alt)) parts.Add("Alt");
+            if (mods.HasFlag(ModifierKeys.Windows)) parts.Add("Win");
+            parts.Add(digit.ToString());
+
+            state.Text = string.Join("+", parts);
+            box.Text = state.Text;
+            e.Handled = true;
+        };
+
+        return WrapWithHint(box, item.Hint);
     }
 
     private FrameworkElement SegmentedFor(SettingsItem item, ItemState state)

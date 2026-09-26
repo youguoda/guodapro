@@ -564,6 +564,10 @@ internal partial class BarWindow : Window
         // in XAML, which is the only surface the backdrop renders on.
         Backdrop.Attach(this, () => BackdropKind.Acrylic);
 
+        // Kind is a segmented control now: four chips, one index.
+        _kindChips = [KindChipAll, KindChipText, KindChipImage, KindChipFiles];
+        SetKindIndex(0);
+
         PinnedList.ItemsSource = _pinned;
         Cards.ItemsSource = _cards;
 
@@ -601,6 +605,7 @@ internal partial class BarWindow : Window
         _previewTick.Start();
         MoveBesideCursorIfWanted();
         Show();
+        Entrance.Play(Shell);
         Activate();
         SearchBox.Focus();
         SearchBox.SelectAll();
@@ -898,7 +903,7 @@ internal partial class BarWindow : Window
             {
                 Query = SearchBox.Text,
                 Favorite = FavoriteOnly.IsChecked == true ? true : null,
-                Kind = KindFilter.SelectedIndex switch
+                Kind = _kindIndex switch
                 {
                     1 => EntryKind.Text,
                     2 => EntryKind.Image,
@@ -1073,12 +1078,37 @@ internal partial class BarWindow : Window
     private void OnClearFilters(object sender, RoutedEventArgs e)
     {
         SearchBox.Clear();
-        KindFilter.SelectedIndex = 0;
+        KindFilterChipClear();
         SubtypeFilter.SelectedIndex = 0;
         FavoriteOnly.IsChecked = false;
         SelectGroup(null, apply: false);
         RefreshTagChoices();
         ApplyFilter();
+    }
+
+    private ToggleButton[] _kindChips = [];
+
+    private int _kindIndex;
+
+    private void SetKindIndex(int index)
+    {
+        _kindIndex = Math.Clamp(index, 0, _kindChips.Length - 1);
+        for (var i = 0; i < _kindChips.Length; i++)
+        {
+            _kindChips[i].IsChecked = i == _kindIndex;
+        }
+    }
+
+    private void KindFilterChipClear() => SetKindIndex(0);
+
+    /// <summary>Chip clicks land here; the tag carries the kind index.</summary>
+    private void OnKindChipClicked(object sender, RoutedEventArgs e)
+    {
+        if (sender is ToggleButton { Tag: string tag } && int.TryParse(tag, out var index))
+        {
+            SetKindIndex(index);
+            ApplyFilter();
+        }
     }
 
     private void ApplyFilter()
@@ -1087,7 +1117,7 @@ internal partial class BarWindow : Window
         {
             Query = SearchBox.Text,
             Tag = TagFilter.SelectedItem as string is { } tag && tag != AnyTag ? tag : null,
-            Kind = KindFilter.SelectedIndex switch
+            Kind = _kindIndex switch
             {
                 1 => EntryKind.Text,
                 2 => EntryKind.Image,
@@ -2733,7 +2763,7 @@ internal partial class BarWindow : Window
     private void StepEscape()
     {
         var hasTag = TagFilter.SelectedItem as string is { } tag && tag != AnyTag;
-        var hasKind = KindFilter.SelectedIndex != 0;
+        var hasKind = _kindIndex != 0;
 
         switch (BarKeyboard.NextEscape(
             previewOpen: _preview is { IsVisible: true },
@@ -2751,7 +2781,7 @@ internal partial class BarWindow : Window
                 break;
 
             case BarKeyboard.EscapeAction.ClearTypeFilter:
-                KindFilter.SelectedIndex = 0;
+                SetKindIndex(0);
                 break;
 
             case BarKeyboard.EscapeAction.HideWindow:
@@ -2762,7 +2792,8 @@ internal partial class BarWindow : Window
 
     private void CycleKind(int delta)
     {
-        KindFilter.SelectedIndex = BarKeyboard.Cycle(KindFilter.SelectedIndex, delta, KindFilter.Items.Count);
+        SetKindIndex(BarKeyboard.Cycle(_kindIndex, delta, _kindChips.Length));
+        ApplyFilter();
     }
 
     private void CycleTag(int delta)
