@@ -130,4 +130,13 @@ public class SettingsSchemaTests
     {
         Assert.True(new AppSettings().ProtectEntries);
     }
+
+    [Fact]
+    public void The_bar_comes_up_beside_the_cursor_by_default()
+    {
+        Assert.True(new AppSettings().BarAtCursor);
+        Assert.Contains(
+            SettingsSchema.Tree.SelectMany(p => p.Sections).SelectMany(s => s.Items),
+            item => item.Id == "bar.at-cursor" && item.Control == SettingsControl.Toggle);
+    }
 }

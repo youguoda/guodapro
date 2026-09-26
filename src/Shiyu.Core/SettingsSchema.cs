@@ -97,7 +97,11 @@ public static class SettingsSchema
                 new SettingsItem(
                     "theme", "主题", SettingsControl.Segmented,
                     Choices: ["跟随系统", "浅色", "深色"],
-                    Keywords: ["主题", "深色", "浅色", "夜间", "夜间模式", "变暗"])),
+                    Keywords: ["主题", "深色", "浅色", "夜间", "夜间模式", "变暗"]),
+                new SettingsItem(
+                    "bar.at-cursor", "光标旁呼出", SettingsControl.Toggle,
+                    Hint: "窄条出现在光标/输入位置附近，与系统 Win+V 面板一致；关闭则固定在你上次拖放的位置。",
+                    Keywords: ["位置", "光标", "呼出", "弹出", "输入"])),
             new SettingsSection("look.density", "密度",
                 new SettingsItem(
                     "bar.text-lines", "文本行数", SettingsControl.Number, Min: 1, Max: 20,

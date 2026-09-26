@@ -58,6 +58,7 @@ internal static class SettingsBindings
     {
         "action.sound" => settings.ActionSound,
         "look.lightweight" => settings.LightweightWhenHidden,
+        "bar.at-cursor" => settings.BarAtCursor,
         "record.images" => settings.RecordImages,
         "record.files" => settings.RecordFiles,
         "winv.takeover" => settings.TakeOverWinV,
@@ -77,6 +78,7 @@ internal static class SettingsBindings
         "bar.actions" => current,
         "theme" => current with { Theme = (AppTheme)choice },
         "action.sound" => current with { ActionSound = AsBool(text) },
+        "bar.at-cursor" => current with { BarAtCursor = AsBool(text) },
         "look.lightweight" => current with { LightweightWhenHidden = AsBool(text) },
         "record.images" => current with { RecordImages = AsBool(text) },
         "record.files" => current with { RecordFiles = AsBool(text) },

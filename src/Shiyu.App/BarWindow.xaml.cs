@@ -535,10 +535,47 @@ internal partial class BarWindow : Window
 
         ReloadIfBehind(force: true);
         _behindCheck.Start();
+        MoveBesideCursorIfWanted();
         Show();
         Activate();
         SearchBox.Focus();
         SearchBox.SelectAll();
+    }
+
+    /// <summary>
+    /// Like the system's Win+V panel: appear where the user is, not where the
+    /// window was last left. Off, the remembered geometry stands — a bar that
+    /// always comes back to the same place is also a place the user learns.
+    /// </summary>
+    private void MoveBesideCursorIfWanted()
+    {
+        if (!_settings.BarAtCursor)
+        {
+            return;
+        }
+
+        var cursor = ScreenGeometry.CursorPosition();
+        var workArea = ScreenGeometry.WorkAreaAt(cursor);
+
+        var source = PresentationSource.FromVisual(this);
+        var scaleX = source?.CompositionTarget?.TransformToDevice.M11 ?? 1.0;
+        var scaleY = source?.CompositionTarget?.TransformToDevice.M22 ?? 1.0;
+
+        // The height the user has settled on, capped by the screen: near the
+        // cursor still means fully on it.
+        var height = Math.Min(Height, workArea.Height / scaleY);
+        var placed = BadgePlacement.Place(
+            cursor,
+            (int)Math.Ceiling(ActualWidth * scaleX),
+            (int)Math.Ceiling(height * scaleY),
+            workArea);
+
+        // The very first summon happens before the window was ever shown,
+        // when the handle does not exist yet — asking for it creates the
+        // HWND without showing the window.
+        var helper = new System.Windows.Interop.WindowInteropHelper(this);
+        _ = helper.EnsureHandle();
+        TransientWindow.MoveTo(helper.Handle, placed);
     }
 
     /// <summary>Hides with the standard fade, from a painted surface, and gives focus back.</summary>

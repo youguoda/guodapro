@@ -58,6 +58,14 @@ public sealed record AppSettings
     /// <summary>Whether copied images are recorded. Text always is — without it there is no tool.</summary>
     public bool RecordImages { get; init; } = true;
 
+    /// <summary>
+    /// Summon the bar beside the cursor, like the system's Win+V panel, rather
+    /// than at a fixed remembered spot. On by default: near where you are
+    /// typing is where you are about to paste. Off restores the resident
+    /// window's remembered geometry.
+    /// </summary>
+    public bool BarAtCursor { get; init; } = true;
+
     /// <summary>Whether copied file lists are recorded.</summary>
     public bool RecordFiles { get; init; } = true;
 
