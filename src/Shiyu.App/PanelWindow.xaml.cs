@@ -79,7 +79,6 @@ public partial class PanelWindow : Window
 
         // The entrance lives on the content, not the window: same rule,
         // opposite side — the sheet fades and rises, the window stays solid.
-        Entrance.Play(Shell);
 
         HoldEscape();
         await RunTranslation();
@@ -197,12 +196,11 @@ public partial class PanelWindow : Window
         _inFlight?.Cancel();
         ReleaseEscape();
 
-        // Leaving fades out through the app-wide motion system: from a
-        // painted surface, which composites fine, and instant when Windows
-        // asks for reduced motion.
-        var fade = Motion.Fade(0);
-        fade.Completed += (_, _) => Hide();
-        BeginAnimation(OpacityProperty, fade);
+        // Instant hide. A fade here reads as jank on a layered window — the
+        // text drops out before the tinted sheet does (the user's own words:
+        // "先没有字体，再一个灰板") — and the system's Win+V panel, the
+        // benchmark for this exact surface, also pops shut with no exit.
+        Hide();
     }
 
     private void OnClose(object sender, RoutedEventArgs e) => Dismiss();

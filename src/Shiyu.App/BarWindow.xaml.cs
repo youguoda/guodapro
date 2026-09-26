@@ -605,7 +605,6 @@ internal partial class BarWindow : Window
         _previewTick.Start();
         MoveBesideCursorIfWanted();
         Show();
-        Entrance.Play(Shell);
         Activate();
         SearchBox.Focus();
         SearchBox.SelectAll();
@@ -657,16 +656,13 @@ internal partial class BarWindow : Window
         _previewTick.Stop();
         RunPreviewCommand(_previewPolicy.BarHidden());
 
-        var fade = Motion.Fade(0);
-        fade.Completed += (_, _) =>
-        {
-            BeginAnimation(OpacityProperty, null);
-            Opacity = 1;
-            Hide();
-            _returnTo.Restore();
-            EnterLightweightIfEnabled();
-        };
-        BeginAnimation(OpacityProperty, fade);
+        // Instant hide, matching the instant summon. Fading a layered window
+        // out reads as "text first, then a grey sheet" — the user's words —
+        // and the system's Win+V panel, the benchmark surface, closes with no
+        // exit either. For a 3-second tool, speed *is* the polish.
+        Hide();
+        _returnTo.Restore();
+        EnterLightweightIfEnabled();
     }
 
     /// <summary>
@@ -1079,7 +1075,7 @@ internal partial class BarWindow : Window
     {
         SearchBox.Clear();
         KindFilterChipClear();
-        SubtypeFilter.SelectedIndex = 0;
+        SetSubtype(0);
         FavoriteOnly.IsChecked = false;
         SelectGroup(null, apply: false);
         RefreshTagChoices();
@@ -1100,6 +1096,71 @@ internal partial class BarWindow : Window
     }
 
     private void KindFilterChipClear() => SetKindIndex(0);
+
+    /// <summary>Which entry of the subtype popup is active; 0 is "all".</summary>
+    private int _subtypeIndex;
+
+    private Popup? _subtypePopup;
+
+    private void SetSubtype(int index)
+    {
+        _subtypeIndex = Math.Clamp(index, 0, 4);
+
+        // The button speaks for a facet hidden inside it: accented while a
+        // subtype is active, quiet otherwise.
+        if (_subtypeIndex > 0)
+        {
+            SubtypeButton.SetResourceReference(BorderBrushProperty, "Brush.Accent");
+            SubtypeButton.SetResourceReference(ForegroundProperty, "Brush.Accent");
+        }
+        else
+        {
+            SubtypeButton.SetResourceReference(BorderBrushProperty, "Brush.Border");
+            SubtypeButton.SetResourceReference(ForegroundProperty, "Brush.TextSecondary");
+        }
+    }
+
+    private void OnSubtypeButtonClicked(object sender, RoutedEventArgs e)
+    {
+        if (_subtypePopup is { IsOpen: true })
+        {
+            _subtypePopup.IsOpen = false;
+            return;
+        }
+
+        var labels = new[] { "子类型（全部）", "链接", "邮箱", "颜色", "路径" };
+        var host = new StackPanel { MinWidth = 132 };
+
+        for (var index = 0; index < labels.Length; index++)
+        {
+            var captured = index;
+            var item = new Button
+            {
+                Content = (_subtypeIndex == captured ? "✓  " : "     ") + labels[captured],
+                Padding = new Thickness(10, 5, 10, 5),
+                Margin = new Thickness(0, 0, 0, 1),
+                Cursor = Cursors.Hand,
+            };
+            item.SetResourceReference(BackgroundProperty, "Brush.Surface");
+            item.Click += (_, _) =>
+            {
+                _subtypePopup!.IsOpen = false;
+                SetSubtype(captured);
+                ApplyFilter();
+            };
+            host.Children.Add(item);
+        }
+
+        _subtypePopup = new Popup
+        {
+            Child = host,
+            PlacementTarget = SubtypeButton,
+            Placement = PlacementMode.Bottom,
+            StaysOpen = false,
+            AllowsTransparency = true,
+        };
+        _subtypePopup.IsOpen = true;
+    }
 
     /// <summary>Chip clicks land here; the tag carries the kind index.</summary>
     private void OnKindChipClicked(object sender, RoutedEventArgs e)
@@ -1124,7 +1185,7 @@ internal partial class BarWindow : Window
                 3 => EntryKind.Files,
                 _ => null,
             },
-            Subtype = SubtypeFilter.SelectedIndex switch
+            Subtype = _subtypeIndex switch
             {
                 1 => EntrySubtype.Link,
                 2 => EntrySubtype.Email,

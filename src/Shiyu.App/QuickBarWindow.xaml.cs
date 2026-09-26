@@ -56,7 +56,6 @@ public partial class QuickBarWindow : Window
         UpdateLayout();
         MoveBesideCursor();
 
-        Entrance.Play(Shell);
 
         Activate();
         FilterBox.Focus();
