@@ -399,8 +399,30 @@ public partial class App : Application
             return;
         }
 
-        _panel ??= new PanelWindow(_hotkeys, _writer, () => new OpenAiCompatibleBackend(_settings.Backend), _settings);
+        _panel ??= new PanelWindow(
+            _hotkeys, _writer, () => new OpenAiCompatibleBackend(_settings.Backend), _settings,
+            SaveTranslationToHistory);
         await _panel.TranslateAsync(text);
+    }
+
+    /// <summary>
+    /// Files a kept translation. The link is made only when the original was
+    /// itself recorded — a selection captured straight off the screen never
+    /// entered history, and inventing a link would be pointing at nothing.
+    /// </summary>
+    private void SaveTranslationToHistory(string original, string translated)
+    {
+        if (_store is null || _pipeline is null)
+        {
+            return;
+        }
+
+        var linked = _store.Recent(limit: 200)
+            .FirstOrDefault(entry => entry.Text == original && entry.TranslatedFrom is null)
+            ?.Id;
+
+        _pipeline.RecordTranslation(translated, linked);
+        _tray?.ShowNotification("拾语", "译文已存入历史。");
     }
 
     /// <summary>
@@ -418,7 +440,7 @@ public partial class App : Application
         {
             _library = new LibraryWindow(
                 _store, _writer, _images!, () => new OpenAiCompatibleBackend(_settings.Backend), _icons!,
-                () => _settings);
+                () => _settings, _pipeline);
             _library.Closed += (_, _) => _library = null;
             _library.Show();
         }

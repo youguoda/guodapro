@@ -19,6 +19,7 @@ public partial class PanelWindow : Window
     private readonly HotkeyRegistry _hotkeys;
     private readonly WindowsClipboardWriter _clipboard;
     private readonly Func<ITranslationBackend> _backend;
+    private readonly Action<string, string>? _saveTranslation;
 
     private IDisposable? _escape;
     private CancellationTokenSource? _inFlight;
@@ -31,13 +32,15 @@ public partial class PanelWindow : Window
         HotkeyRegistry hotkeys,
         WindowsClipboardWriter clipboard,
         Func<ITranslationBackend> backend,
-        AppSettings settings)
+        AppSettings settings,
+        Action<string, string>? saveTranslation = null)
     {
         InitializeComponent();
 
         _hotkeys = hotkeys;
         _clipboard = clipboard;
         _backend = backend;
+        _saveTranslation = saveTranslation;
         _target = settings.TargetLanguage;
         _source = settings.SourceLanguage;
     }
@@ -110,6 +113,27 @@ public partial class PanelWindow : Window
         await session.RunAsync(
             new TranslationRequest(_original, _target) { SourceLanguage = _source },
             _inFlight.Token);
+
+        // Kept work needs a door: only a finished translation is worth saving,
+        // and the button says what it will do with it.
+        SaveButton.IsEnabled = _saveTranslation is not null
+            && session.State == TranslationState.Finished
+            && session.Text.Trim().Length > 0;
+    }
+
+    /// <summary>
+    /// Hands the finished pair to whoever owns history. The link to the
+    /// original entry is resolved there — here there is only text.
+    /// </summary>
+    private void OnSaveToHistory(object sender, RoutedEventArgs e)
+    {
+        if (_saveTranslation is null || _session?.Text.Trim() is not { Length: > 0 } translated)
+        {
+            return;
+        }
+
+        _saveTranslation(_original, translated);
+        SaveButton.IsEnabled = false;
     }
 
     private void MoveBesideCursor()

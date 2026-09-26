@@ -156,6 +156,11 @@
             <Button Content="合并成笔记" Tag="MergeIntoNote" Style="{StaticResource Toolbutton}" Click="OnRunAgentAction" />
             <Button Content="改写" Tag="Rewrite" Style="{StaticResource Toolbutton}" Click="OnRunAgentAction" />
             <Button Content="建议标签" Tag="SuggestTags" Style="{StaticResource Toolbutton}" Click="OnRunAgentAction" />
+            <Button x:Name="TranslateBatchButton" Content="批量翻译存入历史"
+                    Style="{StaticResource Toolbutton}" Click="OnTranslateBatch"
+                    ToolTip="把选中的条目逐条翻译成设置里的译文语言，结果存为带「译」标的关联条目"/>
+            <Button x:Name="TranslateCancelButton" Content="取消翻译" Style="{StaticResource Toolbutton}"
+                    Visibility="Collapsed" Click="OnCancelTranslateBatch"/>
         </StackPanel>
 
         <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,10,0,0">

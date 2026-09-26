@@ -8,7 +8,7 @@ namespace Shiyu.Core;
 /// exception is exclusion, which is not a filter at all — excluded content is
 /// never written down in the first place.
 /// </summary>
-public sealed class ClipboardPipeline : IDisposable
+public sealed partial class ClipboardPipeline : IDisposable
 {
     private readonly IClipboardMonitor _clipboard;
     private readonly EntryStore _store;

@@ -187,11 +187,18 @@
                     </DockPanel>
 
                     <!-- Watermarks: quiet, bottom-right, never in the way.
-                         The star is a favourite; it never moves the card. -->
+                         The star is a favourite; it never moves the card.
+                         The 译 mark says this entry is Shiyu's own kept
+                         translation, not something the user copied. -->
                     <StackPanel Grid.Row="1" Orientation="Horizontal"
                                 HorizontalAlignment="Right" VerticalAlignment="Bottom">
+                        <TextBlock Text="译" FontSize="{DynamicResource Size.Hint}"
+                                   Foreground="{DynamicResource Brush.Accent}"
+                                   ToolTip="拾语生成的译文，已关联原文条目"
+                                   Visibility="{Binding TranslationVisibility}"/>
                         <TextBlock Text="{Binding GroupBadge}" FontSize="{DynamicResource Size.Hint}"
                                    Foreground="{DynamicResource Brush.TextTertiary}"
+                                   Margin="4,0,0,0"
                                    Visibility="{Binding GroupBadgeVisibility}"/>
                         <TextBlock Text="★" FontSize="{DynamicResource Size.Hint}"
                                    Foreground="{DynamicResource Brush.Accent}"

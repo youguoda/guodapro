@@ -46,6 +46,10 @@
                 <Button x:Name="CopyButton" DockPanel.Dock="Right" Content="复制译文"
                         FontSize="{DynamicResource Size.Caption}" Padding="10,4" Cursor="Hand"
                         Click="OnCopy" />
+                <Button x:Name="SaveButton" DockPanel.Dock="Right" Content="存入历史" IsEnabled="False"
+                        FontSize="{DynamicResource Size.Caption}" Padding="10,4" Margin="0,0,6,0"
+                        Cursor="Hand" Click="OnSaveToHistory"
+                        ToolTip="译文存为一条记录，并关联原文条目"/>
             </DockPanel>
         </StackPanel>
     </Border>

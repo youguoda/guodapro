@@ -41,6 +41,7 @@ public partial class LibraryWindow : Window
     private bool _refillingTags;
     private AgentRun? _agentRun;
     private readonly Func<AppSettings> _settings;
+    private readonly ClipboardPipeline? _pipeline;
 
     public LibraryWindow(
         EntryStore store,
@@ -48,12 +49,14 @@ public partial class LibraryWindow : Window
         ImageArchive images,
         Func<IStreamingModel> model,
         AppIconCache icons,
-        Func<AppSettings>? settings = null)
+        Func<AppSettings>? settings = null,
+        ClipboardPipeline? pipeline = null)
     {
         InitializeComponent();
 
         _store = store;
         _clipboard = clipboard;
+        _pipeline = pipeline;
         _images = images;
         _model = model;
         _browser = new HistoryBrowser(store);
@@ -567,6 +570,74 @@ public partial class LibraryWindow : Window
 
     private void Status(string message) => StatusLabel.Text = message;
 
+    private CancellationTokenSource? _translateBatch;
+
+    /// <summary>
+    /// Translates the selection one entry at a time and files each result as
+    /// a linked translation. Only what is selected is ever sent; cancelling
+    /// keeps everything already filed — a half-done batch is still half done.
+    /// </summary>
+    private async void OnTranslateBatch(object sender, RoutedEventArgs e)
+    {
+        if (_translateBatch is not null)
+        {
+            return;
+        }
+
+        var selected = EntryList.SelectedItems.OfType<EntryItem>()
+            .Where(item => item.Kind == EntryKind.Text && item.TranslatedFrom is null)
+            .Select(item => item.Id)
+            .ToList();
+
+        if (selected.Count == 0)
+        {
+            Status("先选中要翻译的文本条目。");
+            return;
+        }
+
+        var settings = _settings();
+        _translateBatch = new CancellationTokenSource();
+        TranslateBatchButton.IsEnabled = false;
+        TranslateCancelButton.Visibility = Visibility.Visible;
+
+        var progress = new Progress<(int Done, int Total)>(step =>
+            Status($"批量翻译 {step.Done}/{step.Total}……"));
+
+        try
+        {
+            var batch = new TranslationBatch(
+                _store, _pipeline!, settings.BuildExclusionPolicy(), _model(),
+                settings.TargetLanguage, settings.SourceLanguage);
+            var result = await batch.RunAsync(selected, progress, _translateBatch.Token);
+
+            Status(_translateBatch.IsCancellationRequested
+                ? $"已取消：翻译 {result.Translated} 条，已完成部分已保留。"
+                : $"批量翻译完成：入库 {result.Translated} 条"
+                  + (result.Skipped > 0 ? $"，跳过 {result.Skipped} 条（排除规则或已是译文）" : string.Empty)
+                  + (result.Failed > 0 ? $"，失败 {result.Failed} 条" : string.Empty) + "。");
+            Reload();
+        }
+        catch (OperationCanceledException)
+        {
+            Status("批量翻译已取消，已完成部分已保留。");
+        }
+        catch (Exception failure)
+        {
+            // A dead backend must cost nothing but this one sentence.
+            Status($"翻译服务不可用：{failure.Message}");
+        }
+        finally
+        {
+            _translateBatch.Dispose();
+            _translateBatch = null;
+            TranslateBatchButton.IsEnabled = true;
+            TranslateCancelButton.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private void OnCancelTranslateBatch(object sender, RoutedEventArgs e)
+        => _translateBatch?.Cancel();
+
     private sealed record EntryItem(
         long Id,
         string Text,
@@ -575,7 +646,9 @@ public partial class LibraryWindow : Window
         ImageSource? Thumbnail,
         ImageSource? Icon,
         string? OriginalPath,
-        bool IsPinned)
+        bool IsPinned,
+        EntryKind Kind = EntryKind.Text,
+        long? TranslatedFrom = null)
     {
         public Visibility PinVisibility => IsPinned ? Visibility.Visible : Visibility.Collapsed;
 
@@ -615,7 +688,9 @@ public partial class LibraryWindow : Window
                 Decode(entry.ThumbnailPng, pixelWidth: 240),
                 iconOf(entry.SourceApp),
                 entry.OriginalPath,
-                entry.IsPinned);
+                entry.IsPinned,
+                entry.Kind,
+                entry.TranslatedFrom);
         }
 
         private static ImageSource? Decode(byte[]? png, int pixelWidth)

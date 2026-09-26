@@ -71,6 +71,13 @@ public sealed record Entry(
     /// </summary>
     public long? GroupId { get; init; }
 
+    /// <summary>
+    /// The entry this translation was made from, when the entry is one. The
+    /// link is a reference, not a leash: the original going away leaves the
+    /// translation standing, only unlinked.
+    /// </summary>
+    public long? TranslatedFrom { get; init; }
+
     public IReadOnlyList<string> Tags { get; init; } = [];
 
     /// <summary>False once retention has removed the original from disk.</summary>

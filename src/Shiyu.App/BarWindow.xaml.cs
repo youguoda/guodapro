@@ -282,6 +282,13 @@ internal sealed class BarCard : INotifyPropertyChanged
     /// <summary>A file copy made entirely of images previews its first file.</summary>
     public ImageSource? FilePreviewSource { get; init; }
 
+    /// <summary>True when this entry is Shiyu's own kept translation of another.</summary>
+    public bool IsTranslation { get; init; }
+
+    public Visibility TranslationVisibility => IsTranslation
+        ? Visibility.Visible
+        : Visibility.Collapsed;
+
     public Visibility FilePreviewVisibility => FilePreviewSource is null
         ? Visibility.Collapsed
         : Visibility.Visible;
@@ -666,7 +673,7 @@ internal partial class BarWindow : Window
             {
                 EntryKind.Image => "图片",
                 EntryKind.Files => "文件",
-                _ => "文本",
+                _ => entry.TranslatedFrom is null ? "文本" : "译文 · 译自原文",
             } + (entry.UseCount > 0 ? $" · 用过 {entry.UseCount} 次" : ""),
             WhenText = entry.CreatedAt.ToLocalTime().ToString("MM-dd HH:mm"),
             Icon = _icons.For(entry.SourceApp),
@@ -684,6 +691,7 @@ internal partial class BarWindow : Window
             GroupBadge = entry.GroupId is { } filedInto && _groupsById.TryGetValue(filedInto, out var pile)
                 ? pile.Name
                 : null,
+            IsTranslation = entry.TranslatedFrom is not null,
             FileRows = fileRows,
             FilePreviewSource = PreviewFileImage(entry),
             AllPathsDead = entry.Kind == EntryKind.Files && entry.Files.All(path => !File.Exists(path)),
