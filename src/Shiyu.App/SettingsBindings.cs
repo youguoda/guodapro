@@ -26,6 +26,7 @@ internal static class SettingsBindings
         "store.protect-favorites" => null,
         "store.protect-pinned" => null,
         "store.start-with-windows" => null,
+        "about.update-auto" => null,
         "store.retention-days" => settings.ImageRetentionDays.ToString(),
         "bar.text-lines" => settings.BarTextLines.ToString(),
         "bar.image-height" => settings.BarImageHeight.ToString(),
@@ -66,6 +67,7 @@ internal static class SettingsBindings
         "store.protect" => settings.ProtectEntries,
         "store.protect-favorites" => settings.ProtectFavorites,
         "store.protect-pinned" => settings.ProtectPinned,
+        "about.update-auto" => settings.UpdateAutoCheck,
         _ => null,
     };
 
@@ -87,6 +89,7 @@ internal static class SettingsBindings
         "store.protect" => current with { ProtectEntries = AsBool(text) },
         "store.protect-favorites" => current with { ProtectFavorites = AsBool(text) },
         "store.protect-pinned" => current with { ProtectPinned = AsBool(text) },
+        "about.update-auto" => current with { UpdateAutoCheck = AsBool(text) },
         "store.start-with-windows" => current with { StartWithWindows = AsBool(text) },
         "store.retention-days" => current with { ImageRetentionDays = int.Parse(text) },
         "bar.text-lines" => current with { BarTextLines = int.Parse(text) },

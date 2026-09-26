@@ -14,6 +14,7 @@ public sealed class TrayIcon : IDisposable
     private const uint QuitCommandId = 1;
     private const uint OpenLibraryCommandId = 2;
     private const uint OpenSettingsCommandId = 3;
+    private const uint CheckUpdateCommandId = 4;
     private const uint FirstEntryCommandId = 100;
 
     /// <summary>
@@ -38,6 +39,9 @@ public sealed class TrayIcon : IDisposable
     public event Action? OpenLibraryRequested;
 
     public event Action? OpenSettingsRequested;
+
+    /// <summary>Raised from the menu item — the manual entrance to the updater.</summary>
+    public event Action? UpdateCheckRequested;
 
     public TrayIcon(MessageWindow window, string tooltip)
     {
@@ -130,6 +134,8 @@ public sealed class TrayIcon : IDisposable
                 menu, NativeMethods.MfString, new UIntPtr(OpenLibraryCommandId), "打开管理窗口");
             NativeMethods.AppendMenuW(
                 menu, NativeMethods.MfString, new UIntPtr(OpenSettingsCommandId), "设置…");
+            NativeMethods.AppendMenuW(
+                menu, NativeMethods.MfString, new UIntPtr(CheckUpdateCommandId), "检查更新…");
             NativeMethods.AppendMenuW(menu, NativeMethods.MfString, new UIntPtr(QuitCommandId), "退出拾语");
 
             if (!NativeMethods.GetCursorPos(out var cursor))
@@ -159,6 +165,9 @@ public sealed class TrayIcon : IDisposable
                     break;
                 case OpenSettingsCommandId:
                     OpenSettingsRequested?.Invoke();
+                    break;
+                case CheckUpdateCommandId:
+                    UpdateCheckRequested?.Invoke();
                     break;
             }
         }

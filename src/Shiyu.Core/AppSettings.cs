@@ -89,6 +89,14 @@ public sealed record AppSettings
     public bool TakeOverWinV { get; init; }
 
     /// <summary>
+    /// Look for a newer release shortly after startup. On by default: for a
+    /// resident tool, an update channel nobody checks is an update channel
+    /// that does not exist. A found update only raises a tray notification —
+    /// installing stays a click away, never automatic.
+    /// </summary>
+    public bool UpdateAutoCheck { get; init; } = true;
+
+    /// <summary>
     /// A tray tool nobody starts is a tray tool nobody has; on by default,
     /// and the user can switch it off.
     /// </summary>

@@ -187,6 +187,10 @@ public static class SettingsSchema
             new SettingsSection("about.app", "拾语",
                 new SettingsItem("about.version", "版本", SettingsControl.ReadOnly, Keywords: ["版本"]),
                 new SettingsItem(
+                    "about.update-auto", "自动检查更新", SettingsControl.Toggle,
+                    Hint: "启动后悄悄查一次 GitHub Releases；发现新版本只提醒，安装永远要你亲手点。手动入口：托盘菜单「检查更新」。",
+                    Keywords: ["更新", "升级", "版本", "检查", "github"]),
+                new SettingsItem(
                     "about.onboarding", "新手引导", SettingsControl.Custom,
                     Hint: "重新运行首次启动时的引导。",
                     Keywords: ["引导", "首次", "新手"]))),

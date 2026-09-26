@@ -38,6 +38,18 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
+        // The staged copy of an update runs with this argument: it swaps the
+        // install and restarts the real application, showing nothing. Before
+        // anything else — a finalizer has no business owning a clipboard
+        // listener or a tray icon for the seconds it lives. Environment.Exit
+        // rather than Shutdown: OnExit tears down windows this path never
+        // built, and by then the staging reset has removed the staged copy's
+        // own DLLs, so even JITting that teardown method would crash.
+        if (UpdateService.TryRunFinalizer(e.Args))
+        {
+            Environment.Exit(0);
+        }
+
         try
         {
             Start();
@@ -66,6 +78,19 @@ public partial class App : Application
 
         _settings = AppSettings.Load(AppPaths.SettingsFile);
         AppPaths.UseDirectory(_settings.DataDirectoryOverride);
+
+        // A probe convenience in the same family as SHIYU_OPEN_SETTINGS: run
+        // against an isolated data directory so automated checks never touch a
+        // real history. Deliberately after the settings line — the settings
+        // file always wins in real use, the variable only exists for probes.
+        if (Environment.GetEnvironmentVariable("SHIYU_DATA_DIR") is { Length: > 0 } dataDirectory)
+        {
+            AppPaths.UseDirectory(dataDirectory);
+        }
+
+        // The finalizer's unfinished chore: it cannot delete the staged
+        // directory it was running from. By now it has exited.
+        UpdateStaging.CleanStagedIfIdle(AppPaths.DataDirectory);
         _store = EntryStore.Open(AppPaths.DatabaseFile);
         _icons = new AppIconCache(_store);
         _fileIcons = new FileTypeIcons();
@@ -100,6 +125,7 @@ public partial class App : Application
         _tray.QuitRequested += Shutdown;
         _tray.OpenLibraryRequested += ShowLibrary;
         _tray.OpenSettingsRequested += ShowSettings;
+        _tray.UpdateCheckRequested += ShowUpdateWindow;
 
         _writer = new WindowsClipboardWriter(_messageWindow);
 
@@ -118,6 +144,7 @@ public partial class App : Application
 
         StartRetention();
         ApplyStartupPreference();
+        StartUpdateWatch();
 
         // A probe convenience: SHIYU_OPEN_SETTINGS=1 opens the settings window
         // at startup, so automated checks can drive it without hunting for the
@@ -125,6 +152,13 @@ public partial class App : Application
         if (Environment.GetEnvironmentVariable("SHIYU_OPEN_SETTINGS") == "1")
         {
             ShowSettings();
+        }
+
+        // Same idea for the updater: open the update window at startup so
+        // automated checks can drive the manual flow end to end.
+        if (Environment.GetEnvironmentVariable("SHIYU_OPEN_UPDATE") == "1")
+        {
+            ShowUpdateWindow();
         }
 
         // The first-run guide asks the few things only the user knows. A
@@ -146,6 +180,57 @@ public partial class App : Application
             });
             wizard.Show();
         }
+    }
+
+    /// <summary>
+    /// The manual entrance to the updater: one window, from the tray menu.
+    /// </summary>
+    private void ShowUpdateWindow()
+    {
+        new UpdateWindow(new UpdateService(AppPaths.DataDirectory)) { Owner = null }.Show();
+    }
+
+    /// <summary>
+    /// One quiet check, shortly after startup, when the setting allows it.
+    /// Finding something new raises a tray notification and nothing else —
+    /// installing is the user's click, never ours. The listener and
+    /// everything else keeps running throughout; the check touches only the
+    /// network and the staging directory.
+    /// </summary>
+    private void StartUpdateWatch()
+    {
+        if (!_settings.UpdateAutoCheck)
+        {
+            return;
+        }
+
+        var deferred = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(5),
+        };
+
+        deferred.Tick += async (_, _) =>
+        {
+            deferred.Stop();
+
+            try
+            {
+                var updates = new UpdateService(AppPaths.DataDirectory);
+                if (await updates.CheckAsync() is { } release && release.IsNewerThan(UpdateService.Current))
+                {
+                    _tray?.ShowNotification(
+                        "拾语有新版本",
+                        $"v{release.Version.Text} 已发布。右键托盘图标 → 检查更新 安装。");
+                }
+            }
+            catch (Exception)
+            {
+                // A quiet check that cannot reach the channel says nothing:
+                // there is nothing the user could act on from a balloon.
+            }
+        };
+
+        deferred.Start();
     }
 
     /// <summary>
