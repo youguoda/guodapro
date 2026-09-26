@@ -39,10 +39,12 @@ public sealed partial class EntryStore
             command.CommandText = """
                 INSERT INTO entries (
                     text, source_app, created_at, kind, thumbnail, original_path,
-                    pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id)
+                    pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id,
+                    image_width, image_height)
                 VALUES (
                     $text, $sourceApp, $createdAt, $kind, $thumbnail, $originalPath,
-                    $pinned, $subType, $html, $rtf, $files, $favorite, $note, $useCount, $groupId);
+                    $pinned, $subType, $html, $rtf, $files, $favorite, $note, $useCount, $groupId,
+                    $w, $h);
                 SELECT last_insert_rowid();
                 """;
 
@@ -61,6 +63,17 @@ public sealed partial class EntryStore
             command.Parameters.AddWithValue("$note", (object?)entry.Note ?? DBNull.Value);
             command.Parameters.AddWithValue("$useCount", entry.UseCount);
             command.Parameters.AddWithValue("$groupId", (object?)groupId ?? DBNull.Value);
+
+            // A backup made before the size columns existed imports zeros;
+            // the thumbnail is right there in the row and knows the shape.
+            var (width, height) = (entry.ImageWidth, entry.ImageHeight);
+            if (width == 0 && entry.ThumbnailPng is { Length: > 0 } png && PngSize.Read(png) is { } size)
+            {
+                (width, height) = (size.Width, size.Height);
+            }
+
+            command.Parameters.AddWithValue("$w", width);
+            command.Parameters.AddWithValue("$h", height);
 
             var id = (long)command.ExecuteScalar()!;
 

@@ -69,6 +69,14 @@ public sealed record AppSettings
     /// <summary>Whether copied file lists are recorded.</summary>
     public bool RecordFiles { get; init; } = true;
 
+    /// <summary>
+    /// How long the pointer must rest on a card before the full preview
+    /// appears, in milliseconds. Zero disables hover previews — hold Space
+    /// still works. The default is a deliberate beat: fast enough to feel
+    /// like an answer, slow enough that a pass-through never summons it.
+    /// </summary>
+    public int PreviewHoverDelayMs { get; init; } = 500;
+
     /// <summary>Set once the first-run guide has run or been skipped; it never returns on its own.</summary>
     public bool OnboardingCompleted { get; init; }
 

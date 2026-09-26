@@ -237,6 +237,37 @@ internal static class BrushExtensions
 }
 
 /// <summary>
+/// A window's rectangle in physical pixels, read straight from the OS — the
+/// one source that is right on every monitor and scale combination.
+/// </summary>
+internal static class WindowRects
+{
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool GetWindowRect(IntPtr handle, out NativeRect rect);
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct NativeRect
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
+    public static bool TryGet(IntPtr handle, out ScreenRect rect)
+    {
+        if (handle != IntPtr.Zero && GetWindowRect(handle, out var native))
+        {
+            rect = new ScreenRect(native.Left, native.Top, native.Right, native.Bottom);
+            return true;
+        }
+
+        rect = default;
+        return false;
+    }
+}
+
+/// <summary>
 /// One card's view state. A class rather than a record because selection is
 /// mutable and the card's own highlight follows it.
 /// </summary>
@@ -404,6 +435,11 @@ internal sealed class BarCard : INotifyPropertyChanged
 
     public int ImageHeight { get; init; }
 
+    /// <summary>The original image's pixel size, for the preview panel's pre-computed shape.</summary>
+    public int PixelWidth { get; init; }
+
+    public int PixelHeight { get; init; }
+
     public bool IsPinned { get; init; }
 
     public Visibility IconVisibility => Icon is null ? Visibility.Collapsed : Visibility.Visible;
@@ -466,6 +502,18 @@ internal partial class BarWindow : Window
     private readonly ObservableCollection<BarCard> _cards = [];
     private readonly System.Windows.Threading.DispatcherTimer _searchDebounce;
     private readonly System.Windows.Threading.DispatcherTimer _behindCheck;
+
+    // --- preview panel (ticket 17) ------------------------------------------------
+    // The policy decides when the preview opens, follows, and closes; this
+    // window supplies the events and owns the timers. One repeating tick
+    // drives every time-based decision, so there are no drifting timers.
+
+    private PreviewWindow? _preview;
+
+    private PreviewPolicy _previewPolicy = new(500, () => Environment.TickCount64);
+
+    private readonly System.Windows.Threading.DispatcherTimer _previewTick;
+
     private BarCard? _selected;
     private AppSettings _settings;
     private int _seenCount = -1;
@@ -505,6 +553,10 @@ internal partial class BarWindow : Window
         _behindCheck = new System.Windows.Threading.DispatcherTimer { Interval = BehindCheck };
         _behindCheck.Tick += (_, _) => ReloadIfBehind();
 
+        _previewPolicy = new PreviewPolicy(settings.PreviewHoverDelayMs, () => Environment.TickCount64);
+        _previewTick = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
+        _previewTick.Tick += (_, _) => RunPreviewCommand(_previewPolicy.Tick());
+
         PinnedList.ItemsSource = _pinned;
         Cards.ItemsSource = _cards;
 
@@ -518,6 +570,10 @@ internal partial class BarWindow : Window
     public void ApplySettings(AppSettings settings)
     {
         _settings = settings;
+
+        // A changed dwell or a disabled hover takes effect on the next event;
+        // a preview already up keeps its own rules until it closes.
+        _previewPolicy = new PreviewPolicy(settings.PreviewHoverDelayMs, () => Environment.TickCount64);
         Rebuild();
     }
 
@@ -535,6 +591,7 @@ internal partial class BarWindow : Window
 
         ReloadIfBehind(force: true);
         _behindCheck.Start();
+        _previewTick.Start();
         MoveBesideCursorIfWanted();
         Show();
         Activate();
@@ -582,6 +639,8 @@ internal partial class BarWindow : Window
     public void Dismiss()
     {
         _behindCheck.Stop();
+        _previewTick.Stop();
+        RunPreviewCommand(_previewPolicy.BarHidden());
 
         var fade = Motion.Fade(0);
         fade.Completed += (_, _) =>
@@ -748,6 +807,8 @@ internal partial class BarWindow : Window
                 : null,
             TextLines = Math.Max(1, _settings.BarTextLines),
             ImageHeight = Math.Max(24, _settings.BarImageHeight),
+            PixelWidth = entry.ImageWidth,
+            PixelHeight = entry.ImageHeight,
             IsPinned = entry.IsPinned,
         };
 
@@ -878,6 +939,10 @@ internal partial class BarWindow : Window
 
     private void OnCardsScrolled(object sender, ScrollChangedEventArgs e)
     {
+        // Scrolling says the user has moved on: a hover preview goes, a
+        // held-space preview answers to its key alone.
+        RunPreviewCommand(_previewPolicy.Scrolled());
+
         if (!_browser.HasMore
             || e.VerticalOffset + e.ViewportHeight < e.ExtentHeight - 400)
         {
@@ -1727,6 +1792,13 @@ internal partial class BarWindow : Window
 
     private void OnCardMouseEnter(object sender, MouseEventArgs e)
     {
+        // The preview hears about the card even when the tray visuals are not
+        // reachable: policy first, presentation second.
+        if (((FrameworkElement)sender).DataContext is BarCard entered)
+        {
+            RunPreviewCommand(_previewPolicy.HoverEnter(entered.Id));
+        }
+
         if (Tree.FindDescendant<ActionTray>((DependencyObject)sender) is not { } tray
             || Tree.FindDescendant<HandoverText>((DependencyObject)sender) is not { } handover)
         {
@@ -1746,6 +1818,11 @@ internal partial class BarWindow : Window
 
     private void OnCardMouseLeave(object sender, MouseEventArgs e)
     {
+        if (((FrameworkElement)sender).DataContext is BarCard)
+        {
+            RunPreviewCommand(_previewPolicy.HoverLeave());
+        }
+
         if (Tree.FindDescendant<ActionTray>((DependencyObject)sender) is not { } tray
             || Tree.FindDescendant<HandoverText>((DependencyObject)sender) is not { } handover)
         {
@@ -1860,6 +1937,11 @@ internal partial class BarWindow : Window
         {
             _returnTo = ForegroundWindow.Current();
         }
+
+        // The bar is about to vanish; its preview must not be left hovering
+        // over the destination the paste is about to land in.
+        RunPreviewCommand(_previewPolicy.BarHidden());
+        _previewTick.Stop();
 
         Hide();
         _returnTo.Restore();
@@ -2019,6 +2101,13 @@ internal partial class BarWindow : Window
 
     private void RemoveCard(BarCard card)
     {
+        // A preview of a card that no longer exists is a panel describing a
+        // ghost; it comes down before the row does.
+        if (_preview is { IsVisible: true, CardId: var shown } && shown == card.Id)
+        {
+            RunPreviewCommand(_previewPolicy.Escape());
+        }
+
         var inRest = _cards.IndexOf(card);
         if (inRest >= 0)
         {
@@ -2092,6 +2181,103 @@ internal partial class BarWindow : Window
         }
     }
 
+    // --- preview panel ---------------------------------------------------------
+
+    /// <summary>
+    /// Executes one policy decision. Open and Retarget carry the panel to the
+    /// card it belongs beside; Close takes it away. Everything time-based
+    /// flows through the tick into here, so there is exactly one code path
+    /// that shows and moves the panel.
+    /// </summary>
+    private void RunPreviewCommand(PreviewCommand command)
+    {
+        // The panel inherits this window's DPI scale: before its first show it
+        // has no source of its own, and a default of 1.0 misplaces it on any
+        // scaled desk.
+        var scale = PresentationSource.FromVisual(this)?.CompositionTarget?.TransformToDevice
+            ?? Matrix.Identity;
+
+        switch (command)
+        {
+            case PreviewCommand.Open when CardById(_previewPolicy.Card) is { } opening:
+                EnsurePreview().ShowFor(opening, AnchorFor(opening) ?? WindowRect(), slide: false,
+                    scaleX: scale.M11, scaleY: scale.M22);
+                break;
+
+            case PreviewCommand.Retarget when CardById(_previewPolicy.Card) is { } moving:
+                EnsurePreview().ShowFor(moving, AnchorFor(moving) ?? WindowRect(), slide: true,
+                    scaleX: scale.M11, scaleY: scale.M22);
+                break;
+
+            case PreviewCommand.Close:
+                _preview?.TakeDown();
+                break;
+        }
+    }
+
+    private PreviewWindow EnsurePreview()
+    {
+        if (_preview is null)
+        {
+            _preview = new PreviewWindow(_fileIcons);
+            _preview.PointerRestingOnPanel += () => RunPreviewCommand(_previewPolicy.PreviewEntered());
+            _preview.PointerLeftPanel += () => RunPreviewCommand(_previewPolicy.PreviewLeft());
+        }
+
+        return _preview;
+    }
+
+    /// <summary>The panel follows the pointer only between realised cards; off-list the bar anchors it.</summary>
+    private BarCard? CardById(long? id)
+        => id is { } key ? VisibleRows.FirstOrDefault(card => card.Id == key) : null;
+
+    /// <summary>
+    /// The hovered or selected card's rectangle in physical pixels — where the
+    /// preview hangs from. Null when the card is not realized (a keyboard move
+    /// still scrolling into view); the settle beat usually resolves that.
+    ///
+    /// Built from the window's own physical rectangle plus the card's offset
+    /// inside it, rather than PointToScreen: on a desk with mixed scale
+    /// factors, PointToScreen composes through the wrong monitor's transform
+    /// and the anchor lands on the wrong screen.
+    /// </summary>
+    private ScreenRect? AnchorFor(BarCard card)
+    {
+        var container = PinnedList.ItemContainerGenerator.ContainerFromItem(card);
+        if (container is null)
+        {
+            container = Cards.ItemContainerGenerator.ContainerFromItem(card);
+        }
+
+        if (container is not FrameworkElement element || element.ActualWidth <= 0)
+        {
+            return null;
+        }
+
+        var handle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+        if (!WindowRects.TryGet(handle, out var window))
+        {
+            return null;
+        }
+
+        var offset = element.TranslatePoint(new Point(0, 0), this);
+        var scale = PresentationSource.FromVisual(this)?.CompositionTarget?.TransformToDevice
+            ?? Matrix.Identity;
+
+        var anchorRect = new ScreenRect(
+            window.Left + (int)Math.Round(offset.X * scale.M11),
+            window.Top + (int)Math.Round(offset.Y * scale.M22),
+            window.Left + (int)Math.Round((offset.X + element.ActualWidth) * scale.M11),
+            window.Top + (int)Math.Round((offset.Y + element.ActualHeight) * scale.M22));
+
+        return anchorRect;
+    }
+
+    private ScreenRect WindowRect()
+        => WindowRects.TryGet(new System.Windows.Interop.WindowInteropHelper(this).Handle, out var rect)
+            ? rect
+            : new ScreenRect(0, 0, 0, 0);
+
     // --- keyboard model --------------------------------------------------------
 
     /// <summary>Rows as displayed: pinned first, then the rest. Number keys and navigation count these.</summary>
@@ -2128,6 +2314,10 @@ internal partial class BarWindow : Window
 
         Select(rows[next]);
         Cards.ScrollIntoView(rows[next]);
+
+        // Noted, not followed: the panel waits for the selection to settle so
+        // it glides to a still target instead of chasing a scrolling one.
+        RunPreviewCommand(_previewPolicy.SelectionMoved(rows[next].Id));
     }
 
     // --- key hints (ticket 14) -------------------------------------------------
@@ -2212,6 +2402,14 @@ internal partial class BarWindow : Window
 
     private void OnPreviewKeyUp(object sender, KeyEventArgs e)
     {
+        // Releasing Space takes down only what Space opened — a hover preview
+        // under the pointer keeps its own rules. The guard is loose on
+        // purpose: focus may have wandered between press and release.
+        if (e.Key is Key.Space)
+        {
+            RunPreviewCommand(_previewPolicy.SpaceUp());
+        }
+
         if (e.Key is Key.LeftCtrl or Key.RightCtrl && _keyHintsOn
             && (Keyboard.Modifiers & ModifierKeys.Control) == 0)
         {
@@ -2280,6 +2478,19 @@ internal partial class BarWindow : Window
             case Key.Down when Keyboard.FocusedElement is not ComboBox:
                 e.Handled = true;
                 Move(+1);
+                break;
+
+            // Held Space previews the active card in full (ticket 17). The
+            // search box is focused right after summoning, so the rule has to
+            // tell an empty box from a query being typed: with nothing typed,
+            // Space is free to mean "show me"; mid-query it stays a space.
+            case Key.Space when Keyboard.Modifiers == ModifierKeys.None
+                && (SearchBox.Text.Length == 0 || !IsTyping):
+                e.Handled = true;
+                if (_selected is { } card)
+                {
+                    RunPreviewCommand(_previewPolicy.SpaceDown(card.Id));
+                }
                 break;
 
             case Key.Enter:
@@ -2359,11 +2570,15 @@ internal partial class BarWindow : Window
         var hasTag = TagFilter.SelectedItem as string is { } tag && tag != AnyTag;
         var hasKind = KindFilter.SelectedIndex != 0;
 
-        switch (BarKeyboard.NextEscape(previewOpen: false, hasTag, hasKind))
+        switch (BarKeyboard.NextEscape(
+            previewOpen: _preview is { IsVisible: true },
+            hasTag,
+            hasKind))
         {
             case BarKeyboard.EscapeAction.ClosePreview:
-                // Preview arrives with ticket 17's window; the level is
-                // already part of the stack.
+                // The panel's level in the stack, ready since the keyboard
+                // model was written; this is its wiring.
+                RunPreviewCommand(_previewPolicy.Escape());
                 break;
 
             case BarKeyboard.EscapeAction.ClearTagFilter:

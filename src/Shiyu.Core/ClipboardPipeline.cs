@@ -161,7 +161,9 @@ public sealed partial class ClipboardPipeline : IDisposable
                 rendered.ThumbnailPng,
                 path,
                 sourceApp,
-                now);
+                now,
+                rendered.Width,
+                rendered.Height);
         }
         catch (Exception failure)
         {

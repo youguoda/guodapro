@@ -101,7 +101,11 @@ public static class SettingsSchema
                 new SettingsItem(
                     "bar.at-cursor", "光标旁呼出", SettingsControl.Toggle,
                     Hint: "窄条出现在光标/输入位置附近，与系统 Win+V 面板一致；关闭则固定在你上次拖放的位置。",
-                    Keywords: ["位置", "光标", "呼出", "弹出", "输入"])),
+                    Keywords: ["位置", "光标", "呼出", "弹出", "输入"]),
+                new SettingsItem(
+                    "look.preview-hover", "悬停预览延迟", SettingsControl.Number, Min: 0, Max: 2000,
+                    Hint: "鼠标在卡片上停留多少毫秒后弹出完整预览；0 表示关闭悬停预览（按住空格仍可预览）。",
+                    Keywords: ["预览", "悬停", "停留", "空格", "完整", "延迟"])),
             new SettingsSection("look.density", "密度",
                 new SettingsItem(
                     "bar.text-lines", "文本行数", SettingsControl.Number, Min: 1, Max: 20,

@@ -39,7 +39,7 @@ public sealed partial class EntryStore : IDisposable
     /// <summary>
     /// The shape the code expects. Bumped whenever a migration is added below.
     /// </summary>
-    private const int SchemaVersion = 10;
+    private const int SchemaVersion = 11;
 
     /// <summary>
     /// Joins tag names into one column. A unit separator, because it cannot
@@ -185,12 +185,74 @@ public sealed partial class EntryStore : IDisposable
             Execute("ALTER TABLE entries ADD COLUMN translated_from INTEGER NULL REFERENCES entries(id) ON DELETE SET NULL;");
         }
 
+        if (from < 11)
+        {
+            // The original image's pixel size, so the preview panel can pick
+            // its final size from the database without loading a thing. Rows
+            // that predate the column get theirs read back out of the
+            // thumbnail header — same aspect, and it is already in the row.
+            Execute("ALTER TABLE entries ADD COLUMN image_width INTEGER NOT NULL DEFAULT 0;");
+            Execute("ALTER TABLE entries ADD COLUMN image_height INTEGER NOT NULL DEFAULT 0;");
+            BackfillImageSizes();
+        }
+
         if (from != SchemaVersion)
         {
             Execute($"PRAGMA user_version = {SchemaVersion};");
         }
 
         BackfillSubtypes();
+    }
+
+    /// <summary>
+    /// Fills <c>image_width</c>/<c>image_height</c> for image rows that have
+    /// neither, from the thumbnail's IHDR chunk. Idempotent by the WHERE
+    /// clause, so a database that arrives half-backfilled finishes the job on
+    /// the next open.
+    /// </summary>
+    private void BackfillImageSizes()
+    {
+        using var read = _connection.CreateCommand();
+        read.CommandText = "SELECT id, thumbnail FROM entries WHERE kind = 1 AND image_width = 0;";
+        var pending = new List<(long Id, int Width, int Height)>();
+
+        using (read)
+        {
+            using var reader = read.ExecuteReader();
+            while (reader.Read())
+            {
+                if (reader.GetValue(1) is byte[] { Length: > 0 } png
+                    && PngSize.Read(png) is { } size)
+                {
+                    pending.Add((reader.GetInt64(0), size.Width, size.Height));
+                }
+            }
+        }
+
+        if (pending.Count == 0)
+        {
+            return;
+        }
+
+        using var write = _connection.CreateCommand();
+        write.CommandText = """
+            UPDATE entries SET image_width = $w, image_height = $h WHERE id = $id;
+            """;
+        var id = write.CreateParameter();
+        id.ParameterName = "$id";
+        var width = write.CreateParameter();
+        width.ParameterName = "$w";
+        var height = write.CreateParameter();
+        height.ParameterName = "$h";
+        write.Parameters.AddRange([id, width, height]);
+
+        foreach (var (rowId, w, h) in pending)
+        {
+            id.Value = rowId;
+            width.Value = w;
+            height.Value = h;
+            write.ExecuteNonQuery();
+        }
     }
 
     /// <summary>
@@ -379,12 +441,14 @@ public sealed partial class EntryStore : IDisposable
         byte[] thumbnailPng,
         string originalPath,
         string? sourceApp,
-        DateTimeOffset createdAt)
+        DateTimeOffset createdAt,
+        int width = 0,
+        int height = 0)
     {
         using var command = _connection.CreateCommand();
         command.CommandText = """
-            INSERT INTO entries (text, source_app, created_at, kind, thumbnail, original_path)
-            VALUES ($text, $sourceApp, $createdAt, $kind, $thumbnail, $originalPath)
+            INSERT INTO entries (text, source_app, created_at, kind, thumbnail, original_path, image_width, image_height)
+            VALUES ($text, $sourceApp, $createdAt, $kind, $thumbnail, $originalPath, $w, $h)
             RETURNING id;
             """;
         command.Parameters.AddWithValue("$text", label);
@@ -393,6 +457,8 @@ public sealed partial class EntryStore : IDisposable
         command.Parameters.AddWithValue("$kind", (int)EntryKind.Image);
         command.Parameters.AddWithValue("$thumbnail", thumbnailPng);
         command.Parameters.AddWithValue("$originalPath", originalPath);
+        command.Parameters.AddWithValue("$w", width);
+        command.Parameters.AddWithValue("$h", height);
 
         var id = (long)command.ExecuteScalar()!;
         return new Entry(id, label, sourceApp, createdAt)
@@ -400,6 +466,8 @@ public sealed partial class EntryStore : IDisposable
             Kind = EntryKind.Image,
             ThumbnailPng = thumbnailPng,
             OriginalPath = originalPath,
+            ImageWidth = width,
+            ImageHeight = height,
         };
     }
 
@@ -425,7 +493,7 @@ public sealed partial class EntryStore : IDisposable
     {
         using var command = _connection.CreateCommand();
         command.CommandText = $"""
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from,
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from, image_width, image_height,
                    (SELECT group_concat(t.name, char(31)) FROM tags t
                       JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
@@ -444,7 +512,7 @@ public sealed partial class EntryStore : IDisposable
     {
         using var command = _connection.CreateCommand();
         command.CommandText = $"""
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from,
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from, image_width, image_height,
                    (SELECT group_concat(t.name, char(31)) FROM tags t
                       JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
@@ -461,7 +529,7 @@ public sealed partial class EntryStore : IDisposable
     {
         using var command = _connection.CreateCommand();
         command.CommandText = $"""
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from,
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from, image_width, image_height,
                    (SELECT group_concat(t.name, char(31)) FROM tags t
                       JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
@@ -526,7 +594,7 @@ public sealed partial class EntryStore : IDisposable
 
         using var command = _connection.CreateCommand();
         command.CommandText = """
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from,
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from, image_width, image_height,
                    (SELECT group_concat(t.name, char(31)) FROM tags t
                       JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
@@ -619,7 +687,7 @@ public sealed partial class EntryStore : IDisposable
         var where = conditions.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", conditions);
 
         command.CommandText = $"""
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from,
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from, image_width, image_height,
                    (SELECT group_concat(t.name, char(31)) FROM tags t
                       JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
@@ -642,7 +710,7 @@ public sealed partial class EntryStore : IDisposable
     {
         using var command = _connection.CreateCommand();
         command.CommandText = """
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from,
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from, image_width, image_height,
                    (SELECT group_concat(t.name, char(31)) FROM tags t
                       JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
@@ -776,7 +844,7 @@ public sealed partial class EntryStore : IDisposable
     {
         using var command = _connection.CreateCommand();
         command.CommandText = """
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from,
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from, image_width, image_height,
                    (SELECT group_concat(t.name, char(31)) FROM tags t
                       JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
             FROM entries
@@ -821,12 +889,14 @@ public sealed partial class EntryStore : IDisposable
                 UseCount = reader.GetInt32(14),
                 GroupId = reader.IsDBNull(15) ? null : reader.GetInt64(15),
                 TranslatedFrom = reader.IsDBNull(16) ? null : reader.GetInt64(16),
+                ImageWidth = reader.GetInt32(17),
+                ImageHeight = reader.GetInt32(18),
 
                 // Joined in rather than fetched per row: a list of a hundred
                 // entries would otherwise be a hundred extra queries.
-                Tags = reader.IsDBNull(17)
+                Tags = reader.IsDBNull(19)
                     ? []
-                    : reader.GetString(17).Split(TagSeparator, StringSplitOptions.RemoveEmptyEntries),
+                    : reader.GetString(19).Split(TagSeparator, StringSplitOptions.RemoveEmptyEntries),
             });
         }
 

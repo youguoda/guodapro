@@ -47,6 +47,15 @@ public sealed record Entry(
 
     public string? OriginalPath { get; init; }
 
+    /// <summary>
+    /// The original image's pixel size, recorded when it was copied so the
+    /// preview panel can know its shape without loading anything. Zero for
+    /// rows that predate the column — and for every non-image.
+    /// </summary>
+    public int ImageWidth { get; init; }
+
+    public int ImageHeight { get; init; }
+
     /// <summary>Pinned entries sort ahead of everything else.</summary>
     public bool IsPinned { get; init; }
 
