@@ -564,17 +564,32 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// 单词词典的两条路（票 35）：英文单词走免费词典（600ms 预算内补上，
-    /// 否则静默放弃）；中文单词走 LLM 词典化兜底；其余文本不吃词典卡。
-    /// 词典兜底只认自备密钥——公共通道只有 /translate 一张脸，拿不到词典
-    /// 化 prompt；没有自己的后端时兜底静默让位，英文词典卡不受影响。
+    /// 单词词典的路（票 35 + 2026-09-27 回退修正）：英文单词先走免费词典
+    /// （600ms 预算），不可达或没查到时**回退 LLM 词典化**（8s 预算，秒级
+    /// 迟到也照常上屏）——实测 dictionaryapi.dev 在本机网络完全不可达，无
+    /// 回退等于没有卡。中文单词直接 LLM 词典化；其余文本不吃词典卡。
+    /// 回退只认自备密钥——公共通道只有 /translate 一张脸；没有自己的后端
+    /// 时慢路缺席，行为退回票 35 原状。
     /// </summary>
     private IDictionaryApi? BuildDictionary(string word)
         => DictionaryWord.IsEnglishWord(word)
-            ? new BudgetedDictionary(new FreeDictionaryApi())
+            ? new FallbackDictionary(
+                new BudgetedDictionary(new FreeDictionaryApi()),
+                OwnKeyDictionary())
             : DictionaryWord.IsChineseWord(word)
-                ? new LlmDictionaryApi(new OpenAiCompatibleBackend(_settings.Backend))
+                ? OwnKeyDictionary()
                 : null;
+
+    /// <summary>
+    /// 自备密钥的 LLM 词典路：有 key 才有路。8s 预算罩住流式取卡——比免费
+    /// 路宽一个数量级，因为它是兜底，慢到也仍然胜过没有卡。
+    /// </summary>
+    private IDictionaryApi? OwnKeyDictionary()
+        => string.IsNullOrWhiteSpace(_settings.BackendApiKey)
+            ? null
+            : new BudgetedDictionary(
+                new LlmDictionaryApi(new OpenAiCompatibleBackend(_settings.Backend)),
+                TimeSpan.FromSeconds(8));
 
     /// <summary>
     /// Files a kept translation. The link is made only when the original was

@@ -8,7 +8,7 @@ namespace Shiyu.Core;
 /// 生效；内层的任何结果与异常到达时若预算已过，也只是“没有卡”。
 /// </summary>
 public sealed class BudgetedDictionary(IDictionaryApi inner, TimeSpan? budget = null)
-    : IDictionaryApi
+    : IDictionaryApi, IDisposable
 {
     public static readonly TimeSpan DefaultBudget = TimeSpan.FromMilliseconds(600);
 
@@ -27,4 +27,10 @@ public sealed class BudgetedDictionary(IDictionaryApi inner, TimeSpan? budget = 
             return null;
         }
     }
+
+    /// <summary>
+    /// 面板对每次查词组装的端口按次释放；内层的 HttpClient（免费 API）与
+    /// 模型连接（LLM API）跟着内层一起走，而不是等 GC 收捡套接字。
+    /// </summary>
+    public void Dispose() => (inner as IDisposable)?.Dispose();
 }
