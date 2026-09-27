@@ -1,0 +1,793 @@
+using System.IO;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using Shiyu.Core;
+using Shiyu.Windows;
+
+namespace Shiyu.App;
+
+internal partial class BarWindow
+{
+    // --- card context menu ----------------------------------------------------
+
+    private Popup? _cardMenu;
+
+    private Popup? _cardSubMenu;
+
+    /// <summary>
+    /// The right-click menu is a Popup the app renders itself, not a system
+    /// ContextMenu: a system menu takes focus, and a bar that never activates
+    /// can find itself hidden once the menu closes — the user's action would
+    /// die half-done. A Popup never activates anything.
+    /// </summary>
+    private void OnCardRightClick(object sender, MouseButtonEventArgs e)
+    {
+        if (((FrameworkElement)sender).DataContext is not BarCard card)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        Select(card);
+        CloseCardMenu();
+        OpenCardMenu(card, (FrameworkElement)sender, e.GetPosition((IInputElement)sender));
+    }
+
+    private void OpenCardMenu(BarCard card, FrameworkElement anchor, Point at)
+    {
+        var panel = new StackPanel { MinWidth = 172 };
+
+        foreach (var action in ActionsFor(card))
+        {
+            // 归组 opens its own submenu here — the tray button opens the
+            // chooser popup instead; a menu is where a submenu belongs.
+            if (action == "group")
+            {
+                panel.Children.Add(GroupSubmenuItem(card));
+                continue;
+            }
+
+            var captured = action;
+            panel.Children.Add(MenuRow(
+                HoverActions.Name(action),
+                ShortcutFor(action),
+                HoverActions.IsDestructive(captured),
+                () =>
+                {
+                    CloseCardMenu();
+                    ExecuteAction(captured, card, feedback: null);
+                }));
+        }
+
+        _cardMenu = new Popup
+        {
+            Child = WithPopupFont(MenuSurface(panel)),
+            PlacementTarget = anchor,
+            Placement = PlacementMode.RelativePoint,
+            PlacementRectangle = new Rect(at.X, at.Y, 0, 0),
+            StaysOpen = false,
+            AllowsTransparency = true,
+        };
+        _cardMenu.Opened += (_, _) => FlipIntoWorkArea(_cardMenu);
+        _cardMenu.IsOpen = true;
+    }
+
+    private void CloseCardMenu()
+    {
+        if (_cardSubMenu is not null)
+        {
+            _cardSubMenu.IsOpen = false;
+            _cardSubMenu = null;
+        }
+
+        if (_cardMenu is not null)
+        {
+            _cardMenu.IsOpen = false;
+            _cardMenu = null;
+        }
+    }
+
+    /// <summary>What the menu shows next to an action: the key that runs it.</summary>
+    private static string ShortcutFor(string action) => action switch
+    {
+        "paste" => "Enter",
+        _ => BarKeys.TrayKey(action) ?? string.Empty,
+    };
+
+    private UIElement MenuRow(string label, string shortcut, bool danger, Action run)
+    {
+        var name = new TextBlock { Text = label };
+        if (danger)
+        {
+            name.SetResourceReference(TextBlock.ForegroundProperty, "Brush.Danger");
+        }
+
+        var key = new TextBlock { Text = shortcut, MinWidth = 26, TextAlignment = TextAlignment.Right };
+        key.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextTertiary");
+        DockPanel.SetDock(key, Dock.Right);
+
+        var content = new DockPanel();
+        content.Children.Add(key);
+        content.Children.Add(name);
+
+        var row = new Button
+        {
+            Content = content,
+            Padding = new Thickness(10, 5, 10, 5),
+            Margin = new Thickness(0, 0, 0, 1),
+            Cursor = Cursors.Hand,
+        };
+        row.Click += (_, _) => run();
+        return row;
+    }
+
+    /// <summary>The one second-level menu: filing the card into a group.</summary>
+    private UIElement GroupSubmenuItem(BarCard card)
+    {
+        var label = new TextBlock { Text = "归组" };
+        var arrow = new TextBlock { Text = "▸", MinWidth = 26, TextAlignment = TextAlignment.Right };
+        arrow.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextTertiary");
+        DockPanel.SetDock(arrow, Dock.Right);
+
+        var content = new DockPanel();
+        content.Children.Add(arrow);
+        content.Children.Add(label);
+
+        var row = new Button
+        {
+            Content = content,
+            Padding = new Thickness(10, 5, 10, 5),
+            Margin = new Thickness(0, 0, 0, 1),
+            Cursor = Cursors.Hand,
+        };
+
+        row.MouseEnter += (_, _) =>
+        {
+            if (_cardSubMenu is not null)
+            {
+                _cardSubMenu.IsOpen = false;
+            }
+
+            var list = new StackPanel { MinWidth = 140 };
+            foreach (var group in _store.Groups())
+            {
+                var captured = group;
+                var item = new Button
+                {
+                    Content = $"{group.Icon ?? "组"} {group.Name}",
+                    Padding = new Thickness(10, 5, 10, 5),
+                    Margin = new Thickness(0, 0, 0, 1),
+                    Cursor = Cursors.Hand,
+                };
+                item.Click += (_, _) =>
+                {
+                    CloseCardMenu();
+                    FileCardInto(card, captured.Id);
+                };
+                list.Children.Add(item);
+            }
+
+            var ungrouped = new Button
+            {
+                Content = "未分组",
+                Padding = new Thickness(10, 5, 10, 5),
+                Margin = new Thickness(0, 0, 0, 2),
+                Cursor = Cursors.Hand,
+            };
+            ungrouped.Click += (_, _) =>
+            {
+                CloseCardMenu();
+                FileCardInto(card, null);
+            };
+            list.Children.Add(ungrouped);
+
+            var manage = new Button { Content = "管理分组…", Padding = new Thickness(10, 5, 10, 5), Cursor = Cursors.Hand };
+            manage.Click += (_, _) =>
+            {
+                CloseCardMenu();
+                OnManageGroups(this, new RoutedEventArgs());
+            };
+            list.Children.Add(manage);
+
+            _cardSubMenu = new Popup
+            {
+                Child = WithPopupFont(MenuSurface(list)),
+                PlacementTarget = row,
+                Placement = PlacementMode.Right,
+                StaysOpen = false,
+                AllowsTransparency = true,
+            };
+            _cardSubMenu.IsOpen = true;
+        };
+
+        return row;
+    }
+
+    private static Border MenuSurface(StackPanel panel)
+    {
+        // The WithPopupFont wrapper carries the font: a popup lives in its own
+        // HWND with no property inheritance from the bar, and its text would
+        // otherwise fall back to the 12px system font.
+        var border = new Border
+        {
+            Child = WithPopupFont(panel),
+            Padding = new Thickness(4),
+            CornerRadius = new CornerRadius(6),
+        };
+        border.SetResourceReference(BackgroundProperty, "Brush.Surface");
+        border.SetResourceReference(BorderBrushProperty, "Brush.Border");
+        border.BorderThickness = new Thickness(1);
+        return border;
+    }
+
+    /// <summary>
+    /// A popup lives in its own HWND with no property inheritance from the
+    /// bar — its text would fall back to the 12px system font. Neither Popup
+    /// nor Border nor StackPanel is a Control, so the font rides on a
+    /// ContentControl wrapper, which every child inherits from.
+    /// </summary>
+    private static ContentControl WithPopupFont(FrameworkElement content)
+    {
+        return new ContentControl
+        {
+            Content = content,
+            FontFamily = PopupFont,
+            FontSize = PopupText,
+        };
+    }
+
+    /// <summary>The popup font stack (tokens), shared by every self-built menu.</summary>
+    private static FontFamily PopupFont
+        => (FontFamily)Application.Current.FindResource("Font.Ui");
+
+    private static double PopupText
+        => (double)Application.Current.FindResource("Size.Body");
+
+    /// <summary>
+    /// A menu that would hang off the screen edge is nudged back in — measured
+    /// in physical pixels against the work area of the monitor it is on, and
+    /// shifted in device-independent units.
+    /// </summary>
+    private static void FlipIntoWorkArea(Popup popup)
+    {
+        if (popup.Child is not FrameworkElement content
+            || PresentationSource.FromVisual(content) is not { } source
+            || source.CompositionTarget is not { } transform)
+        {
+            return;
+        }
+
+        var scale = transform.TransformToDevice;
+        var topLeft = content.PointToScreen(new Point(0, 0));
+        var width = content.ActualWidth * scale.M11;
+        var height = content.ActualHeight * scale.M22;
+        var work = ScreenGeometry.WorkAreaAt(new ScreenPoint((int)topLeft.X, (int)topLeft.Y));
+
+        if (topLeft.X + width > work.Right)
+        {
+            popup.HorizontalOffset -= (topLeft.X + width - work.Right) / scale.M11;
+        }
+
+        if (topLeft.Y + height > work.Bottom)
+        {
+            popup.VerticalOffset -= (topLeft.Y + height - work.Bottom) / scale.M22;
+        }
+    }
+
+    // --- interaction ---------------------------------------------------------
+
+    private void OnCardPressed(object sender, MouseButtonEventArgs e)
+    {
+        // Handled, so the press does not turn into a window drag.
+        e.Handled = true;
+
+        // The press origin arms the drag: only movement beyond the system's
+        // minimum distance is a carry, everything shorter stays a click.
+        _dragOrigin = e.GetPosition(null);
+
+        if (((FrameworkElement)sender).DataContext is not BarCard card)
+        {
+            return;
+        }
+
+        // Ctrl-click on a link or email opens it — the same modifier whose
+        // hints dress it as clickable, so the affordance and the act agree.
+        if (card.IsOpenable && Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+        {
+            OpenUri(card);
+            return;
+        }
+
+        Select(card);
+
+        // Border is not a Control and has no double-click of its own; the
+        // count on the press is the same information.
+        if (e.ClickCount == 2)
+        {
+            _clipboard.SetText(card.Text);
+        }
+    }
+
+    /// <summary>
+    /// Any card dragged with the left button carries what it is out to
+    /// wherever the user drops it — text (with formatting and a plain
+    /// fallback), images as pictures, files as files. Dead paths stay behind:
+    /// a drag that silently produces nothing is worse than one that visibly
+    /// carries less, and an all-dead card says so through a toast.
+    /// </summary>
+
+    // Where the current button press began, so a jitter during a click never
+    // turns into a drag: the system's own minimum drag distance decides.
+    private Point? _dragOrigin;
+
+    private void OnCardMouseMove(object sender, MouseEventArgs e)
+    {
+        if (e.LeftButton != MouseButtonState.Pressed)
+        {
+            _dragOrigin = null;
+            return;
+        }
+
+        if (_dragOrigin is not { } origin)
+        {
+            return;
+        }
+
+        var here = e.GetPosition(null);
+        if (Math.Abs(here.X - origin.X) < SystemParameters.MinimumHorizontalDragDistance
+            && Math.Abs(here.Y - origin.Y) < SystemParameters.MinimumVerticalDragDistance)
+        {
+            return;
+        }
+
+        // One drag attempt per press: repeated moves must not re-enter the
+        // modal loop the moment it closes.
+        _dragOrigin = null;
+
+        if (((FrameworkElement)sender).DataContext is not BarCard card)
+        {
+            return;
+        }
+
+        // A drag begins on movement with the button held — the user's intent
+        // to carry, not to click. Everything the entry is rides along: text
+        // with its formatting and a plain fallback, images as pictures,
+        // files as files.
+        var data = new DataObject();
+        switch (card.Kind)
+        {
+            case EntryKind.Text:
+                data.SetText(card.Text, TextDataFormat.UnicodeText);
+
+                // Rich destinations get the RTF form; plain ones quietly use
+                // the text above — one payload, both worlds. (HTML is left
+                // out: WPF writes it header-less and targets mangle it.)
+                if (card.Rtf is { Length: > 0 } rtf)
+                {
+                    data.SetText(rtf, TextDataFormat.Rtf);
+                }
+
+                break;
+
+            case EntryKind.Image:
+                if (card.Thumbnail is BitmapSource picture)
+                {
+                    data.SetImage(picture);
+                    data.SetText(card.Text, TextDataFormat.UnicodeText);
+                }
+                else
+                {
+                    return;
+                }
+
+                break;
+
+            default:
+                var alive = card.Files.Where(File.Exists).ToList();
+                if (alive.Count == 0)
+                {
+                    // Every path gone: a drag that silently produces nothing
+                    // reads as breakage. One quiet toast says why not.
+                    DeadDragNotice?.Invoke("原文件已不存在，无法拖出。");
+                    return;
+                }
+
+                var dropList = new System.Collections.Specialized.StringCollection();
+                dropList.AddRange([.. alive]);
+                data.SetFileDropList(dropList);
+                break;
+        }
+
+        DragDrop.DoDragDrop((DependencyObject)sender, data, DragDropEffects.Copy);
+    }
+
+    /// <summary>Sent upward so the tray can say what the card cannot.</summary>
+    public event Action<string>? DeadDragNotice;
+
+    private static void OpenUri(BarCard card)
+    {
+        try
+        {
+            var target = card.Subtype == EntrySubtype.Email
+                ? "mailto:" + card.Text.Trim()
+                : card.Text.Trim();
+
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(target)
+            {
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception)
+        {
+            // A link the shell cannot resolve is not worth a broken window.
+        }
+    }
+
+    // --- hover actions --------------------------------------------------------
+
+    /// <summary>Which of the user's chosen actions this card can honour, in their order.</summary>
+    public IReadOnlyList<string> ActionsFor(BarCard card)
+        => HoverActions.AvailableFor(
+            HoverActions.Sanitise(_settings.BarActions), card.Kind, card.HasOriginal,
+            DeleteIsProtected(card));
+
+    /// <summary>
+    /// Favourites and pins, under their protection switches, have no delete
+    /// entry point at all. The single clear-eyed delete — un-star first —
+    /// stays available, so there is no "cannot delete at all" dead end.
+    /// </summary>
+    private bool DeleteIsProtected(BarCard card)
+        => _settings.ProtectEntries
+            && ((_settings.ProtectFavorites && card.Favorite)
+                || (_settings.ProtectPinned && card.IsPinned));
+
+    private void OnCardMouseEnter(object sender, MouseEventArgs e)
+    {
+        // The preview hears about the card even when the tray visuals are not
+        // reachable: policy first, presentation second.
+        if (((FrameworkElement)sender).DataContext is BarCard entered)
+        {
+            RunPreviewCommand(_previewPolicy.HoverEnter(entered.Id));
+        }
+
+        if (Tree.FindDescendant<ActionTray>((DependencyObject)sender) is not { } tray
+            || Tree.FindDescendant<HandoverText>((DependencyObject)sender) is not { } handover)
+        {
+            return;
+        }
+
+        handover.Yield();
+        tray.Open();
+
+        // Hover reveals the original behind a note: the note is the face the
+        // user wrote, the content is what they come back for.
+        if (((FrameworkElement)sender).DataContext is BarCard { Note.Length: > 0 } noted)
+        {
+            ApplyFace(noted, hovered: true);
+        }
+    }
+
+    private void OnCardMouseLeave(object sender, MouseEventArgs e)
+    {
+        if (((FrameworkElement)sender).DataContext is BarCard)
+        {
+            RunPreviewCommand(_previewPolicy.HoverLeave());
+        }
+
+        if (Tree.FindDescendant<ActionTray>((DependencyObject)sender) is not { } tray
+            || Tree.FindDescendant<HandoverText>((DependencyObject)sender) is not { } handover)
+        {
+            return;
+        }
+
+        tray.Close();
+        handover.Return();
+
+        if (((FrameworkElement)sender).DataContext is BarCard { Note.Length: > 0 } noted)
+        {
+            ApplyFace(noted, hovered: false);
+        }
+    }
+
+    /// <summary>Runs one hover action. Invoked from any card's tray via the container's subscription.</summary>
+    public void RunHoverAction(string id, BarCard card, Button button)
+        => ExecuteAction(id, card, button);
+
+    /// <summary>
+    /// Executes one action. The keyboard uses this too, where there is no
+    /// button to give feedback on.
+    /// </summary>
+    private void ExecuteAction(string id, BarCard card, Button? feedback)
+    {
+        // A real action is the strongest "user has found it" signal: the
+        // teaching row steps aside and the counter ticks toward never-again.
+        if (_hintShowing)
+        {
+            DismissFirstUseHint();
+        }
+
+        FirstUseHints.RegisterAction();
+
+        switch (id)
+        {
+            case "copy":
+                _store.BumpUse(card.Id);
+                if (CopyCard(card))
+                {
+                    Confirm(feedback, true);
+                    ShowFeedback("已复制");
+                }
+                else
+                {
+                    Confirm(feedback, false);
+                }
+                break;
+
+            case "plain":
+                // Strips every format: plain text and nothing else, so what
+                // lands carries no styling from where it came. Never offered
+                // for file entries — there is no plain form to strip.
+                _store.BumpUse(card.Id);
+                if (_clipboard.SetText(card.Text))
+                {
+                    Confirm(feedback, true);
+                    ShowFeedback("已按纯文本复制");
+                }
+                else
+                {
+                    Confirm(feedback, false);
+                }
+                break;
+
+            case "paste":
+                PasteEntry(card);
+                break;
+
+            case "open":
+                OpenOriginal(card);
+                break;
+
+            case "locate":
+                LocateOriginal(card);
+                break;
+
+            case "pin":
+                _store.SetPinned(card.Id, !card.IsPinned);
+                ReloadData();
+                break;
+
+            case "favorite":
+                _store.SetFavorite(card.Id, !card.Favorite);
+
+                // In place: a favourite joins a collection and never moves,
+                // so the list around it must not so much as blink.
+                card.Favorite = !card.Favorite;
+                break;
+
+            case "note":
+                EditNote(card);
+                break;
+
+            case "group":
+                OpenGroupChooser(card, feedback);
+                break;
+
+            case "delete":
+                // The keyboard path has no tray to hide; the guard answers
+                // for it what the hidden button answers for the mouse.
+                if (DeleteIsProtected(card))
+                {
+                    return;
+                }
+
+                // Snapshot before the delete: the undo re-inserts the whole
+                // row — content, tags, group, note, pin — under a new id.
+                var snapshot = _store.Get(card.Id);
+                var groupName = snapshot is null ? null : _store.GroupOf(snapshot)?.Name;
+
+                _store.Delete(card.Id);
+                _browser.Forget(card.Id);
+                RemoveCard(card);
+                UpdateFooter();
+                EnsureActiveItem();
+
+                if (snapshot is not null)
+                {
+                    ShowFeedback($"已删除「{TruncateFeedback(snapshot)}」",
+                        [(snapshot, groupName)]);
+                }
+                break;
+        }
+    }
+
+    /// <summary>The feedback row is one line: keep a deleted name honest to it.</summary>
+    private static string TruncateFeedback(Entry entry)
+    {
+        var text = entry.Note is { Length: > 0 } note ? note : entry.Text;
+        text = text.Split('\n')[0].Trim();
+        return text.Length <= 12 ? text : text[..12] + "…";
+    }
+
+    /// <summary>
+    /// Copies an entry as itself: plain text always, the HTML and RTF forms
+    /// when the entry has them, so a rich destination receives the formatting
+    /// and a plain one receives readable text.
+    /// </summary>
+    private bool CopyCard(BarCard card)
+        => card.Files.Count > 0
+            ? _clipboard.SetFiles(card.Files)
+            : card.Html is { Length: > 0 } || card.Rtf is { Length: > 0 }
+                ? _clipboard.SetRich(card.Text, card.Html, card.Rtf)
+                : _clipboard.SetText(card.Text);
+
+    /// <summary>
+    /// Pastes into the window the user was in before summoning the bar. The
+    /// bar hides first — until it does, it is the thing in the way of the
+    /// foreground the paste needs. A rich entry pastes as itself: formats
+    /// written first, then the keystroke into the restored window.
+    /// </summary>
+    private void PasteEntry(BarCard card)
+    {
+        if (!_returnTo.IsSomething)
+        {
+            _returnTo = ForegroundWindow.Current();
+        }
+
+        // The bar is about to vanish; its preview must not be left hovering
+        // over the destination the paste is about to land in.
+        RunPreviewCommand(_previewPolicy.BarHidden());
+        _previewTick.Stop();
+
+        Hide();
+        _returnTo.Restore();
+
+        if (card.Files.Count > 0)
+        {
+            if (_clipboard.SetFiles(card.Files))
+            {
+                _capture.PasteCurrentClipboard();
+            }
+        }
+        else if (card.Html is { Length: > 0 } || card.Rtf is { Length: > 0 })
+        {
+            if (_clipboard.SetRich(card.Text, card.Html, card.Rtf))
+            {
+                _capture.PasteCurrentClipboard();
+            }
+        }
+        else
+        {
+            _capture.Paste(card.Text);
+        }
+    }
+
+    private void OpenOriginal(BarCard card)
+    {
+        var target = card.Files.FirstOrDefault(File.Exists)
+            ?? (card.OriginalPath is { Length: > 0 } path && File.Exists(path) ? path : null);
+
+        if (target is null)
+        {
+            return;
+        }
+
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(target)
+            {
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception)
+        {
+            // A file that has moved or gone missing since retention is not
+            // worth interrupting the user over.
+        }
+    }
+
+    private void LocateOriginal(BarCard card)
+    {
+        var target = card.Files.FirstOrDefault(File.Exists)
+            ?? (card.OriginalPath is { Length: > 0 } path && File.Exists(path) ? path : null);
+
+        if (target is null)
+        {
+            return;
+        }
+
+        try
+        {
+            System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{target}\"");
+        }
+        catch (Exception)
+        {
+        }
+    }
+
+    /// <summary>
+    /// The note editor: one box, three exits. Owned by the bar so it stays on
+    /// top of it and follows it away.
+    /// </summary>
+    private void EditNote(BarCard card)
+    {
+        var editor = new Window
+        {
+            Title = "备注",
+            Width = 340,
+            SizeToContent = SizeToContent.Height,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Owner = this,
+            ResizeMode = ResizeMode.NoResize,
+            ShowInTaskbar = false,
+            Background = (Brush)FindResource("Brush.Background"),
+        };
+
+        var box = new TextBox
+        {
+            Text = card.Note ?? string.Empty,
+            AcceptsReturn = true,
+            TextWrapping = TextWrapping.Wrap,
+            Height = 110,
+            Margin = new Thickness(12),
+            Padding = new Thickness(6, 4, 6, 4),
+        };
+        box.SetResourceReference(Control.BackgroundProperty, "Brush.SurfaceInput");
+        box.SetResourceReference(Control.ForegroundProperty, "Brush.Text");
+
+        var buttons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 0, 12, 12),
+        };
+
+        var save = new Button { Content = "保存", Padding = new Thickness(14, 4, 14, 4), Margin = new Thickness(6, 0, 0, 0) };
+        var remove = new Button { Content = "删除备注", Padding = new Thickness(10, 4, 10, 4), Margin = new Thickness(6, 0, 0, 0) };
+        var cancel = new Button { Content = "取消", Padding = new Thickness(10, 4, 10, 4), Margin = new Thickness(6, 0, 0, 0) };
+
+        save.Click += (_, _) =>
+        {
+            _store.SetNote(card.Id, box.Text);
+            card.Note = string.IsNullOrWhiteSpace(box.Text) ? null : box.Text.Trim();
+            ApplyFace(card, hovered: false);
+            editor.Close();
+        };
+
+        remove.Click += (_, _) =>
+        {
+            _store.SetNote(card.Id, null);
+            card.Note = null;
+            ApplyFace(card, hovered: false);
+            editor.Close();
+        };
+
+        cancel.Click += (_, _) => editor.Close();
+
+        buttons.Children.Add(cancel);
+        buttons.Children.Add(remove);
+        buttons.Children.Add(save);
+
+        var panel = new StackPanel();
+        panel.Children.Add(box);
+        panel.Children.Add(buttons);
+        editor.Content = panel;
+
+        box.Focus();
+        box.SelectAll();
+        editor.ShowDialog();
+    }
+
+    /// <summary>
+    /// Puts the right text in the face: the note when there is one, the
+    /// original while hovered. The note is the entry's public face because
+    /// what the user wrote is what the user remembers.
+    /// </summary>
+    private void ApplyFace(BarCard card, bool hovered)
+    {
+        card.Face = card.Note is { Length: > 0 } && !hovered ? card.Note : card.Preview;
+    }
+}
