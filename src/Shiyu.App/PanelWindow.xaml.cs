@@ -6,9 +6,22 @@ using Shiyu.Windows;
 
 namespace Shiyu.App;
 
+/// <summary>词典卡一个义项的展示形状：Core 的卡加上一条拼好的同义词行。</summary>
+public sealed record SenseView(
+    string? PartOfSpeech,
+    IReadOnlyList<string> Definitions,
+    IReadOnlyList<string> Examples,
+    string? SynonymsLine);
+
 /// <summary>
 /// The translation panel: the original above, the translation growing beneath
 /// it as the words arrive.
+///
+/// Beyond the stream it carries three quiet additions (ticket 35): a dictionary
+/// card that appears when the selection was a single word, a sentence-by-sentence
+/// alignment toggle, and read-aloud of the finished translation. All of them are
+/// best-effort layers over the translation — the translation itself never waits
+/// for any of them.
 ///
 /// Like the badge, it never takes focus. That leaves it unable to receive key
 /// presses, so Escape is a global hotkey held only while the panel is on
@@ -21,6 +34,11 @@ public partial class PanelWindow : Window
     private readonly Func<ITranslationBackend> _backend;
     private readonly Action<string, string>? _saveTranslation;
 
+    /// <summary>按选中文本现造词典端口；null 表示这段文本不吃词典卡。</summary>
+    private readonly Func<string, IDictionaryApi?>? _dictionary;
+
+    private readonly SpeechSynthesis? _speech;
+
     private IDisposable? _escape;
     private CancellationTokenSource? _inFlight;
     private TranslationSession? _session;
@@ -28,12 +46,20 @@ public partial class PanelWindow : Window
     private string _target;
     private string? _source;
 
+    /// <summary>逐句对照显示开关。默认关——整段流式是主路径，对照是阅读辅助。</summary>
+    private bool _sentenceMode;
+
+    /// <summary>词典卡换代号：新一次翻译自增，迟到的卡据此知道自己过时了。</summary>
+    private int _cardRun;
+
     public PanelWindow(
         HotkeyRegistry hotkeys,
         WindowsClipboardWriter clipboard,
         Func<ITranslationBackend> backend,
         AppSettings settings,
-        Action<string, string>? saveTranslation = null)
+        Action<string, string>? saveTranslation = null,
+        Func<string, IDictionaryApi?>? dictionary = null,
+        SpeechSynthesis? speech = null)
     {
         InitializeComponent();
 
@@ -41,6 +67,8 @@ public partial class PanelWindow : Window
         _clipboard = clipboard;
         _backend = backend;
         _saveTranslation = saveTranslation;
+        _dictionary = dictionary;
+        _speech = speech;
         _target = settings.TargetLanguage;
         _source = settings.SourceLanguage;
 
@@ -59,9 +87,14 @@ public partial class PanelWindow : Window
         _original = text;
         OriginalText.Text = text;
         TranslatedText.Text = string.Empty;
+        SentencePairs.ItemsSource = null;
         StatusText.Visibility = Visibility.Collapsed;
         SaveButton.Content = "存入历史";
         UpdateDirectionLabel();
+
+        // 新的选中文本作废旧卡：卡还在路上的话，到岸后发现换代号变了就不上屏。
+        _cardRun++;
+        DictionaryArea.Visibility = Visibility.Collapsed;
 
         if (!IsVisible)
         {
@@ -81,6 +114,11 @@ public partial class PanelWindow : Window
         // opposite side — the sheet fades and rises, the window stays solid.
 
         HoldEscape();
+
+        // 两阶段词典从这里开始：翻译照常起跑，词典卡并行去查，谁先到谁
+        // 先上屏——600ms 预算由端口侧自己执行，这里只管收卡。
+        StartDictionaryLookup(text);
+
         await RunTranslation();
     }
 
@@ -103,6 +141,10 @@ public partial class PanelWindow : Window
             }
 
             TranslatedText.Text = session.Text;
+            if (_sentenceMode)
+            {
+                RenderSentencePairs(session.Text);
+            }
 
             // The label follows the request actually on the wire: an echo
             // retry swaps the direction under the user, and the label must
@@ -138,6 +180,122 @@ public partial class PanelWindow : Window
         SaveButton.IsEnabled = _saveTranslation is not null
             && session.State == TranslationState.Finished
             && session.Text.Trim().Length > 0;
+    }
+
+    /// <summary>
+    /// 词典补全：单词判定通过才发查。慢路（LLM 词典化）与快路（600ms 预算的
+    /// 免费词典）都由 <see cref="_dictionary"/> 决定；任何失败都只是没有卡。
+    /// </summary>
+    private async void StartDictionaryLookup(string text)
+    {
+        if (_dictionary is null)
+        {
+            return;
+        }
+
+        var word = text.Trim();
+        IDictionaryApi? api;
+        try
+        {
+            api = _dictionary(word);
+        }
+        catch (Exception)
+        {
+            // 组装端口失败与查词失败同类：静默没有卡。
+            return;
+        }
+
+        if (api is null)
+        {
+            return;
+        }
+
+        var run = _cardRun;
+        DictionaryCard? card = null;
+        try
+        {
+            card = await api.LookupAsync(DictionaryWord.LookupKey(word), CancellationToken.None);
+        }
+        catch (Exception)
+        {
+            // 端口契约本不该抛；抛了也一样是"没有卡"。
+        }
+        finally
+        {
+            (api as IDisposable)?.Dispose();
+        }
+
+        if (card is null || run != _cardRun)
+        {
+            return;
+        }
+
+        try
+        {
+            Dispatcher.Invoke(() =>
+            {
+                if (run != _cardRun)
+                {
+                    return;
+                }
+
+                RenderCard(card);
+            });
+        }
+        catch (Exception)
+        {
+            // 应用关停的竞态里 Invoke 会抛：一张迟到的卡不值得带崩进程。
+        }
+    }
+
+    private void RenderCard(DictionaryCard card)
+    {
+        CardWord.Text = card.Word;
+        CardPhonetic.Text = card.Phonetic ?? string.Empty;
+        CardSenses.ItemsSource = card.Senses.Select(sense => new SenseView(
+            sense.PartOfSpeech,
+            sense.Definitions,
+            sense.Examples,
+            sense.Synonyms.Count > 0 ? "同义词：" + string.Join("、", sense.Synonyms) : null));
+        DictionaryArea.Visibility = Visibility.Visible;
+        UpdateLayout();
+    }
+
+    private void OnToggleSentenceAlignment(object sender, RoutedEventArgs e)
+    {
+        _sentenceMode = !_sentenceMode;
+        ApplySentenceMode();
+    }
+
+    /// <summary>开关只切显示：对照数据由同一份流式文本现算，切换零成本、随时可翻。</summary>
+    private void ApplySentenceMode()
+    {
+        SentenceToggle.FontWeight = _sentenceMode
+            ? FontWeights.SemiBold
+            : FontWeights.Normal;
+        TranslatedText.Visibility = _sentenceMode ? Visibility.Collapsed : Visibility.Visible;
+        SentencePairs.Visibility = _sentenceMode ? Visibility.Visible : Visibility.Collapsed;
+
+        if (_sentenceMode)
+        {
+            RenderSentencePairs(_session?.Text ?? string.Empty);
+        }
+    }
+
+    private void RenderSentencePairs(string translated)
+        => SentencePairs.ItemsSource = SentenceAlign.Pair(_original, translated);
+
+    private void OnSpeak(object sender, RoutedEventArgs e)
+    {
+        if (_speech is null || _session?.Text.Trim() is not { Length: > 0 } text)
+        {
+            return;
+        }
+
+        // 读的是当前屏上的译文，用的语言也随它——回声换向后读的应该是
+        // 换向后的那段，方向标签看到的是哪个，耳朵听到的就是哪个。
+        var language = _session.CurrentRequest?.TargetLanguage ?? _target;
+        _speech.SpeakOrStop(text, SpeechLanguage.CulturePrefix(language));
     }
 
     /// <summary>
@@ -201,6 +359,9 @@ public partial class PanelWindow : Window
         _inFlight?.Cancel();
         ReleaseEscape();
 
+        // 面板没了，朗读也该停：读完一个没人看的译文是对接下来的打扰。
+        _speech?.Stop();
+
         // Instant hide. A fade here reads as jank on a layered window — the
         // text drops out before the tinted sheet does (the user's own words:
         // "先没有字体，再一个灰板") — and the system's Win+V panel, the
@@ -250,6 +411,7 @@ public partial class PanelWindow : Window
     {
         _inFlight?.Cancel();
         ReleaseEscape();
+        _speech?.Stop();
         Close();
     }
 }

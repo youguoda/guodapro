@@ -22,6 +22,10 @@
                         FontSize="{DynamicResource Size.Caption}" Padding="8,2" Margin="0,0,6,0"
                         BorderThickness="0" Background="Transparent" Cursor="Hand"
                         Click="OnSwapDirection" />
+                <Button x:Name="SentenceToggle" DockPanel.Dock="Right" Content="逐句对照"
+                        FontSize="{DynamicResource Size.Caption}" Padding="8,2" Margin="0,0,6,0"
+                        BorderThickness="0" Background="Transparent" Cursor="Hand"
+                        Click="OnToggleSentenceAlignment" ToolTip="按句对照显示原文与译文（默认整段）" />
             </DockPanel>
 
             <TextBlock x:Name="OriginalText" FontSize="{DynamicResource Size.Secondary}"
@@ -33,10 +37,76 @@
             <ScrollViewer x:Name="TranslationScroll" MaxHeight="260"
                           VerticalScrollBarVisibility="Auto"
                           HorizontalScrollBarVisibility="Disabled">
-                <TextBlock x:Name="TranslatedText" FontSize="{DynamicResource Size.BodyLarge}"
-                           TextWrapping="Wrap" LineHeight="{DynamicResource Line.BodyLarge}"
-                           LineStackingStrategy="BlockLineHeight" />
+                <StackPanel>
+                    <TextBlock x:Name="TranslatedText" FontSize="{DynamicResource Size.BodyLarge}"
+                               TextWrapping="Wrap" LineHeight="{DynamicResource Line.BodyLarge}"
+                               LineStackingStrategy="BlockLineHeight" />
+                    <ItemsControl x:Name="SentencePairs" Visibility="Collapsed" Margin="0,2,0,0">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Margin="0,6,0,0">
+                                    <TextBlock Text="{Binding Original}" TextWrapping="Wrap"
+                                               FontSize="{DynamicResource Size.Secondary}"
+                                               Foreground="{DynamicResource Brush.TextSecondary}" />
+                                    <TextBlock Text="{Binding Translated}" TextWrapping="Wrap"
+                                               FontSize="{DynamicResource Size.BodyLarge}"
+                                               LineHeight="{DynamicResource Line.BodyLarge}"
+                                               LineStackingStrategy="BlockLineHeight" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
             </ScrollViewer>
+
+            <!-- 两阶段词典卡：翻译先出，这张卡晚一点补上；没有就从来不出现。 -->
+            <Border x:Name="DictionaryArea" Visibility="Collapsed" Margin="0,10,0,0"
+                    Padding="10,8" CornerRadius="{DynamicResource Radius.Card}"
+                    Background="{DynamicResource Brush.SurfaceSubtle}"
+                    BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock x:Name="CardWord" FontSize="{DynamicResource Size.Body}"
+                                   FontWeight="{DynamicResource Weight.Emphasis}" />
+                        <TextBlock x:Name="CardPhonetic" Margin="8,0,0,0" VerticalAlignment="Center"
+                                   FontSize="{DynamicResource Size.Caption}" FontStyle="Italic"
+                                   Foreground="{DynamicResource Brush.TextSecondary}" />
+                    </StackPanel>
+                    <ItemsControl x:Name="CardSenses" Margin="0,4,0,0">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Margin="0,4,0,0">
+                                    <TextBlock Text="{Binding PartOfSpeech}"
+                                               FontSize="{DynamicResource Size.Caption}"
+                                               Foreground="{DynamicResource Brush.Accent}" />
+                                    <ItemsControl ItemsSource="{Binding Definitions}" Margin="8,2,0,0">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding}" TextWrapping="Wrap"
+                                                           FontSize="{DynamicResource Size.Caption}"
+                                                           Margin="0,1" />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <ItemsControl ItemsSource="{Binding Examples}" Margin="8,2,0,0">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding}" TextWrapping="Wrap"
+                                                           FontSize="{DynamicResource Size.Hint}"
+                                                           FontStyle="Italic" Margin="0,1"
+                                                           Foreground="{DynamicResource Brush.TextTertiary}" />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <TextBlock Text="{Binding SynonymsLine}" TextWrapping="Wrap"
+                                               FontSize="{DynamicResource Size.Hint}" Margin="8,2,0,0"
+                                               Foreground="{DynamicResource Brush.TextTertiary}" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
 
             <TextBlock x:Name="StatusText" FontSize="{DynamicResource Size.Caption}" Margin="0,8,0,0"
                        TextWrapping="Wrap" Foreground="{DynamicResource Brush.Danger}"
@@ -51,6 +121,10 @@
                         FontSize="{DynamicResource Size.Caption}" Padding="10,4" Margin="0,0,6,0"
                         Cursor="Hand" Click="OnSaveToHistory"
                         ToolTip="译文存为一条记录，并关联原文条目"/>
+                <Button x:Name="SpeakButton" DockPanel.Dock="Right" Content="🔊 朗读"
+                        FontSize="{DynamicResource Size.Caption}" Padding="10,4" Margin="0,0,6,0"
+                        Cursor="Hand" Click="OnSpeak"
+                        ToolTip="朗读译文；朗读中再点一次即停"/>
                 <Button x:Name="CopyButton" DockPanel.Dock="Right" Content="复制译文"
                         FontSize="{DynamicResource Size.Caption}" Padding="10,4" Cursor="Hand"
                         Click="OnCopy" />

@@ -33,6 +33,7 @@ public partial class App : Application
     private FileTypeIcons? _fileIcons;
     private System.Windows.Threading.DispatcherTimer? _barGeometrySave;
     private WinVHook? _winV;
+    private SpeechSynthesis? _speech;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -489,11 +490,27 @@ public partial class App : Application
             return;
         }
 
+        // 朗读服务与面板同寿命：一条专用 STA 线程，懒得起、起一次用到底。
+        _speech ??= new SpeechSynthesis();
+
         _panel ??= new PanelWindow(
             _hotkeys, _writer, () => new OpenAiCompatibleBackend(_settings.Backend), _settings,
-            SaveTranslationToHistory);
+            SaveTranslationToHistory,
+            dictionary: BuildDictionary,
+            speech: _speech);
         await _panel.TranslateAsync(text);
     }
+
+    /// <summary>
+    /// 单词词典的两条路（票 35）：英文单词走免费词典（600ms 预算内补上，
+    /// 否则静默放弃）；中文单词走 LLM 词典化兜底；其余文本不吃词典卡。
+    /// </summary>
+    private IDictionaryApi? BuildDictionary(string word)
+        => DictionaryWord.IsEnglishWord(word)
+            ? new BudgetedDictionary(new FreeDictionaryApi())
+            : DictionaryWord.IsChineseWord(word)
+                ? new LlmDictionaryApi(new OpenAiCompatibleBackend(_settings.Backend))
+                : null;
 
     /// <summary>
     /// Files a kept translation. The link is made only when the original was
@@ -576,6 +593,7 @@ public partial class App : Application
         _quickBar?.CloseForGood();
         _panel?.CloseForGood();
         _badge?.CloseForGood();
+        _speech?.Dispose();
         _tray?.Dispose();
         _pipeline?.Dispose();
         _clipboard?.Dispose();
