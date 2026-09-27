@@ -3,7 +3,6 @@ import { readLimits } from "./limits.js";
 import { saltedHash } from "./hash.js";
 import { KvStore, Quota, type Identity } from "./quota.js";
 import { ZhipuUpstream } from "./upstream.js";
-import { DefaultLimits } from "./limits.js";
 
 const ClientIdPattern = /^[A-Za-z0-9-]{8,64}$/;
 

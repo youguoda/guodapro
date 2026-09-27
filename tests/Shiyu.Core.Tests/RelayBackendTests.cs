@@ -370,6 +370,17 @@ public class RelaySettingsTests
     }
 
     [Fact]
+    public void Each_choice_index_lands_on_its_own_enum_value()
+    {
+        // 分段控件存的是下标、设置存的是枚举；两端靠"声明顺序一致"对上。
+        // 这条不变量坏了，选"公共通道"会悄悄存成自备密钥——钉死它。
+        var item = SettingsSchema.Find("service.backend-kind")!;
+
+        Assert.Contains("公共通道", item.ChoiceList[(int)TranslationBackendKind.Relay]);
+        Assert.Contains("自备密钥", item.ChoiceList[(int)TranslationBackendKind.OwnKey]);
+    }
+
+    [Fact]
     public void The_disclosure_says_where_the_text_goes_and_where_it_stays()
     {
         var item = SettingsSchema.Find("service.backend-kind");

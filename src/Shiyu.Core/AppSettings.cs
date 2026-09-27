@@ -3,14 +3,18 @@ using System.Text.Json.Serialization;
 
 namespace Shiyu.Core;
 
-/// <summary>翻译走哪条路：公共通道免费但额度有限，自备密钥是高级路径。</summary>
+/// <summary>
+/// 翻译走哪条路：公共通道免费但额度有限，自备密钥是高级路径。
+/// 声明顺序即设置界面分段选择的下标顺序（Relay=0 是第一项），两者由
+/// 测试钉在一起——改一边不改另一边会把"公共通道"接到自备密钥上。
+/// </summary>
 public enum TranslationBackendKind
 {
-    /// <summary>用户自己的 OpenAI 兼容接口与凭据。</summary>
-    OwnKey,
-
     /// <summary>拾语公共通道：零配置、零密钥、每日免费字数。</summary>
     Relay,
+
+    /// <summary>用户自己的 OpenAI 兼容接口与凭据。</summary>
+    OwnKey,
 }
 
 /// <summary>
