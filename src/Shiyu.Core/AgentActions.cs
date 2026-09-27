@@ -5,7 +5,14 @@ namespace Shiyu.Core;
 
 /// <param name="SystemPrompt">How the model should behave.</param>
 /// <param name="UserContent">The material it works on. Nothing else is sent.</param>
-public sealed record ModelRequest(string SystemPrompt, string UserContent);
+public sealed record ModelRequest(string SystemPrompt, string UserContent)
+{
+    /// <summary>
+    /// 采样温度。翻译走低温默认（<see cref="TranslationPrompt.DefaultTemperature"/>），
+    /// 需要发散的调用方从这里覆盖。
+    /// </summary>
+    public double Temperature { get; init; } = TranslationPrompt.DefaultTemperature;
+}
 
 /// <summary>
 /// A streaming text model. The same transport the translation panel uses —

@@ -185,3 +185,129 @@ public class TranslationSessionTests
         Assert.Equal("你好", session.Text);
     }
 }
+
+public class TranslationEchoRetryTests
+{
+    /// <summary>
+    /// 每次调用吐一组片段；一组为 null 表示该次调用直接失败。
+    /// </summary>
+    private sealed class ScriptedBackend(params string[]?[] calls) : ITranslationBackend
+    {
+        private readonly Queue<string[]?> _calls = new(calls);
+
+        public List<TranslationRequest> Requests { get; } = [];
+
+        public async IAsyncEnumerable<string> TranslateAsync(
+            TranslationRequest request,
+            [EnumeratorCancellation] CancellationToken cancellation)
+        {
+            Requests.Add(request);
+            var pieces = _calls.Dequeue();
+            if (pieces is null)
+            {
+                throw new TranslationFailedException("服务不可用");
+            }
+
+            foreach (var piece in pieces)
+            {
+                yield return piece;
+                await Task.Yield();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task An_echo_with_an_undirected_source_triggers_one_direction_swap_retry()
+    {
+        // 最常见的回声形态：中文原文配上中文目标——prompt 允许"已是
+        // 目标语言就原样返回"，模型恰恰是在"正确地"偷懒。
+        var backend = new ScriptedBackend(["你好世界"], ["Hello world"]);
+        var session = new TranslationSession(backend);
+
+        await session.RunAsync(new TranslationRequest("你好世界", "Chinese"));
+
+        Assert.Equal(TranslationState.Finished, session.State);
+        Assert.Equal("Hello world", session.Text);
+        Assert.Equal(2, backend.Requests.Count);
+
+        // 换向：旧目标成为声明的源语言，新目标取原文的本地先验（中文
+        // 与旧目标同名，退到面板手动换向同款的 English 缺省）。
+        var retry = backend.Requests[1];
+        Assert.Equal("你好世界", retry.Text);
+        Assert.Equal("Chinese", retry.SourceLanguage);
+        Assert.Equal("English", retry.TargetLanguage);
+        Assert.Equal(retry, session.CurrentRequest);
+    }
+
+    [Fact]
+    public async Task An_echo_with_a_user_forced_source_language_is_shown_as_is()
+    {
+        // 用户钉死了方向，回声就是模型在这个方向上的答案；替用户改方向
+        // 是替用户改主意。
+        var backend = new ScriptedBackend(["Hello there"]);
+        var session = new TranslationSession(backend);
+
+        await session.RunAsync(
+            new TranslationRequest("Hello there", "Chinese") { SourceLanguage = "English" });
+
+        Assert.Equal(TranslationState.Finished, session.State);
+        Assert.Equal("Hello there", session.Text);
+        Assert.Single(backend.Requests);
+    }
+
+    [Fact]
+    public async Task A_retry_that_echoes_again_is_shown_as_is()
+    {
+        // 重试只有一次：再回声就如实展示，循环重试没有收尾。
+        var backend = new ScriptedBackend(["你好世界"], ["你好世界"]);
+        var session = new TranslationSession(backend);
+
+        await session.RunAsync(new TranslationRequest("你好世界", "Chinese"));
+
+        Assert.Equal(TranslationState.Finished, session.State);
+        Assert.Equal("你好世界", session.Text);
+        Assert.Equal(2, backend.Requests.Count);
+    }
+
+    [Fact]
+    public async Task An_ordinary_translation_never_triggers_a_retry()
+    {
+        var backend = new ScriptedBackend(["你", "好，世界"]);
+        var session = new TranslationSession(backend);
+
+        await session.RunAsync(new TranslationRequest("Hello there", "Chinese"));
+
+        Assert.Equal(TranslationState.Finished, session.State);
+        Assert.Equal("你好，世界", session.Text);
+        Assert.Single(backend.Requests);
+    }
+
+    [Fact]
+    public async Task A_failed_attempt_is_never_retried()
+    {
+        // 退避重试是后端的职责；会话层不为失败做方向文章。
+        var backend = new ScriptedBackend((string[]?)null);
+        var session = new TranslationSession(backend);
+
+        await session.RunAsync(new TranslationRequest("Hello there", "Chinese"));
+
+        Assert.Equal(TranslationState.Failed, session.State);
+        Assert.Single(backend.Requests);
+    }
+
+    [Fact]
+    public async Task The_retry_stream_replaces_the_echo_on_screen_from_scratch()
+    {
+        // 面板跟着 Updated 重画全文：第二次尝试必须从空白开始，否则
+        // 回声会残留在译文开头。
+        var backend = new ScriptedBackend(["你好世界"], ["Hello world"]);
+        var session = new TranslationSession(backend);
+        var seen = new List<string>();
+        session.Updated += () => seen.Add(session.Text);
+
+        await session.RunAsync(new TranslationRequest("你好世界", "Chinese"));
+
+        Assert.Equal("Hello world", seen[^1]);
+        Assert.DoesNotContain("你好世界Hello world", seen);
+    }
+}

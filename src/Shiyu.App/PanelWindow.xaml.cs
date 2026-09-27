@@ -104,6 +104,11 @@ public partial class PanelWindow : Window
 
             TranslatedText.Text = session.Text;
 
+            // The label follows the request actually on the wire: an echo
+            // retry swaps the direction under the user, and the label must
+            // not keep claiming the direction that just failed.
+            UpdateDirectionLabel(session.CurrentRequest);
+
             // A stream reads like a conversation: follow the newest line
             // unless the user scrolled up to re-read.
             if (TranslationScroll.ScrollableHeight > 0
@@ -225,8 +230,20 @@ public partial class PanelWindow : Window
         await RunTranslation();
     }
 
-    private void UpdateDirectionLabel()
-        => DirectionLabel.Text = $"{_source ?? "自动识别"} → {_target}";
+    private void UpdateDirectionLabel(TranslationRequest? attempt = null)
+    {
+        // 源语言未声明时用本地文字系统先验代替"自动识别"占位——纯码位
+        // 统计，不产生请求，流式照旧。猜不出（纯数字之类）才退回占位。
+        var request = attempt ?? new TranslationRequest(_original, _target)
+        {
+            SourceLanguage = _source,
+        };
+        var source = request.SourceLanguage
+            ?? LanguageGuess.FromText(_original).Label
+            ?? "自动识别";
+
+        DirectionLabel.Text = $"{source} → {request.TargetLanguage}";
+    }
 
     /// <summary>Lets the application close it for real on shutdown.</summary>
     public void CloseForGood()

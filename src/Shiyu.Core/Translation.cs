@@ -4,6 +4,9 @@ public sealed record TranslationRequest(string Text, string TargetLanguage)
 {
     /// <summary>Null asks the backend to work it out from the text.</summary>
     public string? SourceLanguage { get; init; }
+
+    /// <summary>采样温度，默认 <see cref="TranslationPrompt.DefaultTemperature"/>。</summary>
+    public double Temperature { get; init; } = TranslationPrompt.DefaultTemperature;
 }
 
 /// <summary>

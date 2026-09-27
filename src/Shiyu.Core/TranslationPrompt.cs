@@ -12,6 +12,13 @@ namespace Shiyu.Core;
 /// </summary>
 public static class TranslationPrompt
 {
+    /// <summary>
+    /// 翻译任务的默认采样温度（Glossy 实证值）：要的是最可能的那个
+    /// 译文，不是有趣的一个。留成常量而非写死在后端请求里，是为了
+    /// 想发散的调用方有一个明确的覆盖口。
+    /// </summary>
+    public const double DefaultTemperature = 0.2;
+
     public static string For(TranslationRequest request)
     {
         var source = request.SourceLanguage is { Length: > 0 } declared
