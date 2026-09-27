@@ -52,10 +52,9 @@ public sealed class TranslationSession(ITranslationBackend backend)
         // 源语言，即使这里判断写错也构不成循环。再回声就如实展示。
         if (State == TranslationState.Finished
             && request.SourceLanguage is null
-            && TranslationEcho.IsEchoish(request.Text, Text)
-            && EchoRetryDirection(request) is { } retry)
+            && TranslationEcho.IsEchoish(request.Text, Text))
         {
-            await AttemptAsync(retry, cancellation);
+            await AttemptAsync(EchoRetryRequest(request), cancellation);
         }
     }
 
@@ -103,12 +102,12 @@ public sealed class TranslationSession(ITranslationBackend backend)
     }
 
     /// <summary>
-    /// 换向的方向：旧目标成为声明的源语言，新目标取原文的本地先验——
+    /// 换向重试的请求：旧目标成为声明的源语言，新目标取原文的本地先验——
     /// 先验与旧目标同名或不可用时退到 English，再同名退到 Chinese，
     /// 与面板手动换向的缺省一致。"中文原文配中文目标"这一最常见回声
     /// 因此恰好落进 Chinese→English 的有用方向。
     /// </summary>
-    private static TranslationRequest EchoRetryDirection(TranslationRequest request)
+    private static TranslationRequest EchoRetryRequest(TranslationRequest request)
     {
         var target = LanguageGuess.FromText(request.Text).LanguageName ?? "English";
         if (string.Equals(target, request.TargetLanguage, StringComparison.OrdinalIgnoreCase))
