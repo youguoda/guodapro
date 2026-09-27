@@ -23,3 +23,13 @@ GitHub Releases 更新通道。
 
 - [x] docs/release-checklist.md 落此守则并入发布流程
 - [x] 本票作为"明确不做"的存根
+
+## DAG 处置记录（2026-09-27）
+
+本票是**登记册**（存根+守则记录），无实现做功项——两项勾选在 DAG 启动前已
+由 577ea5d 完成（release-checklist 落盘）。DAG 执行中作为约束面被遵守：票
+34-37/39/40 未引入任何"明确不做"项（Google 非官方端点/轮询取词/换算/UIA
+上下文句均未出现）；票 36 的公共通道未采用 Glossy 端点伪造。协调者决定：按
+登记册结案（ready-for-human），不做基线满足仪式——存根即产物。
+
+**Status:** ready-for-human
