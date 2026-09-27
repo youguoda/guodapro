@@ -174,6 +174,14 @@ internal partial class BarWindow
                     return;
                 }
 
+                // The header's group menu is a layer the same way (票 39): it
+                // goes before any filter the stack would clear underneath it.
+                if (_groupMenu is { IsOpen: true })
+                {
+                    _groupMenu.IsOpen = false;
+                    return;
+                }
+
                 StepEscape();
                 break;
 

@@ -30,6 +30,24 @@ internal sealed class BarCard : INotifyPropertyChanged
 
     public string KindText { get; init; } = string.Empty;
 
+    /// <summary>
+    /// The facet glyph beside the kind word (票 39): the same IconGlyph family
+    /// the header's type chips use, so a facet and its actions never draw two
+    /// symbols for one idea.
+    /// </summary>
+    public string KindGlyph { get; init; } = string.Empty;
+
+    /// <summary>How often this entry has been used; shown on hover only (票 39).</summary>
+    public int UseCount { get; init; }
+
+    /// <summary>
+    /// The type badge's tooltip: the word, plus the usage count the badge
+    /// itself no longer carries — the number is a reward, not an identity.
+    /// </summary>
+    public string KindToolTip => UseCount > 0
+        ? $"{KindText}{Environment.NewLine}用过 {UseCount} 次"
+        : KindText;
+
     public string WhenText { get; init; } = string.Empty;
 
     /// <summary>The absolute stamp (and usage count) behind the relative one.</summary>
@@ -168,11 +186,13 @@ internal sealed class BarCard : INotifyPropertyChanged
     public int TextLines { get; init; }
 
     /// <summary>
-    /// The text clamp as a height of whole Body lines — visually identical to
-    /// MaxLines, usable from XAML on this build (see the template comment).
+    /// The text clamp as a height of whole Body-LARGE lines — the card body
+    /// grew to Size.BodyLarge (票 39), so the clamp grew with it. Visually
+    /// identical to MaxLines, usable from XAML on this build (see the
+    /// template comment).
     /// </summary>
     public double TextMaxHeight
-        => TextLines * DesignTokens.LineHeightFor(DesignTokens.FontBody);
+        => TextLines * DesignTokens.LineHeightFor(DesignTokens.FontBodyLarge);
 
     public int ImageHeight { get; init; }
 
@@ -182,6 +202,16 @@ internal sealed class BarCard : INotifyPropertyChanged
     public int PixelHeight { get; init; }
 
     public bool IsPinned { get; init; }
+
+    /// <summary>
+    /// True while delete protection covers this card (票 39's 🔐 corner slot):
+    /// the lock watermark binds the visibility, not the flag.
+    /// </summary>
+    public bool IsProtected { get; init; }
+
+    public Visibility ProtectionVisibility => IsProtected
+        ? Visibility.Visible
+        : Visibility.Collapsed;
 
     public Visibility IconVisibility => Icon is null ? Visibility.Collapsed : Visibility.Visible;
 

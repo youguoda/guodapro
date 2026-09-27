@@ -155,4 +155,119 @@
             </Setter.Value>
         </Setter>
     </Style>
+
+    <!--
+      The modern scrollbar (ticket 39): 6px wide (8 on hover), a pill thumb
+      in TextTertiary at 40% (60% hovered), a transparent track with no end
+      buttons. One implicit style app-wide, so the bar's list, the library's
+      EntryList and the translation panel's output all scroll the same way.
+
+      Known difference, recorded rather than fought (评审降级定案): WPF
+      scrollbars occupy layout width natively — an overlay needs negative-
+      margin tricks that cost more than the 6px they save, so the bar keeps
+      a 6px gutter and that stands as the accepted state.
+    -->
+
+    <!-- The thumb: a pill that darkens on hover. Min sizes keep it grabbable
+         on very long lists. -->
+    <Style x:Key="ModernScrollThumb" TargetType="Thumb">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="IsTabStop" Value="False"/>
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="MinHeight" Value="24"/>
+        <Setter Property="MinWidth" Value="24"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Thumb">
+                    <Border x:Name="Pill" CornerRadius="3"
+                            Background="{DynamicResource Brush.TextTertiary}" Opacity="0.4"/>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Pill" Property="Opacity" Value="0.6"/>
+                        </Trigger>
+                        <Trigger Property="IsDragging" Value="True">
+                            <Setter TargetName="Pill" Property="Opacity" Value="0.6"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- The page areas: transparent, still clickable, no arrow buttons. -->
+    <Style x:Key="ModernScrollPage" TargetType="RepeatButton">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="IsTabStop" Value="False"/>
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RepeatButton">
+                    <Border Background="Transparent"/>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <ControlTemplate x:Key="ModernVerticalScrollBar" TargetType="ScrollBar">
+        <Track x:Name="PART_Track" IsDirectionReversed="True">
+            <Track.DecreaseRepeatButton>
+                <RepeatButton Style="{StaticResource ModernScrollPage}"
+                              Command="ScrollBar.PageUpCommand"/>
+            </Track.DecreaseRepeatButton>
+            <Track.IncreaseRepeatButton>
+                <RepeatButton Style="{StaticResource ModernScrollPage}"
+                              Command="ScrollBar.PageDownCommand"/>
+            </Track.IncreaseRepeatButton>
+            <Track.Thumb>
+                <Thumb Style="{StaticResource ModernScrollThumb}"/>
+            </Track.Thumb>
+        </Track>
+    </ControlTemplate>
+
+    <ControlTemplate x:Key="ModernHorizontalScrollBar" TargetType="ScrollBar">
+        <Track x:Name="PART_Track" IsDirectionReversed="False">
+            <Track.DecreaseRepeatButton>
+                <RepeatButton Style="{StaticResource ModernScrollPage}"
+                              Command="ScrollBar.PageLeftCommand"/>
+            </Track.DecreaseRepeatButton>
+            <Track.IncreaseRepeatButton>
+                <RepeatButton Style="{StaticResource ModernScrollPage}"
+                              Command="ScrollBar.PageRightCommand"/>
+            </Track.IncreaseRepeatButton>
+            <Track.Thumb>
+                <Thumb Style="{StaticResource ModernScrollThumb}"/>
+            </Track.Thumb>
+        </Track>
+    </ControlTemplate>
+
+    <Style TargetType="ScrollBar">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Width" Value="6"/>
+        <Setter Property="Template" Value="{StaticResource ModernVerticalScrollBar}"/>
+        <Style.Triggers>
+            <Trigger Property="Orientation" Value="Horizontal">
+                <Setter Property="Width" Value="Auto"/>
+                <Setter Property="Height" Value="6"/>
+                <Setter Property="Template" Value="{StaticResource ModernHorizontalScrollBar}"/>
+            </Trigger>
+            <!-- Hover widens the BAR ITSELF, along its own axis only: a
+                 horizontal bar must never be handed a width. -->
+            <MultiTrigger>
+                <MultiTrigger.Conditions>
+                    <Condition Property="Orientation" Value="Vertical"/>
+                    <Condition Property="IsMouseOver" Value="True"/>
+                </MultiTrigger.Conditions>
+                <Setter Property="Width" Value="8"/>
+            </MultiTrigger>
+            <MultiTrigger>
+                <MultiTrigger.Conditions>
+                    <Condition Property="Orientation" Value="Horizontal"/>
+                    <Condition Property="IsMouseOver" Value="True"/>
+                </MultiTrigger.Conditions>
+                <Setter Property="Height" Value="8"/>
+            </MultiTrigger>
+        </Style.Triggers>
+    </Style>
 </ResourceDictionary>

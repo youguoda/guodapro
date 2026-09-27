@@ -42,12 +42,19 @@ internal partial class BarWindow
                 EntryKind.Files => "文件",
                 _ => entry.TranslatedFrom is null ? "文本" : "译文 · 译自原文",
             },
+            KindGlyph = entry.Kind switch
+            {
+                EntryKind.Image => "\uE8B9",
+                EntryKind.Files => "\uE8B7",
+                _ => "\uE8D2",
+            },
+            UseCount = entry.UseCount,
 
-            // Relative for the scan, absolute (plus the usage count, which is
-            // a reward rather than an identity) for the hover.
+            // Relative for the scan, absolute for the hover; the usage count
+            // lives on the type badge's tooltip (票 39) — a reward read on
+            // demand, not an identity worn on the face.
             WhenText = RelativeTime.For(entry.CreatedAt, DateTimeOffset.Now),
-            WhenToolTip = $"{entry.CreatedAt.ToLocalTime():yyyy-MM-dd HH:mm}"
-                + (entry.UseCount > 0 ? $"\n用过 {entry.UseCount} 次" : ""),
+            WhenToolTip = $"{entry.CreatedAt.ToLocalTime():yyyy-MM-dd HH:mm}",
             Icon = _icons.For(entry.SourceApp),
             Thumbnail = entry.Kind == EntryKind.Image
                 ? AppIconCache.Decode(entry.ThumbnailPng, 320)
@@ -78,6 +85,9 @@ internal partial class BarWindow
             PixelWidth = entry.ImageWidth,
             PixelHeight = entry.ImageHeight,
             IsPinned = entry.IsPinned,
+            IsProtected = _settings.ProtectEntries
+                && ((_settings.ProtectFavorites && entry.Favorite)
+                    || (_settings.ProtectPinned && entry.IsPinned)),
         };
 
         // The note is the public face; the original waits behind a hover.

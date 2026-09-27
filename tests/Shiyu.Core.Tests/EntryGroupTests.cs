@@ -168,6 +168,23 @@ public class EntryGroupTests
     }
 
     [Fact]
+    public void Counting_a_groups_members_reads_the_pile_before_deleting_it()
+    {
+        // 删除确认的判据（票 39）：任何非空分组删除都确认。非空与否由
+        // 库里数出来，不是抽屉当前恰好是不是它。
+        using var bench = new Bench();
+        var group = bench.Store.CreateGroup("项目甲", "甲");
+        var other = bench.Store.CreateGroup("日常", "日");
+
+        Assert.Equal(0, bench.Store.GroupEntryCount(group));
+
+        bench.Store.SetEntryGroup(bench.Alpha, group);
+
+        Assert.Equal(1, bench.Store.GroupEntryCount(group));
+        Assert.Equal(0, bench.Store.GroupEntryCount(other));
+    }
+
+    [Fact]
     public void Renaming_and_reiconning_update_the_listing()
     {
         using var database = new TempDatabase();

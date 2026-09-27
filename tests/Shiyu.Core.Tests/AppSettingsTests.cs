@@ -43,6 +43,10 @@ public class AppSettingsTests
         Assert.Equal(120, settings.BarImageHeight);
         Assert.Equal(3, settings.BarFileCount);
         Assert.Null(settings.BarLeft);
+
+        // Pinning to the top of the z-order is the resident bar's working
+        // posture; turning it off is a deliberate act (ticket 39).
+        Assert.True(settings.BarAlwaysOnTop);
     }
 
     [Fact]
@@ -63,6 +67,7 @@ public class AppSettingsTests
             BarTextLines = 6,
             BarImageHeight = 200,
             BarFileCount = 5,
+            BarAlwaysOnTop = false,
             BarLeft = 12.5,
             BarTop = 34.5,
             BarHeight = 800,
@@ -86,6 +91,7 @@ public class AppSettingsTests
         Assert.Equal(6, loaded.BarTextLines);
         Assert.Equal(200, loaded.BarImageHeight);
         Assert.Equal(5, loaded.BarFileCount);
+        Assert.False(loaded.BarAlwaysOnTop);
         Assert.Equal(12.5, loaded.BarLeft);
         Assert.Equal(34.5, loaded.BarTop);
         Assert.Equal(800, loaded.BarHeight);

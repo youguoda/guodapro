@@ -54,6 +54,13 @@ internal partial class BarWindow : Window
     /// <summary>Raised when the window is moved or resized; the owner persists geometry, throttled its own way.</summary>
     public event Action? GeometryChanged;
 
+    /// <summary>
+    /// Raised when the bar changes a setting itself (the header's pin, 票 39);
+    /// the owner writes it down. The settings page flows the other way, through
+    /// <see cref="ApplySettings"/> — one value, two editors, no loop.
+    /// </summary>
+    public event Action<AppSettings>? SettingsChanged;
+
     public BarWindow(
         EntryStore store,
         AppIconCache icons,
@@ -99,6 +106,11 @@ internal partial class BarWindow : Window
         PinnedList.ItemsSource = _pinned;
         Cards.ItemsSource = _cards;
 
+        // The pin state is a setting, not a mood (票 39): whatever the file
+        // says is how the window opens, and the header chrome agrees with it.
+        Topmost = _settings.BarAlwaysOnTop;
+        SyncTopmostChrome();
+
         RestoreGeometry();
         RefreshTagChoices();
         RefreshGroups();
@@ -113,7 +125,76 @@ internal partial class BarWindow : Window
         // A changed dwell or a disabled hover takes effect on the next event;
         // a preview already up keeps its own rules until it closes.
         _previewPolicy = new PreviewPolicy(settings.PreviewHoverDelayMs, () => Environment.TickCount64);
+        ApplyTopmost(settings.BarAlwaysOnTop);
         Rebuild();
+    }
+
+    // --- the pin (票 39) ---------------------------------------------------------
+
+    /// <summary>
+    /// The header pin. Topmost is the resident bar's working posture; turning
+    /// it off is a deliberate act, written to the settings the moment it
+    /// happens so the posture survives the restart. It is a mode, not a layer:
+    /// it never joins the Esc stack.
+    /// </summary>
+    private void OnTopmostToggle(object sender, RoutedEventArgs e)
+    {
+        var wanted = !Topmost;
+        _settings = _settings with { BarAlwaysOnTop = wanted };
+        ApplyTopmost(wanted);
+        SettingsChanged?.Invoke(_settings);
+    }
+
+    private void ApplyTopmost(bool topmost)
+    {
+        if (Topmost == topmost)
+        {
+            return;
+        }
+
+        Topmost = topmost;
+        SyncTopmostChrome();
+
+        // Degradation policy (票 39 评审定案): the layers ANCHORED to this
+        // window — the preview panel and its connector — follow the bar's
+        // z-tier, so a covered bar is never shadowed by its own floating
+        // panes. The badge and the translation panel are independent
+        // surfaces summoned by copies anywhere, not bar layers; they keep
+        // their own Topmost.
+        SyncFloatingLayers();
+    }
+
+    /// <summary>The pin button's face: filled and accented while pinned, quiet otherwise.</summary>
+    private void SyncTopmostChrome()
+    {
+        if (Topmost)
+        {
+            // PinnedFill. The ticket's "E8417" is a five-digit slip — the
+            // icon fonts stop at U+F8CC and nothing beyond the BMP exists;
+            // E841 is the filled pin both Segoe icon fonts carry.
+            TopmostGlyph.Text = "\uE841";
+            TopmostGlyph.SetResourceReference(ForegroundProperty, "Brush.Accent");
+            TopmostToggle.ToolTip = "窄条置顶中（点击后可被其他窗口遮挡）";
+        }
+        else
+        {
+            TopmostGlyph.Text = "\uE718";
+            TopmostGlyph.SetResourceReference(ForegroundProperty, "Brush.TextSecondary");
+            TopmostToggle.ToolTip = "窄条未置顶（点击恢复保持在其他窗口之上）";
+        }
+    }
+
+    private void SyncFloatingLayers()
+    {
+        if (_preview is not null)
+        {
+            _preview.Topmost = Topmost;
+        }
+
+        if (_connector is not null)
+        {
+            _connector.Topmost = Topmost;
+        }
     }
 
     private void Select(BarCard? card)

@@ -408,6 +408,16 @@ public partial class App : Application
             _bar.GeometryChanged += OnBarGeometryChanged;
             _bar.DataSettingsRequested += OpenSettingsAt;
             _bar.DeadDragNotice += notice => _tray?.ShowNotification("拾语", notice);
+
+            // The header's pin writes its own setting (票 39): the bar hands
+            // the updated record up, this side writes it down — the settings
+            // page flows the other way through ApplySettings, so the two
+            // editors never loop.
+            _bar.SettingsChanged += settings =>
+            {
+                _settings = settings;
+                _settings.Save(AppPaths.SettingsFile);
+            };
         }
 
         _bar.Toggle();

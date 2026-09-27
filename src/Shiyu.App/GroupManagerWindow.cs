@@ -39,6 +39,17 @@ internal sealed class GroupManagerWindow : Window
 
         var root = new StackPanel { Margin = new Thickness(12) };
 
+        // The one-sentence mind model (票 39): the head manages the piles,
+        // the card manages where the card lives.
+        var mind = new TextBlock
+        {
+            Text = "头部管分组本身，卡片管卡片的归属。",
+            Margin = new Thickness(0, 0, 0, 6),
+        };
+        mind.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
+        mind.SetResourceReference(TextBlock.FontWeightProperty, "Weight.Emphasis");
+        root.Children.Add(mind);
+
         var intro = new TextBlock
         {
             Text = "分组是抽屉：切到哪个就只看哪摊。标签是横标签，用来叠加筛选——两者在这里各管各的。",

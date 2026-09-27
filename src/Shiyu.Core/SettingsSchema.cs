@@ -103,6 +103,10 @@ public static class SettingsSchema
                     Hint: "窄条出现在光标/输入位置附近，与系统 Win+V 面板一致；关闭则固定在你上次拖放的位置。",
                     Keywords: ["位置", "光标", "呼出", "弹出", "输入"]),
                 new SettingsItem(
+                    "look.bar-topmost", "窄条置顶", SettingsControl.Toggle,
+                    Hint: "窄条保持在其他窗口之上；关闭后可被其他窗口遮挡，置顶状态由窄条头部的图钉按钮随时切换。",
+                    Keywords: ["置顶", "图钉", "压住", "遮挡", "窗口", "最前", "浮在最上层"]),
+                new SettingsItem(
                     "look.preview-hover", "悬停预览延迟", SettingsControl.Number, Min: 0, Max: 2000,
                     Hint: "鼠标在卡片上停留多少毫秒后弹出完整预览；0 表示关闭悬停预览（按住空格仍可预览）。",
                     Keywords: ["预览", "悬停", "停留", "空格", "完整", "延迟"])),

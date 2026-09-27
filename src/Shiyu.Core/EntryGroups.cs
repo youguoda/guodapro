@@ -158,6 +158,19 @@ public sealed partial class EntryStore
     }
 
     /// <summary>
+    /// How many entries a pile holds. The delete confirmations ask this
+    /// before acting: any non-empty group is one the user can lose sight of
+    /// (ticket 39), whichever drawer happens to be open.
+    /// </summary>
+    public int GroupEntryCount(long id)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM entries WHERE group_id = $id;";
+        command.Parameters.AddWithValue("$id", id);
+        return (int)(long)command.ExecuteScalar()!;
+    }
+
+    /// <summary>
     /// Deletes a group. Its entries are not deleted — the foreign key clears
     /// their column and they return to ungrouped, exactly as promised.
     /// </summary>

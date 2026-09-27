@@ -66,6 +66,16 @@ public sealed record AppSettings
     /// </summary>
     public bool BarAtCursor { get; init; } = true;
 
+    /// <summary>
+    /// Whether the resident bar stays pinned above every other window. On by
+    /// default — that is the working posture of a tool consulted dozens of
+    /// times a day. Turning it off lets other windows cover the bar; the bar's
+    /// own floating layers (preview, connector) degrade with it so they never
+    /// hover alone above windows the bar is under. The header pin button and
+    /// the settings page write this one value.
+    /// </summary>
+    public bool BarAlwaysOnTop { get; init; } = true;
+
     /// <summary>Whether copied file lists are recorded.</summary>
     public bool RecordFiles { get; init; } = true;
 

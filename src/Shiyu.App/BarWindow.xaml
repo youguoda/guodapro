@@ -123,6 +123,134 @@
             </Setter>
         </Style>
 
+        <!--
+          The search line (ticket 39): a pill with the magnifier living
+          inside it and a placeholder that vanishes with the first
+          character. The F key badge overlays the right edge as before.
+        -->
+        <Style x:Key="SearchBoxStyle" TargetType="TextBox">
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Text}"/>
+            <Setter Property="CaretBrush" Value="{DynamicResource Brush.Text}"/>
+            <Setter Property="SelectionBrush" Value="{DynamicResource Brush.Accent}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border x:Name="Chrome" CornerRadius="{DynamicResource Radius.Pill}"
+                                Background="{DynamicResource Brush.SurfaceInput}"
+                                BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1">
+                            <DockPanel Margin="9,0,28,0">
+                                <TextBlock DockPanel.Dock="Left" Text="&#xE721;"
+                                           FontFamily="{DynamicResource Font.Icon}"
+                                           FontSize="{DynamicResource Size.IconSmall}"
+                                           Foreground="{DynamicResource Brush.TextTertiary}"
+                                           VerticalAlignment="Center" Margin="0,0,7,0"
+                                           IsHitTestVisible="False"/>
+                                <Grid VerticalAlignment="Center" Margin="0,6">
+                                    <ScrollViewer x:Name="PART_ContentHost" Focusable="False"
+                                                  VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="Placeholder" Text="搜索…"
+                                               IsHitTestVisible="False" Visibility="Collapsed"
+                                               Foreground="{DynamicResource Brush.TextTertiary}"/>
+                                </Grid>
+                            </DockPanel>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="Text" Value="">
+                                <Setter TargetName="Placeholder" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource Brush.Accent}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!--
+          The kind row as four icon chips (ticket 39): SegmentChip
+          semantics on an icon face — the checked facet fills with the
+          accent and carries TextOnAccent, the rest stay secondary. The
+          glyphs match the tray's IconGlyph family so a facet and its
+          actions never draw two symbols for one idea.
+        -->
+        <Style x:Key="KindIconChip" TargetType="ToggleButton">
+            <Setter Property="Width" Value="26"/>
+            <Setter Property="Height" Value="24"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="Chrome" CornerRadius="{DynamicResource Radius.Small}"
+                                Background="Transparent">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Brush.Accent}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource Brush.TextOnAccent}"/>
+                            </Trigger>
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsMouseOver" Value="True"/>
+                                    <Condition Property="IsChecked" Value="False"/>
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Brush.StateHover}"/>
+                            </MultiTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!--
+          The favourite filter (ticket 39): one star that fills when the
+          filter is on — E735 is the same glyph the favourite action
+          carries, so "make favourite" and "see favourites" agree.
+        -->
+        <Style x:Key="StarToggleStyle" TargetType="ToggleButton">
+            <Setter Property="Width" Value="26"/>
+            <Setter Property="Height" Value="24"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="ToolTip" Value="只看收藏"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="Chrome" CornerRadius="{DynamicResource Radius.Small}"
+                                Background="Transparent">
+                            <Grid>
+                                <TextBlock x:Name="StarOut" Text="&#xE734;"
+                                           FontFamily="{DynamicResource Font.Icon}"
+                                           FontSize="{DynamicResource Size.IconSmall}"
+                                           Foreground="{DynamicResource Brush.TextSecondary}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="StarIn" Text="&#xE735;"
+                                           FontFamily="{DynamicResource Font.Icon}"
+                                           FontSize="{DynamicResource Size.IconSmall}"
+                                           Foreground="{DynamicResource Brush.Accent}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           Visibility="Collapsed"/>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="StarOut" Property="Visibility" Value="Collapsed"/>
+                                <Setter TargetName="StarIn" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsMouseOver" Value="True"/>
+                                    <Condition Property="IsChecked" Value="False"/>
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Brush.StateHover}"/>
+                            </MultiTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- The resize grip is a hit area, not a face: the default Thumb
              template paints a raised lump that has nothing to do with the
              sheet it sits on. -->
@@ -154,7 +282,7 @@
         <DataTemplate x:Key="CardTemplate" DataType="{x:Type local:BarCard}">
             <Border x:Name="Card" CornerRadius="{DynamicResource Radius.Card}"
                     Background="{DynamicResource Brush.Surface}"
-                    BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1"
+                    BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1.5"
                     Padding="10,8" MouseLeftButtonDown="OnCardPressed"
                     MouseRightButtonUp="OnCardRightClick"
                     MouseEnter="OnCardMouseEnter" MouseLeave="OnCardMouseLeave"
@@ -165,9 +293,11 @@
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
-                    <!-- Meta: where it came from and what it is on the left;
-                         on the right the timestamp, which yields its place to
-                         the hover actions and takes it back afterwards. -->
+                    <!-- Meta（票 39 三段式的上行）: where it came from and what
+                         it is on the left — the type badge is icon + word, the
+                         same glyph family the facet chips use; on the right the
+                         timestamp, which yields its place to the hover actions
+                         and takes it back afterwards. -->
                     <DockPanel Grid.Row="0" Margin="0,0,0,6">
                         <Grid DockPanel.Dock="Left" Width="16" Height="16" Margin="0,0,6,0">
                             <Image Source="{Binding Icon}" Visibility="{Binding IconVisibility}"/>
@@ -188,9 +318,16 @@
                                                 ToolTip="{Binding WhenToolTip}"/>
                             <local:ActionTray Margin="6,0,0,0"/>
                         </StackPanel>
-                        <TextBlock Text="{Binding KindText}" FontSize="{DynamicResource Size.Caption}"
-                                   Foreground="{DynamicResource Brush.TextSecondary}"
-                                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
+                                    ToolTip="{Binding KindToolTip}">
+                            <TextBlock Text="{Binding KindGlyph}" FontFamily="{DynamicResource Font.Icon}"
+                                       FontSize="{DynamicResource Size.IconSmall}"
+                                       Foreground="{DynamicResource Brush.TextSecondary}"
+                                       VerticalAlignment="Center" Margin="0,0,4,0"/>
+                            <TextBlock Text="{Binding KindText}" FontSize="{DynamicResource Size.Caption}"
+                                       Foreground="{DynamicResource Brush.TextSecondary}"
+                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
                     </DockPanel>
 
                     <!-- Body: text clamped to N lines, images to N units, a
@@ -207,7 +344,8 @@
                         <local:EntryBodyText x:Name="TextBody" Text="{Binding Face}"
                                    TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
                                    MaxHeight="{Binding TextMaxHeight}"
-                                   LineHeight="{DynamicResource Line.Body}"
+                                   FontSize="{DynamicResource Size.BodyLarge}"
+                                   LineHeight="{DynamicResource Line.BodyLarge}"
                                    LineStackingStrategy="BlockLineHeight"
                                    Foreground="{DynamicResource Brush.Text}"
                                    ToolTip="{Binding DragToolTip}"/>
@@ -269,9 +407,16 @@
                     <!-- Watermarks: quiet, bottom-right, never in the way.
                          The star is a favourite; it never moves the card.
                          The 译 mark says this entry is Shiyu's own kept
-                         translation, not something the user copied. -->
+                         translation, not something the user copied. The lock
+                         is the protected-corner slot (票 39): shown while
+                         delete protection covers this card. -->
                     <StackPanel Grid.Row="1" Orientation="Horizontal"
                                 HorizontalAlignment="Right" VerticalAlignment="Bottom">
+                        <TextBlock Text="&#xE72E;" FontFamily="{DynamicResource Font.Icon}"
+                                   FontSize="{DynamicResource Size.Hint}"
+                                   Foreground="{DynamicResource Brush.TextTertiary}"
+                                   ToolTip="受删除保护：先取消收藏或置顶，或在设置中调整保护"
+                                   Visibility="{Binding ProtectionVisibility}"/>
                         <TextBlock Text="译" FontSize="{DynamicResource Size.Hint}"
                                    Foreground="{DynamicResource Brush.Accent}"
                                    ToolTip="拾语生成的译文，已关联原文条目"
@@ -335,70 +480,126 @@
         <Border x:Name="Header" DockPanel.Dock="Top"
                 Padding="10,8">
             <StackPanel>
+                <!--
+                  第一行（票 39）：品牌图标 · 弹性空隙 · 圆角搜索框 · 置顶开关。
+                  The brand mark is a palette value (Brand.Mark): light theme
+                  carries 拾语, dark carries its dark variant 深语, swapped
+                  live with every DynamicResource when the theme changes.
+                -->
                 <Grid>
-                    <TextBox x:Name="SearchBox" Padding="8,6,32,6" TextChanged="OnSearchChanged"
-                             VerticalContentAlignment="Center"/>
-                    <!-- F: focus search. -->
-                    <Border x:Name="SearchKeyBadge" Style="{StaticResource KeyBadge}"
-                            HorizontalAlignment="Right" Margin="0,0,34,0" Visibility="Collapsed">
-                        <TextBlock Text="F" FontSize="{DynamicResource Size.Hint}"
-                                   Foreground="{DynamicResource Brush.TextOnAccent}"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Border Grid.Column="0" Width="24" Height="24"
+                            CornerRadius="{DynamicResource Radius.Card}" ClipToBounds="True"
+                            VerticalAlignment="Center" Margin="0,0,10,0"
+                            ToolTip="拾语 · 剪贴板历史窄条">
+                        <Image Source="{DynamicResource Brand.Mark}" Stretch="UniformToFill"
+                               RenderOptions.BitmapScalingMode="HighQuality"/>
                     </Border>
-                    <!-- 只看收藏 lives inside the search line: it is the most
-                         common single-condition filter, Win11-style. -->
-                    <ToggleButton x:Name="FavoriteOnly" HorizontalAlignment="Right" Width="26" Height="22"
-                                  Margin="0,0,4,0" Content="★" FontSize="{DynamicResource Size.Caption}"
-                                  Cursor="Hand" Checked="OnFilterChanged" Unchecked="OnFilterChanged"
-                                  ToolTip="只看收藏"/>
+                    <Grid Grid.Column="1" Margin="0,0,8,0">
+                        <TextBox x:Name="SearchBox" Style="{StaticResource SearchBoxStyle}"
+                                 TextChanged="OnSearchChanged" VerticalContentAlignment="Center"/>
+                        <!-- F: focus search. -->
+                        <Border x:Name="SearchKeyBadge" Style="{StaticResource KeyBadge}"
+                                HorizontalAlignment="Right" Margin="0,0,8,0" Visibility="Collapsed">
+                            <TextBlock Text="F" FontSize="{DynamicResource Size.Hint}"
+                                       Foreground="{DynamicResource Brush.TextOnAccent}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </Grid>
+                    <!-- 置顶：Topmost 开关。图标随态（E8417 填充/accent =
+                         开；E718 常规/次级 = 关），tooltip 写明当前状态。 -->
+                    <Button x:Name="TopmostToggle" Grid.Column="2" Width="28" Height="28"
+                            Cursor="Hand" Click="OnTopmostToggle"
+                            Style="{StaticResource HeaderIconButton}">
+                        <TextBlock x:Name="TopmostGlyph" Text="&#xE718;"
+                                   FontFamily="{DynamicResource Font.Icon}"
+                                   FontSize="{DynamicResource Size.IconMedium}"/>
+                    </Button>
                 </Grid>
-                <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
-                    <!-- Kind as a segmented control: four fixed values the user
-                         cycles with ←→, each state visible at a glance. -->
-                <StackPanel Orientation="Horizontal" x:Name="KindChips">
-                    <ToggleButton x:Name="KindChipAll" Content="全部" Tag="0"
-                                  Style="{StaticResource KindTab}"
-                                  Cursor="Hand" Click="OnKindChipClicked"/>
-                    <ToggleButton x:Name="KindChipText" Content="文本" Tag="1"
-                                  Style="{StaticResource KindTab}"
-                                  Cursor="Hand" Click="OnKindChipClicked"/>
-                    <ToggleButton x:Name="KindChipImage" Content="图片" Tag="2"
-                                  Style="{StaticResource KindTab}"
-                                  Cursor="Hand" Click="OnKindChipClicked"/>
-                    <ToggleButton x:Name="KindChipFiles" Content="文件" Tag="3"
-                                  Style="{StaticResource KindTab}"
-                                  Cursor="Hand" Click="OnKindChipClicked"/>
-                    <Border x:Name="KindKeyBadge" Style="{StaticResource KeyBadge}"
-                            Margin="4,0,0,0" Visibility="Collapsed">
-                        <TextBlock Text="←→" FontSize="{DynamicResource Size.Hint}"
-                                   Foreground="{DynamicResource Brush.TextOnAccent}"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                    </Border>
-                </StackPanel>
-                <Grid Margin="8,0,0,0">
-                    <ComboBox x:Name="TagFilter" Width="92"
-                              SelectionChanged="OnFilterChanged"/>
-                    <!-- Tab: cycle the group filter. -->
-                    <Border x:Name="TagKeyBadge" Style="{StaticResource KeyBadge}"
-                            HorizontalAlignment="Right" Margin="0,0,18,0" Width="24"
-                            Visibility="Collapsed">
-                        <TextBlock Text="Tab" FontSize="{DynamicResource Size.Hint}"
-                                   Foreground="{DynamicResource Brush.TextOnAccent}"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                    </Border>
-                </Grid>
-                <Button x:Name="ClearFilters" Width="26" Height="24" Margin="8,0,0,0"
-                        Style="{StaticResource HeaderIconButton}" Click="OnClearFilters"
-                        ToolTip="清除全部筛选">
-                    <TextBlock Text="&#xE711;" FontFamily="{DynamicResource Font.Icon}"
-                               FontSize="{DynamicResource Size.IconSmall}"/>
-                </Button>
-                <Button x:Name="SubtypeButton" Width="26" Height="24" Margin="4,0,0,0"
-                        Style="{StaticResource HeaderIconButton}" Click="OnSubtypeButtonClicked"
-                        ToolTip="按子类型筛选：链接 / 邮箱 / 颜色 / 路径">
-                    <TextBlock Text="&#xE71E;" FontFamily="{DynamicResource Font.Icon}"
-                               FontSize="{DynamicResource Size.IconSmall}"/>
-                </Button>
+                <!--
+                  第二行（票 39）：一行图标工具栏，四组之间细分隔线——
+                  类型筛选（互斥图标，←→ 循环）· 收藏 · 分组管理（E712 弹
+                  菜单）· 子类型/标签筛选（低频，收在漏斗与标签组合里）。
+                  The tag combo stays for the Tab cycle: a filter the keyboard
+                  still drives has to stay on the face.
+                -->
+                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                    <StackPanel Orientation="Horizontal" x:Name="KindChips">
+                        <ToggleButton x:Name="KindChipAll" Tag="0"
+                                      Style="{StaticResource KindIconChip}"
+                                      Cursor="Hand" Click="OnKindChipClicked"
+                                      ToolTip="全部（←→ 切换类型）">
+                            <TextBlock Text="&#xE8A9;" FontFamily="{DynamicResource Font.Icon}"
+                                       FontSize="{DynamicResource Size.IconSmall}"/>
+                        </ToggleButton>
+                        <ToggleButton x:Name="KindChipText" Tag="1"
+                                      Style="{StaticResource KindIconChip}"
+                                      Cursor="Hand" Click="OnKindChipClicked"
+                                      ToolTip="只看文本">
+                            <TextBlock Text="&#xE8D2;" FontFamily="{DynamicResource Font.Icon}"
+                                       FontSize="{DynamicResource Size.IconSmall}"/>
+                        </ToggleButton>
+                        <ToggleButton x:Name="KindChipImage" Tag="2"
+                                      Style="{StaticResource KindIconChip}"
+                                      Cursor="Hand" Click="OnKindChipClicked"
+                                      ToolTip="只看图片">
+                            <TextBlock Text="&#xE8B9;" FontFamily="{DynamicResource Font.Icon}"
+                                       FontSize="{DynamicResource Size.IconSmall}"/>
+                        </ToggleButton>
+                        <ToggleButton x:Name="KindChipFiles" Tag="3"
+                                      Style="{StaticResource KindIconChip}"
+                                      Cursor="Hand" Click="OnKindChipClicked"
+                                      ToolTip="只看文件">
+                            <TextBlock Text="&#xE8B7;" FontFamily="{DynamicResource Font.Icon}"
+                                       FontSize="{DynamicResource Size.IconSmall}"/>
+                        </ToggleButton>
+                        <!-- ←→: cycle the kind facet. -->
+                        <Border x:Name="KindKeyBadge" Style="{StaticResource KeyBadge}"
+                                Margin="4,0,0,0" Visibility="Collapsed">
+                            <TextBlock Text="←→" FontSize="{DynamicResource Size.Hint}"
+                                       Foreground="{DynamicResource Brush.TextOnAccent}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </StackPanel>
+                    <Border Width="1" Margin="6,4" Background="{DynamicResource Brush.Border}"/>
+                    <ToggleButton x:Name="FavoriteOnly" Style="{StaticResource StarToggleStyle}"
+                                  Checked="OnFilterChanged" Unchecked="OnFilterChanged"/>
+                    <Border Width="1" Margin="6,4" Background="{DynamicResource Brush.Border}"/>
+                    <Button x:Name="GroupMenuButton" Width="26" Height="24"
+                            Style="{StaticResource HeaderIconButton}" Click="OnGroupMenuClicked"
+                            ToolTip="分组：切换抽屉、删除分组、新建分组（头部管分组本身，卡片管卡片的归属）">
+                        <TextBlock Text="&#xE712;" FontFamily="{DynamicResource Font.Icon}"
+                                   FontSize="{DynamicResource Size.IconSmall}"/>
+                    </Button>
+                    <Border Width="1" Margin="6,4" Background="{DynamicResource Brush.Border}"/>
+                    <Grid Margin="2,0,0,0">
+                        <ComboBox x:Name="TagFilter" Width="80"
+                                  SelectionChanged="OnFilterChanged"/>
+                        <!-- Tab: cycle the tag filter. -->
+                        <Border x:Name="TagKeyBadge" Style="{StaticResource KeyBadge}"
+                                HorizontalAlignment="Right" Margin="0,0,6,0" Width="24"
+                                Visibility="Collapsed">
+                            <TextBlock Text="Tab" FontSize="{DynamicResource Size.Hint}"
+                                       Foreground="{DynamicResource Brush.TextOnAccent}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </Grid>
+                    <Button x:Name="SubtypeButton" Width="26" Height="24" Margin="4,0,0,0"
+                            Style="{StaticResource HeaderIconButton}" Click="OnSubtypeButtonClicked"
+                            ToolTip="按子类型筛选：链接 / 邮箱 / 颜色 / 路径">
+                        <TextBlock Text="&#xE71C;" FontFamily="{DynamicResource Font.Icon}"
+                                   FontSize="{DynamicResource Size.IconSmall}"/>
+                    </Button>
+                    <Button x:Name="ClearFilters" Width="26" Height="24" Margin="2,0,0,0"
+                            Style="{StaticResource HeaderIconButton}" Click="OnClearFilters"
+                            ToolTip="清除全部筛选">
+                        <TextBlock Text="&#xE711;" FontFamily="{DynamicResource Font.Icon}"
+                                   FontSize="{DynamicResource Size.IconSmall}"/>
+                    </Button>
                 </StackPanel>
             </StackPanel>
         </Border>

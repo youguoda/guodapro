@@ -87,6 +87,10 @@ internal partial class BarWindow
             _preview.PointerRestingOnPanel += () => RunPreviewCommand(_previewPolicy.PreviewEntered());
             _preview.PointerLeftPanel += () => RunPreviewCommand(_previewPolicy.PreviewLeft());
             _preview.PanelMoved += OnPreviewPanelMoved;
+
+            // Born into the bar's z-tier (票 39): the panel never hovers above
+            // windows the bar itself is under.
+            _preview.Topmost = Topmost;
         }
 
         return _preview;
@@ -105,6 +109,7 @@ internal partial class BarWindow
         }
 
         _connector ??= new ConnectorWindow();
+        _connector.Topmost = Topmost;
         _connector.ShowCurve(anchor, panel, new System.Windows.Interop.WindowInteropHelper(_preview).Handle);
     }
 

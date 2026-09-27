@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
+using System.Windows.Media.Imaging;
 using Microsoft.Win32;
 using Shiyu.Core;
 
@@ -142,7 +143,26 @@ internal sealed class ThemeManager : IDisposable
         values["Shadow.Floating"] = Shadow(DesignTokens.ShadowFloating);
         values["Shadow.Badge"] = Shadow(DesignTokens.ShadowBadge);
 
+        // The brand mark is a palette value (ticket 39): 拾语 in the light,
+        // its dark-mode counterpart 深语 in the dark — one DynamicResource
+        // reference in the bar's header, and a theme swap carries the icon
+        // along with every brush, live.
+        values["Brand.Mark"] = BrandMark(palette.Name);
+
         return values;
+
+        static ImageSource BrandMark(string paletteName)
+        {
+            var source = new BitmapImage();
+            source.BeginInit();
+            source.CacheOption = BitmapCacheOption.OnLoad;
+            source.UriSource = new Uri(
+                $"pack://application:,,,/Assets/brand-{paletteName.ToLowerInvariant()}.png",
+                UriKind.Absolute);
+            source.EndInit();
+            source.Freeze();
+            return source;
+        }
 
         static DropShadowEffect Shadow((double Blur, double Depth, double Opacity) spec)
         {

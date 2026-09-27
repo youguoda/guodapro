@@ -5,6 +5,12 @@
     <ProjectReference Include="..\Shiyu.Windows\Shiyu.Windows.csproj" />
   </ItemGroup>
 
+  <!-- The brand marks ride as loose resources so ThemeManager can address
+       them by pack URI and swap them with the palette (ticket 39). -->
+  <ItemGroup>
+    <Resource Include="Assets\*.png" />
+  </ItemGroup>
+
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net9.0-windows</TargetFramework>

@@ -204,7 +204,10 @@ internal partial class BarWindow
             {
                 Content = $"{group.Icon ?? "组"} {group.Name}",
                 Cursor = Cursors.Hand,
-                ToolTip = $"只看「{group.Name}」——再点一次回到全部",
+
+                // The chips are the drawer's visible state and nothing more
+                // (票 39): switching here, managing in the header's ⋯ menu.
+                ToolTip = $"只看「{group.Name}」——再点一次回到全部（增删分组在头部 ⋯ 菜单）",
 
                 // Tabs, not boxes: groups share the kind tabs' underline
                 // idiom so the two rows read as one family.
@@ -340,15 +343,8 @@ internal partial class BarWindow
             host.Children.Add(item);
         }
 
-        var manage = new Button
-        {
-            Content = "管理分组…",
-            Padding = new Thickness(10, 5, 10, 5),
-            Cursor = Cursors.Hand,
-        };
-        manage.SetResourceReference(BackgroundProperty, "Brush.Surface");
-        manage.Click += OnManageGroups;
-        host.Children.Add(manage);
+        // The chips row shows and switches, it no longer manages (票 39):
+        // 管理分组… moved to the header's ⋯ menu, so the row has one job.
 
         _overflowPopup = new Popup
         {

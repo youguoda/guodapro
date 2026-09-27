@@ -139,4 +139,17 @@ public class SettingsSchemaTests
             SettingsSchema.Tree.SelectMany(p => p.Sections).SelectMany(s => s.Items),
             item => item.Id == "bar.at-cursor" && item.Control == SettingsControl.Toggle);
     }
+
+    [Fact]
+    public void The_bar_is_pinned_to_the_top_by_default_and_the_setting_is_a_look_toggle()
+    {
+        // 置顶 is how the resident bar works by default; the switch that turns
+        // it off belongs with the interface's appearance, not with behaviour
+        // the user has no reason to look for (ticket 39).
+        Assert.True(new AppSettings().BarAlwaysOnTop);
+
+        var item = Items().Single(i => i.Id == "look.bar-topmost");
+        Assert.Equal(SettingsControl.Toggle, item.Control);
+        Assert.Equal("look", SettingsSchema.Tree.Single(p => p.Sections.SelectMany(s => s.Items).Contains(item)).Id);
+    }
 }
