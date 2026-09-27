@@ -34,10 +34,29 @@ TieZ 调研（docs/research/2026-09-26-tiez-clipboard-analysis.md §4.2）的教
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
-- [ ] 七个文件切分完成，`BarWindow.xaml.cs` 主文件 ≤ 400 行，无文件 > 800 行
-- [ ] 行为零变化：全量测试绿（466 基线）；构建无新警告
-- [ ] 窄条探针**全量回归（25 项）**全过——这是本票唯一的行为验收
-- [ ] git diff 复核：除文件移动与 partial 声明外，无逻辑增删（评审时抽查
+## 实现记录（2026-09-27，DAG 执行）
+
+- 交付：候选 `4657c7c`（基线 906ac39，单提交；首轮候选 8eee3f6 因票 34 验收
+  移动 tip 而变基刷新，记录保留为 superseded），tree `6ced5d9`；已晋升
+  `dag/integration`。九文件：主 `BarWindow.xaml.cs` 329 行 +
+  BarCards/BarFilters/BarGroups/BarInteractions(793)/BarKeyHandling/BarPreview
+  分区 + BarCard/BarCardViews 辅助类型独立文件。XAML 与 x:Name 绑定零改动。
+- 门禁：构建 0 错误（无新警告）；**524/524 通过**（基线含票 34 的 58 项；
+  本票零测试增删）；主 ≤400、最大 793 ≤800 ✓；diff 纯度三层证明（行多重集
+  1908=1908、行级差分删除 0 行、分区抽查逐字节相同；变基后双向 blob 恒等复核）。
+- **协调者侧 25 项窄条真机探针：25/25 通过**（failures:0，于本候选工作树构建
+  实测；过程中修正了探针自身的过时宽度常量——票 30-33 已把窄条加宽至 384 DIP，
+  非本票行为变化）。
+- 评审：Standards 轴 0 硬违规、4 条判断级记录（BarInteractions 793/800 容量
+  提示——票 37/39 落地时注意）；Spec 轴满足。记录：
+  `E:\Project\guodapro-dag\candidate-records\ticket-40.md`（仓库外）。
+- 已知怪样原样搬运并记录：`get => _face;` 异常空白、Rebuild 前缺空行（零改动
+  原则）。
+
+- [x] 七个文件切分完成，`BarWindow.xaml.cs` 主文件 ≤ 400 行，无文件 > 800 行
+- [x] 行为零变化：全量测试绿（466 基线）；构建无新警告
+- [x] 窄条探针**全量回归（25 项）**全过——这是本票唯一的行为验收
+- [x] git diff 复核：除文件移动与 partial 声明外，无逻辑增删（评审时抽查
       两个分区的 diff 确认为纯搬运）
