@@ -32,6 +32,12 @@ public partial class BadgeWindow : Window
     /// <summary>Raised when the user takes up the offer.</summary>
     public event Action<string>? Accepted;
 
+    /// <summary>
+    /// 徽标未被点击就淡出。划词模式借走的剪贴板挂在这扇窗上——没人点击，
+    /// 就该在它消失的那一刻还回去（票 37）。
+    /// </summary>
+    public event Action? Dismissed;
+
     public BadgeWindow()
     {
         InitializeComponent();
@@ -126,6 +132,7 @@ public partial class BadgeWindow : Window
             if (Opacity <= 0.01)
             {
                 Hide();
+                Dismissed?.Invoke();
             }
         };
 

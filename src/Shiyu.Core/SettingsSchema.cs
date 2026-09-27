@@ -133,6 +133,11 @@ public static class SettingsSchema
                 new SettingsItem("hotkey.clipboard", "翻译剪贴板", SettingsControl.Hotkey, Keywords: ["剪贴板", "翻译", "快捷键"]),
                 new SettingsItem("hotkey.quickbar", "快速条", SettingsControl.Hotkey, Keywords: ["快速条", "快捷键"]),
                 new SettingsItem("hotkey.bar", "窄条", SettingsControl.Hotkey, Keywords: ["窄条", "快捷键"])),
+            new SettingsSection("hotkeys.drag", "划词",
+                new SettingsItem(
+                    "hotkeys.selection-badge", "拖选后出翻译徽标", SettingsControl.Toggle,
+                    Hint: "在任意应用里拖选文字后，光标旁浮现「译」徽标，点击才翻译，无需记快捷键。需要常驻全局鼠标监听（低级鼠标钩子，每一次鼠标事件都会多绕一段拾语），默认关闭；关闭即刻摘钩，拾语退出时钩子自动还给系统。与「划词翻译」热键并存，互不影响。",
+                    Keywords: ["划词", "拖选", "选中", "徽标", "翻译", "鼠标", "钩子", "监听", "开销"])),
             new SettingsSection("hotkeys.winv", "系统按键",
                 new SettingsItem(
                     "winv.takeover", "接管 Win+V", SettingsControl.Toggle,

@@ -34,6 +34,13 @@ public partial class App : Application
     private System.Windows.Threading.DispatcherTimer? _barGeometrySave;
     private WinVHook? _winV;
     private SpeechSynthesis? _speech;
+    private MouseDragHook? _mouseDrag;
+
+    /// <summary>
+    /// 划词路径挂起的剪贴板还原：取词借走了用户剪贴板，还原被推迟到面板
+    /// 显示之后（票 37）。非 null 即"当前徽标是一次划词，且债未还"。
+    /// </summary>
+    private DeferredCapture? _pendingSelection;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -138,7 +145,7 @@ public partial class App : Application
         {
             RecentItems = () => _store.Recent(limit: 10).Select(entry => entry.Text).ToList(),
         };
-        _pipeline.BadgeDeserved += ShowBadge;
+        _pipeline.BadgeDeserved += text => ShowBadge(text);
 
         _tray.QuitRequested += Shutdown;
         _tray.OpenLibraryRequested += ShowLibrary;
@@ -152,6 +159,7 @@ public partial class App : Application
         _hotkeys = new HotkeyRegistry(_messageWindow);
         RegisterHotkeys();
         ApplyWinVTakeover();
+        ApplySelectionBadge();
 
         _singleInstance.WatchForOtherInstances(_messageWindow);
 
@@ -367,6 +375,7 @@ public partial class App : Application
             _hotkeys = new HotkeyRegistry(_messageWindow!);
             RegisterHotkeys();
             ApplyWinVTakeover();
+            ApplySelectionBadge();
 
             if (movedData)
             {
@@ -394,6 +403,7 @@ public partial class App : Application
             _hotkeys = new HotkeyRegistry(_messageWindow!);
             RegisterHotkeys();
             ApplyWinVTakeover();
+            ApplySelectionBadge();
         }
     }
 
@@ -478,20 +488,41 @@ public partial class App : Application
     /// <summary>
     /// One badge window, reused. It appears many times an hour; building a
     /// window each time is work the user would feel.
+    ///
+    /// 复制路径与划词路径共用这一扇窗：划词取词借走的剪贴板作为
+    /// <paramref name="selection"/> 随徽标一起挂上——任何一次新 Offer 接手前
+    /// 先结算上一笔，徽标换主，旧账要清。
     /// </summary>
-    private void ShowBadge(string text)
+    private void ShowBadge(string text, DeferredCapture? selection = null)
     {
+        FlushPendingSelection();
+
         if (_badge is null)
         {
             _badge = new BadgeWindow();
-            _badge.Accepted += ShowPanel;
+            _badge.Accepted += OnBadgeAccepted;
+            _badge.Dismissed += FlushPendingSelection;
         }
 
+        _pendingSelection = selection;
         _badge.Offer(text);
     }
 
     /// <summary>
-    /// Summons the quick bar. One instance, reused: it appears dozens of times
+    /// 徽标被点击：复制徽标直达面板；划词徽标在面板显示之后再还原剪贴板
+    /// （票 37 的 Glossy 次序——还原可以等，点击到出面板这一段不该再添
+    /// 一次剪贴板写）。挂起的债在此刻转手给面板，<see cref="_pendingSelection"/>
+    /// 清空，避免淡出事件重复还。
+    /// </summary>
+    private void OnBadgeAccepted(string text)
+    {
+        var selection = _pendingSelection;
+        _pendingSelection = null;
+
+        ShowPanel(text, onDisplayed: selection is null ? null : () => RestoreDeferred(selection));
+    }
+
+    /// <summary>Summons the quick bar. One instance, reused: it appears dozens of times
     /// a day and building a window each time is work the user would feel.
     /// </summary>
     private void ShowQuickBar()
@@ -509,11 +540,15 @@ public partial class App : Application
     /// Opens the panel on the given text. One panel, reused: a second copy
     /// would be two translations of two different things competing for the
     /// same corner of the screen.
+    ///
+    /// <paramref name="onDisplayed"/> 在面板上屏的那一刻触发；面板出不来时
+    /// 立刻触发——挂着不执行的还原就是白借。
     /// </summary>
-    private async void ShowPanel(string text)
+    private async void ShowPanel(string text, Action? onDisplayed = null)
     {
         if (_hotkeys is null || _writer is null)
         {
+            onDisplayed?.Invoke();
             return;
         }
 
@@ -525,7 +560,7 @@ public partial class App : Application
             SaveTranslationToHistory,
             dictionary: BuildDictionary,
             speech: _speech);
-        await _panel.TranslateAsync(text);
+        await _panel.TranslateAsync(text, onDisplayed);
     }
 
     /// <summary>
@@ -624,6 +659,8 @@ public partial class App : Application
         _bar?.Close();
         _quickBar?.CloseForGood();
         _panel?.CloseForGood();
+        // 划词借走的剪贴板随徽标一并了结：退出前把债还上。
+        FlushPendingSelection();
         _badge?.CloseForGood();
         _speech?.Dispose();
         _tray?.Dispose();
@@ -633,6 +670,7 @@ public partial class App : Application
         _store?.Dispose();
         _hotkeys?.Dispose();
         _winV?.Dispose();
+        _mouseDrag?.Dispose();
         _singleInstance?.Dispose();
 
         base.OnExit(e);
@@ -657,6 +695,98 @@ public partial class App : Application
         {
             _winV.Dispose();
             _winV = null;
+        }
+    }
+
+    /// <summary>
+    /// 装上/摘掉划词的鼠标钩子，随设置即时生效——与 Win+V 接管同一个模式。
+    /// 默认不装（票 37 的硬约束）：全局低级鼠标钩子让每一次鼠标事件都多绕
+    /// 一段本进程，这笔开销只有用户自己点头才花。钩子活在本进程里，关闭
+    /// 即刻摘钩，进程退出或被强杀时系统自动还原。
+    /// </summary>
+    private void ApplySelectionBadge()
+    {
+        if (_settings.SelectionBadge)
+        {
+            if (_mouseDrag is null)
+            {
+                _mouseDrag = new MouseDragHook();
+                _mouseDrag.DragCompleted += OnDragSelected;
+            }
+        }
+        else if (_mouseDrag is not null)
+        {
+            _mouseDrag.Dispose();
+            _mouseDrag = null;
+        }
+    }
+
+    /// <summary>
+    /// 一次拖选完成（UI 线程上）：过滤链前段（总开关 → 桌面早退）拦下不值得
+    /// 取词的场合；然后借出剪贴板模拟 Ctrl+C；再由后段（最小长度 → 须含
+    /// 字母 → 拒绝路径形）裁决徽标。通过则徽标浮现，借走的剪贴板挂起，等
+    /// 面板显示之后或徽标淡出时归还。
+    ///
+    /// 一切失败都安静收场：拖选是被动遭遇，不是用户点名的动作，安静的
+    /// 没有徽标就是全部该有的反馈（划词热键路径保留着它的通知，那是显式
+    /// 请求该有的待遇）。
+    /// </summary>
+    private void OnDragSelected()
+    {
+        if (_capture is null)
+        {
+            return;
+        }
+
+        // 总开关传实时值：装钩与事件抵达之间设置若被关掉，这里也拦得住。
+        if (SelectionBadgeFilter.JudgeBeforeCapture(
+                _settings.SelectionBadge, DesktopShell.IsForeground())
+            != SelectionBadgeVerdict.Offer)
+        {
+            return;
+        }
+
+        // 新一次取词前先还上一笔——两次快速拖选时，第二笔会借走第一笔的
+        // 选中文字，不还就永远找不回用户最初的剪贴板。
+        FlushPendingSelection();
+
+        var deferred = _capture.CaptureDeferRestore();
+        if (deferred is null)
+        {
+            return;
+        }
+
+        if (deferred.Outcome != CaptureOutcome.Captured
+            || SelectionBadgeFilter.JudgeCapturedText(deferred.Text!)
+                != SelectionBadgeVerdict.Offer)
+        {
+            RestoreDeferred(deferred);
+            return;
+        }
+
+        ShowBadge(deferred.Text!, deferred);
+    }
+
+    /// <summary>还掉挂起的划词剪贴板（若有）。幂等：没债就是空操作。</summary>
+    private void FlushPendingSelection()
+    {
+        var pending = _pendingSelection;
+        _pendingSelection = null;
+        if (pending is not null)
+        {
+            RestoreDeferred(pending);
+        }
+    }
+
+    /// <summary>
+    /// 归还划词借走的剪贴板。还原失败是唯一值得打断用户的失败——他们的
+    /// 剪贴板没了，不说话他们只会从粘贴错东西的那一刻才发现。
+    /// </summary>
+    private void RestoreDeferred(DeferredCapture deferred)
+    {
+        if (_capture is not null && !_capture.Restore(deferred))
+        {
+            _tray?.ShowNotification("拾语", "取词后未能还原你原本的剪贴板内容。");
         }
     }
 

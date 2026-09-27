@@ -152,4 +152,16 @@ public class SettingsSchemaTests
         Assert.Equal(SettingsControl.Toggle, item.Control);
         Assert.Equal("look", SettingsSchema.Tree.Single(p => p.Sections.SelectMany(s => s.Items).Contains(item)).Id);
     }
+
+    [Fact]
+    public void The_selection_badge_is_off_by_default_and_its_switch_lives_with_the_hotkeys()
+    {
+        // 默认关闭是票 37 的硬约束：全局鼠标钩子的开销不为用户决定。
+        // 开关挂在"快捷键"页——它和划词热键是同一件事的两种触发方式。
+        Assert.False(new AppSettings().SelectionBadge);
+
+        var item = Items().Single(i => i.Id == "hotkeys.selection-badge");
+        Assert.Equal(SettingsControl.Toggle, item.Control);
+        Assert.Equal("hotkeys", SettingsSchema.Tree.Single(p => p.Sections.SelectMany(s => s.Items).Contains(item)).Id);
+    }
 }

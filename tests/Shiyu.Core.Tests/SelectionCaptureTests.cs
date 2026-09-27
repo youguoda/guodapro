@@ -203,4 +203,139 @@ public class SelectionCaptureTests
         // be on the clipboard instead — the wrong text, silently.
         Assert.Equal(0, platform.PasteKeystrokes);
     }
+
+    // --- 划词路径（票 37）：借出 → Ctrl+C → 等答案，但还原推迟 ---
+    //
+    // 还原时序采纳 Glossy 的次序细节：剪贴板还原放在翻译面板显示之后。
+    // 还原可以等——取到的文字已经拿在手里，而点击到出面板这一段不该
+    // 再添一次剪贴板写。
+
+    [Fact]
+    public void A_deferred_capture_leaves_the_selection_on_the_clipboard()
+    {
+        var (platform, capture) = Build("the user's own clipboard");
+        platform.AnswersAfterPolls = 1;
+        platform.Answer = "the selected text";
+
+        var deferred = capture.CaptureDeferRestore();
+
+        Assert.NotNull(deferred);
+        Assert.True(deferred.Succeeded);
+        Assert.Equal("the selected text", deferred.Text);
+        Assert.Equal("the user's own clipboard", deferred.Borrowed);
+
+        // 剪贴板此刻攥着的是选中文字，不是用户原有的内容——还原被推迟了。
+        Assert.Equal("the selected text", platform.CurrentClipboard);
+    }
+
+    [Fact]
+    public void The_deferred_capture_rewrites_the_selection_in_shiyus_own_name()
+    {
+        var (platform, capture) = Build("the user's own clipboard");
+        platform.AnswersAfterPolls = 1;
+        platform.Answer = "the selected text";
+
+        capture.CaptureDeferRestore();
+
+        // 取到的文字被立即以拾语名义写回：剪贴板的 owner 从此是拾语，
+        // "目标应用完成复制"的迟到通知在还原之前抵达也会被自我抑制挡下
+        // （监控按处理时刻的 owner 判定）。这一次写是唯一的一次。
+        Assert.Equal(["the selected text"], platform.Writes);
+    }
+
+    [Fact]
+    public void Restoring_a_deferred_capture_puts_the_users_clipboard_back()
+    {
+        var (platform, capture) = Build("the user's own clipboard");
+        platform.AnswersAfterPolls = 1;
+
+        var deferred = capture.CaptureDeferRestore();
+        Assert.NotNull(deferred);
+        Assert.True(capture.Restore(deferred));
+
+        Assert.Equal("the user's own clipboard", platform.CurrentClipboard);
+    }
+
+    [Fact]
+    public void A_deferred_capture_that_captures_nothing_still_gives_the_clipboard_back()
+    {
+        var (platform, capture) = Build("the user's own clipboard");
+        platform.AnswersAfterPolls = null;
+
+        var deferred = capture.CaptureDeferRestore();
+        Assert.NotNull(deferred);
+        Assert.Equal(CaptureOutcome.NothingCaptured, deferred.Outcome);
+
+        // 没取到文字就不会有徽标，也没有"以拾语名义写回"——剪贴板原样未动。
+        Assert.Empty(platform.Writes);
+        Assert.Equal("the user's own clipboard", platform.CurrentClipboard);
+
+        Assert.True(capture.Restore(deferred));
+        Assert.Equal("the user's own clipboard", platform.CurrentClipboard);
+    }
+
+    [Fact]
+    public void A_deferred_capture_on_an_unreadable_clipboard_borrows_nothing()
+    {
+        var platform = new FakeCapturePlatform { ReadFails = true };
+        var capture = new SelectionCapture(platform, Timing);
+
+        Assert.Null(capture.CaptureDeferRestore());
+
+        // 借都没借到：没有按键发进别人的窗口，也没有需要还原的东西。
+        Assert.Equal(0, platform.CopyKeystrokes);
+        Assert.Empty(platform.Writes);
+    }
+
+    [Fact]
+    public void A_failing_rewrite_does_not_fail_the_deferred_capture()
+    {
+        var (platform, capture) = Build("the user's own clipboard");
+        platform.AnswersAfterPolls = 1;
+        platform.WriteThrows = true;
+
+        var deferred = capture.CaptureDeferRestore();
+
+        // 名义写回失败只是少了自我抑制的保险，取词本身成立。
+        Assert.NotNull(deferred);
+        Assert.True(deferred.Succeeded);
+
+        // 还原同样撞上坏写——如实报告失败，这正是调用方要转告用户的。
+        Assert.False(capture.Restore(deferred));
+    }
+
+    [Fact]
+    public void An_empty_clipboard_is_restored_as_empty_by_the_deferred_path()
+    {
+        var (platform, capture) = Build(null);
+        platform.AnswersAfterPolls = 1;
+
+        var deferred = capture.CaptureDeferRestore();
+        Assert.NotNull(deferred);
+        Assert.Null(deferred.Borrowed);
+
+        capture.Restore(deferred);
+
+        // 还的是"空"，不是留下选中文字冒充用户复制过它。
+        Assert.Null(platform.CurrentClipboard);
+    }
+
+    [Fact]
+    public void A_user_copy_made_while_the_debt_was_out_voids_the_restore()
+    {
+        var (platform, capture) = Build("the user's own clipboard");
+        platform.AnswersAfterPolls = 1;
+
+        var deferred = capture.CaptureDeferRestore();
+        Assert.NotNull(deferred);
+
+        // 徽标还挂着的时候用户自己复制了新东西——剪贴板已经往前走了。
+        platform.PutOnClipboard("something newer");
+
+        Assert.True(capture.Restore(deferred));
+
+        // 还原被跳过：踩掉用户更新的复制比不还旧债更糟。
+        Assert.Equal("something newer", platform.CurrentClipboard);
+        Assert.Equal(["the selected text"], platform.Writes);
+    }
 }

@@ -81,8 +81,14 @@ public partial class PanelWindow : Window
         TransientWindow.MakeNonActivating(new WindowInteropHelper(this).Handle, ZBand.Topmost);
     }
 
-    /// <summary>Shows the panel beside the cursor and starts translating.</summary>
-    public async Task TranslateAsync(string text)
+    /// <summary>
+    /// Shows the panel beside the cursor and starts translating.
+    ///
+    /// <paramref name="onDisplayed"/> fires exactly when the panel is on screen
+    /// (after placement, before the stream starts) — 划词路径靠它钉住"剪贴板
+    /// 还原放在翻译面板显示之后"的次序（票 37 的 Glossy 细节）。
+    /// </summary>
+    public async Task TranslateAsync(string text, Action? onDisplayed = null)
     {
         _original = text;
         OriginalText.Text = text;
@@ -109,6 +115,9 @@ public partial class PanelWindow : Window
         Opacity = 1;
         UpdateLayout();
         MoveBesideCursor();
+
+        // 面板已显示：此刻之后的剪贴板写不再挡在用户和首帧之间。
+        onDisplayed?.Invoke();
 
         // The entrance lives on the content, not the window: same rule,
         // opposite side — the sheet fades and rises, the window stays solid.

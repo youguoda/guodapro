@@ -58,6 +58,13 @@ public static partial class ContentClassifier
     [GeneratedRegex(@"=>|->|::|==|!=|&&|\|\||\+=|\breturn\b|\bfunction\b|\bconst\b|\bdef\b|\bclass\b|\bimport\b|\bpublic\b|\bvoid\b|</\w+>|\w+\(\)")]
     private static partial Regex CodeSignal { get; }
 
+    /// <summary>
+    /// The path shape on its own, so other filters (划词的过滤链, 票 37) can
+    /// reject paths without buying into the whole classification.
+    /// </summary>
+    public static bool LooksLikeFilePath(string text)
+        => PathLike.IsMatch(text.Trim());
+
     public static ContentKind Classify(string text)
     {
         if (string.IsNullOrWhiteSpace(text))

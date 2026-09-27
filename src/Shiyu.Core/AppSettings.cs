@@ -132,6 +132,14 @@ public sealed record AppSettings
     public bool TakeOverWinV { get; init; }
 
     /// <summary>
+    /// 拖选文字后光标旁浮"译"徽标，点击才翻译（划词徽章模式，票 37）。
+    /// 默认关闭：它要常驻一个全局低级鼠标钩子，每一次鼠标事件都会多绕
+    /// 一段本进程——这笔开销不为用户决定，只有用户自己点头才花。钩子
+    /// 活在本进程里，关闭即刻摘钩，退出或被强杀时系统自动还原。
+    /// </summary>
+    public bool SelectionBadge { get; init; }
+
+    /// <summary>
     /// Look for a newer release shortly after startup. On by default: for a
     /// resident tool, an update channel nobody checks is an update channel
     /// that does not exist. A found update only raises a tray notification —

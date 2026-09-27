@@ -5,6 +5,14 @@ namespace Shiyu.Windows;
 internal delegate IntPtr WindowProcedure(IntPtr hWnd, uint message, IntPtr wParam, IntPtr lParam);
 
 /// <summary>
+/// A low-level hook callback (WH_KEYBOARD_LL / WH_MOUSE_LL). Same shape as
+/// <see cref="WindowProcedure"/>; separate name because a hook that times out
+/// is silently unhooked by the system, which makes these worth their own
+/// discipline at every call site.
+/// </summary>
+internal delegate IntPtr LowLevelHookProc(int code, IntPtr wParam, IntPtr lParam);
+
+/// <summary>
 /// The Win32 surface this application depends on. Kept in one place so the
 /// platform layer reads as ordinary code and the interop stays reviewable.
 /// </summary>
@@ -337,7 +345,25 @@ internal static class NativeMethods
     [DllImport("shell32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     internal static extern IntPtr SHGetFileInfoW(string path, uint attributes, ref ShFileInfo info, uint size, uint flags);
 
+    [DllImport("user32.dll", SetLastError = true)]
+    internal static extern bool DestroyIcon(IntPtr hIcon);
+
+    // --- 低级钩子（WH_KEYBOARD_LL=13 见 WinVHook；WH_MOUSE_LL=14 见 MouseDragHook）---
+
+    [DllImport("user32.dll", SetLastError = true)]
+    internal static extern IntPtr SetWindowsHookExW(
+        int idHook, LowLevelHookProc lpfn, IntPtr hMod, uint dwThreadId);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    internal static extern bool UnhookWindowsHookEx(IntPtr hhk);
+
     [DllImport("user32.dll")]
-    internal static extern bool DestroyIcon(IntPtr icon);
+    internal static extern IntPtr CallNextHookEx(
+        IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+
+    // --- 前台窗口的类别（划词的桌面早退，票 37）---
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    internal static extern int GetClassNameW(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
 
 }
