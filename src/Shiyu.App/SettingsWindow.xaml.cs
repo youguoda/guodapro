@@ -26,7 +26,6 @@ public partial class SettingsWindow : Window
     private readonly Dictionary<string, ItemState> _edited = [];
     private readonly Dictionary<string, FrameworkElement> _rows = [];
     private readonly Dictionary<string, TextBox> _numberBoxes = [];
-    private readonly Dictionary<string, List<(ToggleButton Button, int Index)>> _segments = [];
     private readonly Dictionary<string, ScrollViewer> _pageScrollers = [];
     private readonly Dictionary<string, int> _pageTabIndex = [];
 
@@ -52,6 +51,7 @@ public partial class SettingsWindow : Window
         TitlebarChrome.UpdateMaximizeVisuals(this, Shell, MaximizeButton);
 
         BuildTree();
+        ApplyBackendKindRows();
 
         // Reopen where the user left off; the index is clamped by the count
         // so a future schema shrink cannot select a ghost page.
@@ -414,54 +414,29 @@ public partial class SettingsWindow : Window
 
     private FrameworkElement SegmentedFor(SettingsItem item, ItemState state)
     {
-        state.Choice = SettingsBindings.ReadChoice(item.Id, _current);
+        // Built by the shared factory, like every other editor: settings and
+        // onboarding render the same tree with the same hands. The choice of
+        // translation road also decides whether the own-key rows below it are
+        // worth anyone's attention.
+        return ItemEditors.Segmented(
+            item, _current, state,
+            changed: _ => ApplyBackendKindRows());
+    }
 
-        var host = new StackPanel { Orientation = Orientation.Horizontal };
-        var buttons = new List<(ToggleButton, int)>();
-
-        for (var index = 0; index < item.ChoiceList.Length; index++)
+    /// <summary>
+    /// 公共通道不需要接口地址、模型与凭据——选了它就把这三行收走，免得
+    /// "开箱即用"的承诺旁边摆着三个要填的框。
+    /// </summary>
+    private void ApplyBackendKindRows()
+    {
+        var ownKey = _edited["service.backend-kind"].Choice
+            == (int)TranslationBackendKind.OwnKey;
+        foreach (var id in new[] { "service.base-url", "service.model", "service.api-key" })
         {
-            var captured = index;
-            var button = new ToggleButton
+            if (_rows.TryGetValue(id, out var row))
             {
-                Content = item.ChoiceList[index],
-                Padding = new Thickness(12, 3, 12, 3),
-                Cursor = Cursors.Hand,
-
-                // Checked/hover/pressed states live in the shared style; the
-                // local value here would override the style's triggers.
-                Style = (Style)FindResource("SegmentChip"),
-            };
-            button.Click += (_, _) => SelectSegment(item.Id, captured);
-            buttons.Add((button, index));
-            host.Children.Add(button);
-        }
-
-        _segments[item.Id] = buttons;
-        PaintSegments(item.Id);
-        return host;
-    }
-
-    private void SelectSegment(string id, int index)
-    {
-        _edited[id].Choice = index;
-        PaintSegments(id);
-    }
-
-    /// <summary>A segmented control looks like what it is: one joined row of options.</summary>
-    private void PaintSegments(string id)
-    {
-        if (!_segments.TryGetValue(id, out var buttons))
-        {
-            return;
-        }
-
-        var chosen = _edited[id].Choice;
-        foreach (var (button, index) in buttons)
-        {
-            // All visuals — checked accent, hover overlay, pressed — come from
-            // the SegmentChip style's triggers; only the state moves here.
-            button.IsChecked = index == chosen;
+                row.Visibility = ownKey ? Visibility.Visible : Visibility.Collapsed;
+            }
         }
     }
 

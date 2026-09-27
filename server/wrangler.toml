@@ -1,0 +1,25 @@
+# 拾语公共翻译通道 — wrangler 模板（票 36）
+#
+# 这里只有公开参数与占位符。密钥（ZHIPU_API_KEY、IP_HASH_SALT）绝不写进
+# 本文件——它们经 `wrangler secret put` 注入，见 README.md 的"Secrets 清单"。
+
+name = "shiyu-relay"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+
+# 公开限额（十进制字符串）。设备 2 万 / IP 3 万是 Glossy 实证参数；
+# 全局封顶默认 20 万（约 10 台重度设备），按流量自行调整。
+[vars]
+DEVICE_DAILY_LIMIT = "20000"
+IP_DAILY_LIMIT = "30000"
+GLOBAL_DAILY_LIMIT = "200000"
+MAX_REQUEST_CHARS = "2000"
+UPSTREAM_MODEL = "glm-4-flash"
+UPSTREAM_BASE_URL = "https://open.bigmodel.cn/api/paas/v4"
+
+# 配额计数桶。id 换成你自己的：
+#   npx wrangler kv namespace create QUOTA
+#   → 取输出里的 id 填到下面
+[[kv_namespaces]]
+binding = "QUOTA"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"

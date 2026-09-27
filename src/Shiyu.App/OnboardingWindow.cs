@@ -10,9 +10,10 @@ namespace Shiyu.App;
 /// <summary>
 /// The first-run guide. Its value is not a feature tour — it asks the few
 /// things only the user knows: which app must never be recorded, what kinds
-/// of copies belong in the history, and (optionally) the credential for
-/// translation. Every step is skippable and the guide never returns on its
-/// own; skipping leaves a fully working tool with sane defaults.
+/// of copies belong in the history, and how translation should travel (the
+/// free public relay by default, the user's own key as the advanced path).
+/// Every step is skippable and the guide never returns on its own; skipping
+/// leaves a fully working tool with sane defaults.
 ///
 /// The items rendered here are leaves of the same settings tree the settings
 /// window renders, built by the same editor factory — there is no second set
@@ -95,7 +96,7 @@ internal sealed class OnboardingWindow : Window
         _steps.Add(HotkeyStep());
         _steps.Add(ExclusionStep());
         _steps.Add(KindsStep());
-        _steps.Add(CredentialStep());
+        _steps.Add(TranslationStep());
     }
 
     /// <summary>An editor for one tree item, its state tracked for the finish.</summary>
@@ -300,13 +301,14 @@ internal sealed class OnboardingWindow : Window
         return panel;
     }
 
-    private FrameworkElement CredentialStep()
+    private FrameworkElement TranslationStep()
     {
         var panel = new StackPanel();
 
         var note = new TextBlock
         {
-            Text = "划词翻译需要模型服务的凭据——不想用就跳过这步，其余功能不受影响。",
+            Text = "翻译默认走公共通道：不填任何东西就能用，每天有免费字数额度。"
+                + "自备密钥是高级选项，想用自己的模型再切换。",
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 8),
             Opacity = 0.8,
@@ -314,9 +316,54 @@ internal sealed class OnboardingWindow : Window
         note.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
         panel.Children.Add(note);
 
-        panel.Children.Add(RowOf("service.base-url", item => ItemEditors.Text(item, _current, _states["service.base-url"])));
-        panel.Children.Add(RowOf("service.model", item => ItemEditors.Text(item, _current, _states["service.model"])));
-        panel.Children.Add(RowOf("service.api-key", item => ItemEditors.Password(item, _current, _states["service.api-key"]).Editor));
+        var disclosure = new TextBlock
+        {
+            Text = "隐私：被翻译的文本会经我们的中转发给模型服务；剪贴板历史本身仍不出机器。",
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 10),
+            FontSize = 13,
+            Opacity = 0.75,
+        };
+        disclosure.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
+        panel.Children.Add(disclosure);
+
+        // 公共通道是默认路径：还没配过自备密钥的人直接落在这里。已经配好
+        // 的（重跑引导的用户）保留他们的选择，不悄悄替他们改道。
+        var backendState = new ItemState();
+        var initialChoice = !_current.Backend.IsConfigured
+            ? (int?)TranslationBackendKind.Relay
+            : null;
+
+        var ownKeyRows = new List<FrameworkElement>();
+        panel.Children.Add(RowOf("service.backend-kind", item =>
+        {
+            var editor = ItemEditors.Segmented(
+                item, _current, backendState,
+                changed: choice => ownKeyRows.ForEach(
+                    row => row.Visibility = choice == (int)TranslationBackendKind.OwnKey
+                        ? Visibility.Visible
+                        : Visibility.Collapsed),
+                initialChoice: initialChoice);
+            return editor;
+        }));
+
+        // RowOf 登记的是它自己新造的 state；完成时要读的是编辑器真正在写
+        // 的这个——换回引用，别让选择在最后一步丢掉。
+        _states["service.backend-kind"] = backendState;
+
+        foreach (var id in new[] { "service.base-url", "service.model", "service.api-key" })
+        {
+            var row = RowOf(id, item => item.Control == SettingsControl.Password
+                ? ItemEditors.Password(item, _current, _states[item.Id]).Editor
+                : ItemEditors.Text(item, _current, _states[item.Id]));
+            ownKeyRows.Add(row);
+            panel.Children.Add(row);
+        }
+
+        var initial = backendState.Choice == (int)TranslationBackendKind.OwnKey;
+        ownKeyRows.ForEach(row => row.Visibility = initial
+            ? Visibility.Visible
+            : Visibility.Collapsed);
         return panel;
     }
 
@@ -356,7 +403,7 @@ internal sealed class OnboardingWindow : Window
             0 => "快捷键",
             1 => "不记录什么",
             2 => "记录什么",
-            _ => "翻译服务（可选）",
+            _ => "翻译",
         };
         _body.Content = _steps[index];
         _stepLabel.Text = $"第 {index + 1} 步，共 {_steps.Count} 步";

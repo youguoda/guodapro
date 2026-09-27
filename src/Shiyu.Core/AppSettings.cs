@@ -3,6 +3,16 @@ using System.Text.Json.Serialization;
 
 namespace Shiyu.Core;
 
+/// <summary>翻译走哪条路：公共通道免费但额度有限，自备密钥是高级路径。</summary>
+public enum TranslationBackendKind
+{
+    /// <summary>用户自己的 OpenAI 兼容接口与凭据。</summary>
+    OwnKey,
+
+    /// <summary>拾语公共通道：零配置、零密钥、每日免费字数。</summary>
+    Relay,
+}
+
 /// <summary>
 /// Everything the user can change.
 ///
@@ -17,6 +27,25 @@ public sealed record AppSettings
 
     /// <summary>Null lets the backend work it out from the text.</summary>
     public string? SourceLanguage { get; init; }
+
+    /// <summary>
+    /// Which road a translation takes. Own key stays the shipped default for
+    /// now: switching an existing user's traffic onto the relay is a decision
+    /// about where their text travels, and that belongs to the onboarding flow
+    /// (new users) or their own hand — never to a silent upgrade.
+    /// </summary>
+    [JsonConverter(typeof(JsonStringEnumConverter<TranslationBackendKind>))]
+    public TranslationBackendKind TranslationBackend { get; init; } = TranslationBackendKind.OwnKey;
+
+    /// <summary>公共通道地址；默认指向官方部署，自建者可改指自己的 Worker。</summary>
+    public string RelayEndpoint { get; init; } = RelayBackend.DefaultEndpoint;
+
+    /// <summary>
+    /// 匿名安装 ID：公共通道按它给每台设备计每日免费额度。首次启动生成，
+    /// 之后终身稳定——它只是配额身份，不是凭据，伪造它绕过的也只是
+    /// 每天 2 万字的份。
+    /// </summary>
+    public string RelayClientId { get; init; } = string.Empty;
 
     public string BackendBaseUrl { get; init; } = string.Empty;
 
@@ -174,6 +203,16 @@ public sealed record AppSettings
 
     [JsonIgnore]
     public TranslationBackendOptions Backend => new(BackendBaseUrl, BackendModel, BackendApiKey);
+
+    /// <summary>
+    /// The live backend for the chosen road, in the same spirit as
+    /// <see cref="BuildExclusionPolicy"/>: settings stay data, and the
+    /// translation port gets built here so every window shares one truth.
+    /// </summary>
+    public ITranslationBackend BuildTranslationBackend()
+        => TranslationBackend == TranslationBackendKind.Relay
+            ? new RelayBackend(new RelayBackendOptions(RelayEndpoint, RelayClientId))
+            : new OpenAiCompatibleBackend(Backend);
 
     private static readonly JsonSerializerOptions Format = new()
     {

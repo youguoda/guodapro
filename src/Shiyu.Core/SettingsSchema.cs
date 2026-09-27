@@ -147,11 +147,22 @@ public static class SettingsSchema
                     Hint: "留空表示自动检测。",
                     Keywords: ["语言", "源", "自动"])),
             new SettingsSection("service.backend", "模型服务",
-                new SettingsItem("service.base-url", "服务地址", SettingsControl.Text, Keywords: ["接口", "地址", "服务", "后端"]),
-                new SettingsItem("service.model", "模型", SettingsControl.Text, Keywords: ["模型", "服务"]),
+                new SettingsItem(
+                    "service.backend-kind", "翻译方式", SettingsControl.Segmented,
+                    Choices: ["公共通道（免费额度）", "自备密钥"],
+                    Hint: "公共通道：无需任何配置即可翻译，每天有免费字数额度（每台设备 2 万字）。被翻译的文本会经我们的中转发给模型服务；剪贴板历史本身仍不出机器。自备密钥：使用你自己的接口与凭据，走 OpenAI 兼容地址。",
+                    Keywords: ["公共", "免费", "通道", "中继", "翻译", "后端", "密钥", "零配置", "隐私"]),
+                new SettingsItem(
+                    "service.base-url", "服务地址", SettingsControl.Text,
+                    Hint: "自备密钥时使用：OpenAI 兼容接口地址。",
+                    Keywords: ["接口", "地址", "服务", "后端"]),
+                new SettingsItem(
+                    "service.model", "模型", SettingsControl.Text,
+                    Hint: "自备密钥时使用。",
+                    Keywords: ["模型", "服务"]),
                 new SettingsItem(
                     "service.api-key", "凭据", SettingsControl.Password,
-                    Hint: "已保存的凭据不回显。留空表示不改动，填入则覆盖。",
+                    Hint: "自备密钥时使用。已保存的凭据不回显。留空表示不改动，填入则覆盖。",
                     Keywords: ["凭据", "密钥", "api", "key"]))),
 
         new SettingsPage("store", "数据",

@@ -89,6 +89,23 @@ public partial class App : Application
             AppPaths.UseDirectory(dataDirectory);
         }
 
+        // Same family again: point the public relay at a local worker so the
+        // whole channel can be probed without a cloud deployment. Deliberately
+        // in-memory only — the settings file keeps the official endpoint.
+        if (Environment.GetEnvironmentVariable("SHIYU_RELAY_URL") is { Length: > 0 } relayUrl)
+        {
+            _settings = _settings with { RelayEndpoint = relayUrl };
+        }
+
+        // The relay's device identity: an anonymous install id, generated once
+        // and stable for the machine's life. Persisted right away — a new id
+        // every launch would quietly double the device's daily quota draw.
+        if (_settings.RelayClientId.Length == 0)
+        {
+            _settings = _settings with { RelayClientId = Guid.NewGuid().ToString("N") };
+            _settings.Save(AppPaths.SettingsFile);
+        }
+
         // The finalizer's unfinished chore: it cannot delete the staged
         // directory it was running from. By now it has exited.
         UpdateStaging.CleanStagedIfIdle(AppPaths.DataDirectory);
@@ -504,7 +521,7 @@ public partial class App : Application
         _speech ??= new SpeechSynthesis();
 
         _panel ??= new PanelWindow(
-            _hotkeys, _writer, () => new OpenAiCompatibleBackend(_settings.Backend), _settings,
+            _hotkeys, _writer, () => _settings.BuildTranslationBackend(), _settings,
             SaveTranslationToHistory,
             dictionary: BuildDictionary,
             speech: _speech);
@@ -514,6 +531,8 @@ public partial class App : Application
     /// <summary>
     /// 单词词典的两条路（票 35）：英文单词走免费词典（600ms 预算内补上，
     /// 否则静默放弃）；中文单词走 LLM 词典化兜底；其余文本不吃词典卡。
+    /// 词典兜底只认自备密钥——公共通道只有 /translate 一张脸，拿不到词典
+    /// 化 prompt；没有自己的后端时兜底静默让位，英文词典卡不受影响。
     /// </summary>
     private IDictionaryApi? BuildDictionary(string word)
         => DictionaryWord.IsEnglishWord(word)
@@ -555,6 +574,9 @@ public partial class App : Application
 
         if (_library is null)
         {
+            // 动作（总结/合并笔记）要的是通用流式模型，公共通道只有
+            // /translate 一张脸——这里恒走自备密钥后端；没配密钥的用户点
+            // 动作时由面板如实报"还没有配置"，不影响翻译本身。
             _library = new LibraryWindow(
                 _store, _writer, _images!, () => new OpenAiCompatibleBackend(_settings.Backend), _icons!,
                 () => _settings, _pipeline);

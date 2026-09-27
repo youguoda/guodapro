@@ -52,6 +52,7 @@ internal static class SettingsBindings
     public static int ReadChoice(string id, AppSettings settings) => id switch
     {
         "theme" => (int)settings.Theme,
+        "service.backend-kind" => (int)settings.TranslationBackend,
         _ => 0,
     };
 
@@ -81,6 +82,7 @@ internal static class SettingsBindings
         "exclusions" => current with { ExclusionRules = ParseExclusionRules(text) },
         "bar.actions" => current,
         "theme" => current with { Theme = (AppTheme)choice },
+        "service.backend-kind" => current with { TranslationBackend = (TranslationBackendKind)choice },
         "action.sound" => current with { ActionSound = AsBool(text) },
         "bar.at-cursor" => current with { BarAtCursor = AsBool(text) },
         "look.bar-topmost" => current with { BarAlwaysOnTop = AsBool(text) },

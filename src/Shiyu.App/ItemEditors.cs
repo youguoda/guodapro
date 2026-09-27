@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using Shiyu.Core;
@@ -45,6 +46,63 @@ internal static class ItemEditors
         }
 
         return Wrap(box, item.Hint);
+    }
+
+    /// <param name="changed">Raised on picks; settings uses it to collapse dependent rows.</param>
+    /// <param name="initialChoice">
+    /// 覆盖初选（如引导把未配置用户直接落在公共通道）；省略时读当前设置。
+    /// </param>
+    public static FrameworkElement Segmented(
+        SettingsItem item,
+        AppSettings current,
+        ItemState state,
+        Action<int>? changed = null,
+        int? initialChoice = null)
+    {
+        state.Choice = initialChoice ?? SettingsBindings.ReadChoice(item.Id, current);
+
+        var host = new StackPanel { Orientation = Orientation.Horizontal };
+        ToggleButton[] buttons = new ToggleButton[item.ChoiceList.Length];
+
+        for (var index = 0; index < item.ChoiceList.Length; index++)
+        {
+            var captured = index;
+            var button = new ToggleButton
+            {
+                Content = item.ChoiceList[index],
+                Padding = new Thickness(12, 3, 12, 3),
+                Cursor = Cursors.Hand,
+
+                // Checked/hover/pressed states live in the shared style; the
+                // local value here would override the style's triggers.
+                Style = (Style)Application.Current.FindResource("SegmentChip"),
+            };
+            button.Click += (_, _) =>
+            {
+                state.Choice = captured;
+                foreach (var other in buttons)
+                {
+                    other.IsChecked = ReferenceEquals(other, button);
+                }
+
+                changed?.Invoke(captured);
+            };
+            buttons[index] = button;
+            host.Children.Add(button);
+        }
+
+        Paint();
+        return host;
+
+        // The resting state shows what is chosen; every click repaints its own
+        // row so callers never need to track buttons.
+        void Paint()
+        {
+            foreach (var (button, index) in buttons.Select((button, index) => (button, index)))
+            {
+                button.IsChecked = index == state.Choice;
+            }
+        }
     }
 
     /// <param name="changed">Raised on flips; settings uses it to collapse child rows.</param>
