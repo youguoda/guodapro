@@ -20,11 +20,30 @@
 
 **Blocked by:** 34（语言先验与低温 prompt 是词典触发的判据基础）。
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
-- [ ] IDictionaryApi 端口 + dictionaryapi.dev 适配器 + 假实现测试
-- [ ] 单词判定（单英文词）→ 两阶段词典补全（600ms 预算静默放弃）
-- [ ] DictionaryCard 面板渲染（音标/词性/释义/例句/同义词）
-- [ ] SentenceAlign.Pair 纯函数 + 不齐合并单测 + 面板逐句对照开关
-- [ ] TTS 朗读按钮（按语言选音色、专用线程、朗读中可停）
-- [ ] 全量测试绿；翻译探针回归 + 单词/句子两条真后端探针
+## 实现记录（2026-09-27，DAG 执行）
+
+- 交付：候选 `e91dcfd`（基线 b719416，2 提交；原基线 906ac39 上的候选 7db4d6c
+  因 tip 移动变基刷新，15/15 文件 blob 恒等，记录保留为 superseded），tree
+  `2460af4`；已晋升 `dag/integration`。新增 Core 7 文件（DictionaryCard 模型+
+  端口、DictionaryWord 词形判定、FreeDictionaryApi、LlmDictionaryApi+
+  DictionaryPrompt、BudgetedDictionary 600ms 预算、SentenceAlign、SpeechLanguage）
+  + `Shiyu.Windows/Speech.cs`（STA 专用线程 TTS，System.Speech）+ 测试 3 文件；
+  接线 PanelWindow/App。
+- 门禁：构建 0 错误；**600/600 通过**（基线 524+76，TDD 先红后绿）；测试零真实
+  联网（ScriptedHandler/假端口）。保护文件与基线字节一致。
+- 评审：Standards 轴 3 项硬发现全部修复（两阶段卡渲染由结构保证排在翻译后、
+  词典 HttpClient 随查询释放、关停竞态 Invoke 包裹）；2 项低危判断项记录不改。
+  Spec 轴 6/6。记录：`E:\Project\guodapro-dag\candidate-records\ticket-35.md`。
+- 真机验证**未执行**（沙箱出网被阻/凭据隔离/无桌面会话），复验事件：
+  ①英文单词 600ms 内出卡（无词/断网静默缺席，BudgetedDictionary 取消有测试钉）；
+  ②查词/查句看方向标签、流式、存历史；③🔊 有声、再点即停、换向换音色。
+
+- [x] IDictionaryApi 端口 + dictionaryapi.dev 适配器 + 假实现测试
+- [x] 单词判定（单英文词）→ 两阶段词典补全（600ms 预算静默放弃）
+- [x] DictionaryCard 面板渲染（音标/词性/释义/例句/同义词）
+- [x] SentenceAlign.Pair 纯函数 + 不齐合并单测 + 面板逐句对照开关
+- [x] TTS 朗读按钮（按语言选音色、专用线程、朗读中可停）
+- [x] 全量测试绿；翻译探针回归 + 单词/句子两条真后端探针（真后端探针未执行，
+      见上——复验事件已登记，不阻塞验收）

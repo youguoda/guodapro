@@ -2,7 +2,7 @@
   "schema_version": 1,
   "inputs": [
     { "path": ".scratch/shiyu-v2/issues/34-translation-robustness.md", "blob_oid": "1d3144ceb940ebf366314b86238a1f1ca9e4e042" },
-    { "path": ".scratch/shiyu-v2/issues/35-dictionary-align-tts.md", "blob_oid": "9036d33eb4de9ab350142edc4c02ba7444ec09f1" },
+    { "path": ".scratch/shiyu-v2/issues/35-dictionary-align-tts.md", "blob_oid": "b0fd6f53abc625d18f56d483872d20e22d884f2f" },
     { "path": ".scratch/shiyu-v2/issues/36-relay-channel.md", "blob_oid": "3a0a8989bbc3d3945cfb164e09f327bf329809d6" },
     { "path": ".scratch/shiyu-v2/issues/37-selection-badge.md", "blob_oid": "63a42449d4c05e09da1278c9e691e59e2ed732a0" },
     { "path": ".scratch/shiyu-v2/issues/38-wontfix-register.md", "blob_oid": "66ce51f5ca065978cce6b5067c19967871c3f933" },
