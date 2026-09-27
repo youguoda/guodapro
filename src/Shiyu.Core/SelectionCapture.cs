@@ -90,15 +90,7 @@ public sealed class SelectionCapture(ICapturePlatform platform, CaptureTiming? t
 
     public CaptureResult Capture()
     {
-        string? borrowed;
-        uint before;
-
-        try
-        {
-            borrowed = platform.ReadClipboardText();
-            before = platform.ClipboardSequenceNumber();
-        }
-        catch (ClipboardUnavailableException)
+        if (!TryBorrow(out var borrowed, out var before))
         {
             // Nothing was borrowed, so there is nothing to put back.
             return new CaptureResult(null, CaptureOutcome.ClipboardUnavailable, ClipboardRestored: true);
@@ -108,7 +100,7 @@ public sealed class SelectionCapture(ICapturePlatform platform, CaptureTiming? t
 
         // Unconditional, and after every path above — each of them has already
         // taken the user's clipboard away, including the ones that threw.
-        var restored = Restore(borrowed);
+        var restored = WriteBack(borrowed);
 
         return new CaptureResult(
             outcome == CaptureOutcome.Captured ? captured : null,
@@ -132,15 +124,7 @@ public sealed class SelectionCapture(ICapturePlatform platform, CaptureTiming? t
     /// </returns>
     public DeferredCapture? CaptureDeferRestore()
     {
-        string? borrowed;
-        uint before;
-
-        try
-        {
-            borrowed = platform.ReadClipboardText();
-            before = platform.ClipboardSequenceNumber();
-        }
-        catch (ClipboardUnavailableException)
+        if (!TryBorrow(out var borrowed, out var before))
         {
             return null;
         }
@@ -181,10 +165,30 @@ public sealed class SelectionCapture(ICapturePlatform platform, CaptureTiming? t
                 return true;
             }
 
-            return Restore(deferred.Borrowed);
+            return WriteBack(deferred.Borrowed);
         }
         catch (ClipboardUnavailableException)
         {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 借出前的一读：剪贴板打不开就没借到任何东西——两种取词在这里分道，
+    /// 一个报"不可用"，一个连债都没有。
+    /// </summary>
+    private bool TryBorrow(out string? borrowed, out uint before)
+    {
+        try
+        {
+            borrowed = platform.ReadClipboardText();
+            before = platform.ClipboardSequenceNumber();
+            return true;
+        }
+        catch (ClipboardUnavailableException)
+        {
+            borrowed = null;
+            before = 0;
             return false;
         }
     }
@@ -272,7 +276,7 @@ public sealed class SelectionCapture(ICapturePlatform platform, CaptureTiming? t
         }
     }
 
-    private bool Restore(string? borrowed)
+    private bool WriteBack(string? borrowed)
     {
         try
         {
