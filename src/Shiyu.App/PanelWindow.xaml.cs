@@ -115,11 +115,13 @@ public partial class PanelWindow : Window
 
         HoldEscape();
 
-        // 两阶段词典从这里开始：翻译照常起跑，词典卡并行去查，谁先到谁
-        // 先上屏——600ms 预算由端口侧自己执行，这里只管收卡。
-        StartDictionaryLookup(text);
-
+        // 两阶段词典（票 35）：阶段一翻译照常跑完上屏；阶段二在它之后补卡。
+        // 查询与翻译并行发出（省一轮往返），但渲染严格排在翻译之后——
+        // 用户先看到译文，再看到词典细节，顺序即"两阶段"的含义。
+        var cardRun = _cardRun;
+        var cardTask = FetchDictionaryCard(text);
         await RunTranslation();
+        await RenderCardWhenCurrent(cardTask, cardRun);
     }
 
     private async Task RunTranslation()
@@ -183,14 +185,15 @@ public partial class PanelWindow : Window
     }
 
     /// <summary>
-    /// 词典补全：单词判定通过才发查。慢路（LLM 词典化）与快路（600ms 预算的
-    /// 免费词典）都由 <see cref="_dictionary"/> 决定；任何失败都只是没有卡。
+    /// 阶段二的取卡：单词判定通过才发查。慢路（LLM 词典化）与快路（600ms
+    /// 预算的免费词典）都由 <see cref="_dictionary"/> 决定；任何失败都只是
+    /// 没有卡。只取不渲染——渲染时机归 <see cref="RenderCardWhenCurrent"/>。
     /// </summary>
-    private async void StartDictionaryLookup(string text)
+    private async Task<DictionaryCard?> FetchDictionaryCard(string text)
     {
         if (_dictionary is null)
         {
-            return;
+            return null;
         }
 
         var word = text.Trim();
@@ -202,27 +205,43 @@ public partial class PanelWindow : Window
         catch (Exception)
         {
             // 组装端口失败与查词失败同类：静默没有卡。
-            return;
+            return null;
         }
 
         if (api is null)
         {
-            return;
+            return null;
         }
 
-        var run = _cardRun;
-        DictionaryCard? card = null;
         try
         {
-            card = await api.LookupAsync(DictionaryWord.LookupKey(word), CancellationToken.None);
+            return await api.LookupAsync(DictionaryWord.LookupKey(word), CancellationToken.None);
         }
         catch (Exception)
         {
             // 端口契约本不该抛；抛了也一样是"没有卡"。
+            return null;
         }
         finally
         {
             (api as IDisposable)?.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// 翻译之后补卡：迟到的换代检查保证只有最新一次翻译的卡会上屏——
+    /// 翻译失败也补（卡只关于原文的那个词，与译文成败无关）。
+    /// </summary>
+    private async Task RenderCardWhenCurrent(Task<DictionaryCard?> fetch, int run)
+    {
+        DictionaryCard? card;
+        try
+        {
+            card = await fetch;
+        }
+        catch (Exception)
+        {
+            card = null;
         }
 
         if (card is null || run != _cardRun)
