@@ -86,13 +86,22 @@ internal partial class ConnectorWindow : Window
     /// The card and panel rectangles arrive in physical pixels; the sheet
     /// converts to its own DIPs, which is correct wherever it sits.
     /// </summary>
-    public void ShowCurve(ScreenRect card, ScreenRect panel, IntPtr below)
+    /// <param name="band">
+    /// The bar's band (验收缺陷 B): the curve's sheet once carried its own
+    /// birth Topmost, so it floated above windows the bar was under. WPF's
+    /// Topmost is aligned here on every draw — the insert-after handle below
+    /// only orders it against the panel, it cannot move a window out of the
+    /// band its bit puts it in.
+    /// </param>
+    public void ShowCurve(ScreenRect card, ScreenRect panel, IntPtr below, ZBand band)
     {
         const int margin = 48;
         var left = Math.Min(card.Left, panel.Left) - margin;
         var top = Math.Min(card.Top, panel.Top) - margin;
         var right = Math.Max(card.Right, panel.Right) + margin;
         var bottom = Math.Max(card.Bottom, panel.Bottom) + margin;
+
+        Topmost = band == ZBand.Topmost;
 
         var helper = new WindowInteropHelper(this);
         _ = helper.EnsureHandle();

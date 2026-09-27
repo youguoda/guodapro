@@ -77,7 +77,13 @@ internal partial class PreviewWindow : Window
     {
         base.OnSourceInitialized(e);
         var helper = new WindowInteropHelper(this);
-        TransientWindow.MakeNonActivating(helper.Handle);
+
+        // The band is whatever ShowFor last decided (验收缺陷 B): the birth
+        // style once OR-ed the topmost bit in unconditionally, so a preview
+        // born while the bar was unpinned floated above windows the bar was
+        // under. _band defaults to Topmost — ShowFor sets it before the first
+        // handle exists, so this reads the right value at birth.
+        TransientWindow.MakeNonActivating(helper.Handle, _band);
         DwmEffects.TryApplyPanel(helper.Handle);
 
         // WS_EX_NOACTIVATE alone is not enough: a click that lands on
@@ -109,6 +115,13 @@ internal partial class PreviewWindow : Window
     // --- showing ----------------------------------------------------------------
 
     /// <summary>
+    /// The z band this panel currently lives in. The panel is bound to the
+    /// bar: it opens beside the bar's cards and follows the bar's own band
+    /// (票 39 关置顶降级). ShowFor refreshes it before every landing.
+    /// </summary>
+    private ZBand _band = ZBand.Topmost;
+
+    /// <summary>
     /// Shows (or moves) the panel for a card, anchored beside a card rectangle
     /// in physical pixels. The size is decided first, the position second, and
     /// the content last — the shape never changes once on screen.
@@ -117,8 +130,14 @@ internal partial class PreviewWindow : Window
     /// has no presentation source of its own to read one from, and a guessed
     /// 1.0 would place a 1.5x panel as if it were a third narrower.
     /// </summary>
-    public void ShowFor(BarCard card, ScreenRect anchor, bool slide, double scaleX, double scaleY)
+    public void ShowFor(BarCard card, ScreenRect anchor, bool slide, double scaleX, double scaleY, ZBand band)
     {
+        // Band first, before anything can create the handle: birth style,
+        // WPF's own Topmost, and every SetWindowPos below all read it, so the
+        // panel never lands one step outside the bar's tier.
+        _band = band;
+        Topmost = band == ZBand.Topmost;
+
         var (width, height) = Measure(card);
         Width = width;
         Height = height;
@@ -144,7 +163,7 @@ internal partial class PreviewWindow : Window
             BeginAnimation(OpacityProperty, null);
             var helper = new WindowInteropHelper(this);
             _ = helper.EnsureHandle();
-            TransientWindow.MoveTo(helper.Handle, placed);
+            TransientWindow.MoveTo(helper.Handle, placed, _band);
             Show();
             PanelMoved?.Invoke(new ScreenRect(
                 placed.X,
@@ -166,7 +185,7 @@ internal partial class PreviewWindow : Window
         else
         {
             var handle = new WindowInteropHelper(this).Handle;
-            TransientWindow.MoveTo(handle, placed);
+            TransientWindow.MoveTo(handle, placed, _band);
             PanelMoved?.Invoke(new ScreenRect(
                 placed.X,
                 placed.Y,
@@ -196,7 +215,7 @@ internal partial class PreviewWindow : Window
 
             void Step(ScreenPoint at)
             {
-                TransientWindow.MoveTo(handle, at);
+                TransientWindow.MoveTo(handle, at, _band);
                 PanelMoved?.Invoke(new ScreenRect(
                     at.X, at.Y, at.X + physicalWidth, at.Y + physicalHeight));
             }
@@ -228,7 +247,7 @@ internal partial class PreviewWindow : Window
         }
         else
         {
-            TransientWindow.MoveTo(handle, target);
+            TransientWindow.MoveTo(handle, target, _band);
         }
     }
 

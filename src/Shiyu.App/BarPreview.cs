@@ -58,13 +58,13 @@ internal partial class BarWindow
             case PreviewCommand.Open when CardById(_previewPolicy.Card) is { } opening:
                 _connectorAnchor = AnchorFor(opening) ?? WindowRect();
                 EnsurePreview().ShowFor(opening, _connectorAnchor.Value, slide: false,
-                    scaleX: scale.M11, scaleY: scale.M22);
+                    scaleX: scale.M11, scaleY: scale.M22, band: ZBandPolicy.FollowsHost(Topmost));
                 break;
 
             case PreviewCommand.Retarget when CardById(_previewPolicy.Card) is { } moving:
                 _connectorAnchor = AnchorFor(moving) ?? WindowRect();
                 EnsurePreview().ShowFor(moving, _connectorAnchor.Value, slide: true,
-                    scaleX: scale.M11, scaleY: scale.M22);
+                    scaleX: scale.M11, scaleY: scale.M22, band: ZBandPolicy.FollowsHost(Topmost));
                 break;
 
             case PreviewCommand.Close:
@@ -109,8 +109,9 @@ internal partial class BarWindow
         }
 
         _connector ??= new ConnectorWindow();
-        _connector.Topmost = Topmost;
-        _connector.ShowCurve(anchor, panel, new System.Windows.Interop.WindowInteropHelper(_preview).Handle);
+        _connector.ShowCurve(
+            anchor, panel, new System.Windows.Interop.WindowInteropHelper(_preview).Handle,
+            ZBandPolicy.FollowsHost(Topmost));
     }
 
     /// <summary>The panel follows the pointer only between realised cards; off-list the bar anchors it.</summary>

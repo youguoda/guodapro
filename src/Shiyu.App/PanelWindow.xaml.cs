@@ -78,7 +78,7 @@ public partial class PanelWindow : Window
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
-        TransientWindow.MakeNonActivating(new WindowInteropHelper(this).Handle);
+        TransientWindow.MakeNonActivating(new WindowInteropHelper(this).Handle, ZBand.Topmost);
     }
 
     /// <summary>Shows the panel beside the cursor and starts translating.</summary>
@@ -348,7 +348,9 @@ public partial class PanelWindow : Window
             (int)Math.Ceiling(ActualHeight * scaleY),
             workArea);
 
-        TransientWindow.MoveTo(new WindowInteropHelper(this).Handle, placed);
+        // A global surface: the translation panel belongs to the copy, not to
+        // the bar, and keeps the topmost band wherever the bar sits.
+        TransientWindow.MoveTo(new WindowInteropHelper(this).Handle, placed, ZBand.Topmost);
     }
 
     /// <summary>

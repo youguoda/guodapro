@@ -270,6 +270,9 @@ internal static class NativeMethods
     internal const uint WsExNoActivate = 0x08000000;
     internal const uint WsExTopmost = 0x00000008;
     internal static readonly IntPtr HwndTopmost = new(-1);
+
+    /// <summary>HWND_NOTOPMOST: clears the topmost bit and lands the window at the top of the normal band.</summary>
+    internal static readonly IntPtr HwndNoTopmost = new(-2);
     internal const uint SwpNoSize = 0x0001;
     internal const uint SwpNoActivate = 0x0010;
     internal const uint SwpShowWindow = 0x0040;

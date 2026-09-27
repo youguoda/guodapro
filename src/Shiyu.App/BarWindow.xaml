@@ -5,7 +5,7 @@
         xmlns:local="clr-namespace:Shiyu.App"
         Title="拾语 · 窄条" Width="384" Height="620"
         WindowStyle="None" ResizeMode="NoResize" AllowsTransparency="True"
-        ShowInTaskbar="False" Topmost="True"
+        ShowInTaskbar="False"
         WindowStartupLocation="Manual"
         Background="Transparent"
         FontSize="{DynamicResource Size.Body}"

@@ -283,7 +283,13 @@ internal partial class BarWindow : Window
         // the handle does not exist yet — asking for it creates the HWND.
         var helper = new System.Windows.Interop.WindowInteropHelper(this);
         _ = helper.EnsureHandle();
-        TransientWindow.MoveTo(helper.Handle, placed);
+
+        // The band rides with every placement (验收缺陷 A): the raw move once
+        // hard-inserted HWND_TOPMOST, so a bar whose setting said "not
+        // topmost" was resurrected above everything on every summon. The
+        // window's own Topmost — kept in step with the setting — decides the
+        // band here, and the XAML no longer seeds the bit at parse time.
+        TransientWindow.MoveTo(helper.Handle, placed, ZBandPolicy.FollowsHost(Topmost));
     }
 
     /// <summary>Hides with the standard fade, from a painted surface, and gives focus back.</summary>

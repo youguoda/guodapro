@@ -56,7 +56,7 @@ public partial class BadgeWindow : Window
         // WPF's ShowActivated=false covers the initial show. WS_EX_NOACTIVATE
         // covers everything after it — clicking the badge must not pull focus
         // away from whatever the user is typing in.
-        TransientWindow.MakeNonActivating(new WindowInteropHelper(this).Handle);
+        TransientWindow.MakeNonActivating(new WindowInteropHelper(this).Handle, ZBand.Topmost);
     }
 
     /// <summary>Shows the badge beside the cursor for the given text.</summary>
@@ -103,7 +103,9 @@ public partial class BadgeWindow : Window
 
         var placed = BadgePlacement.Place(cursor, width, height, workArea);
 
-        TransientWindow.MoveTo(handle, placed);
+        // A global surface: the badge is summoned by copies anywhere and
+        // relies on the topmost band to be seen at all.
+        TransientWindow.MoveTo(handle, placed, ZBand.Topmost);
     }
 
     private void OnClicked(object sender, MouseButtonEventArgs e)

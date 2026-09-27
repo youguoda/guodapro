@@ -77,8 +77,9 @@ public partial class QuickBarWindow : Window
             workArea);
 
         // Moved with SetWindowPos for the same reason as the badge: physical
-        // pixels sidestep the scaled coordinate system entirely.
-        TransientWindow.MoveTo(new WindowInteropHelper(this).Handle, placed);
+        // pixels sidestep the scaled coordinate system entirely. The quick
+        // bar is its own surface, always summoned to be read NOW — topmost.
+        TransientWindow.MoveTo(new WindowInteropHelper(this).Handle, placed, ZBand.Topmost);
     }
 
     private void Reload()
