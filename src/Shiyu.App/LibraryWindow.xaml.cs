@@ -66,7 +66,12 @@ public partial class LibraryWindow : Window
         // No backdrop material on the standard chrome yet (ticket 30's Mica
         // conversion needs a borderless rewrite first); rounding and the
         // dark-mode titlebar still apply through the same host.
-        Backdrop.Attach(this, () => BackdropKind.None);
+        Backdrop.Attach(this, () => BackdropKind.Mica);
+
+        // Borderless chrome (ticket 33): the titlebar is ours, and the
+        // maximize visuals must follow every state change.
+        StateChanged += (_, _) => TitlebarChrome.UpdateMaximizeVisuals(this, Shell, MaximizeButton);
+        TitlebarChrome.UpdateMaximizeVisuals(this, Shell, MaximizeButton);
 
         _searchDebounce = new DispatcherTimer { Interval = SearchDelay };
         _searchDebounce.Tick += (_, _) =>
@@ -193,6 +198,19 @@ public partial class LibraryWindow : Window
     /// Keeps the pin button honest about what it will do. A button that always
     /// reads "置顶" while pointing at a pinned entry invites the wrong click.
     /// </summary>
+    private void OnTitleBarDrag(object sender, MouseButtonEventArgs e)
+        => TitlebarChrome.DragOrMaximize(this, e);
+
+    private void OnMinimizeClick(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
+
+    private void OnMaximizeRestoreClick(object sender, RoutedEventArgs e) => TitlebarChrome.ToggleMaximize(this);
+
+    private void OnCloseClick(object sender, RoutedEventArgs e)
+    {
+        CommitUndoExpiry();
+        Close();
+    }
+
     private void OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         PinButton.Content = EntryList.SelectedItem is EntryItem { IsPinned: true }

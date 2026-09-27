@@ -3,9 +3,19 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="拾语 · 历史" Height="620" Width="1150" MinWidth="820"
         SizeChanged="OnWindowSizeChanged"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         WindowStartupLocation="CenterScreen"
-        Background="{DynamicResource Brush.Background}"
         FontSize="{DynamicResource Size.Body}">
+    <WindowChrome.WindowChrome>
+        <!--
+          Borderless but resizable: the chrome only provides the resize
+          border hot-zone; the caption (drag/close/maximize) is ours, and
+          its presence fixes maximized windows covering the taskbar.
+        -->
+        <WindowChrome CaptionHeight="0" ResizeBorderThickness="6"
+                      GlassFrameThickness="0" CornerRadius="0"
+                      UseAeroCaptionButtons="False" />
+    </WindowChrome.WindowChrome>
     <Window.Resources>
         <Style x:Key="Toolbutton" TargetType="Button">
             <Setter Property="Padding" Value="12,5" />
@@ -14,7 +24,37 @@
         </Style>
     </Window.Resources>
 
-    <Grid Margin="14">
+    <!--
+      The floating Win11 shell (ticket 33): translucent brand tint over DWM
+      Mica, rounded, one soft shadow, with our own titlebar. Margin carries
+      the shadow and collapses to zero when maximized.
+    -->
+    <Border x:Name="Shell" Margin="10" CornerRadius="{DynamicResource Radius.Window}"
+            Background="{DynamicResource Brush.SurfaceMaterial}"
+            BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1">
+        <Border.Effect>
+            <StaticResource ResourceKey="Shadow.Floating"/>
+        </Border.Effect>
+        <DockPanel>
+            <Border x:Name="TitleBar" DockPanel.Dock="Top" Height="40"
+                    Background="Transparent" MouseLeftButtonDown="OnTitleBarDrag">
+                <DockPanel LastChildFill="False" Margin="14,0,0,0">
+                    <TextBlock Text="拾语 · 历史" VerticalAlignment="Center"
+                               FontSize="{DynamicResource Size.Secondary}"
+                               Foreground="{DynamicResource Brush.TextSecondary}"/>
+                    <Button x:Name="MinimizeButton" DockPanel.Dock="Right" Width="34" Height="30"
+                            Content="&#xE921;" FontFamily="{DynamicResource Font.Icon}" FontSize="{DynamicResource Size.IconSmall}"
+                            Style="{StaticResource CaptionButtonStyle}" Click="OnMinimizeClick" ToolTip="最小化"/>
+                    <Button x:Name="MaximizeButton" DockPanel.Dock="Right" Width="34" Height="30"
+                            Content="&#xE922;" FontFamily="{DynamicResource Font.Icon}" FontSize="{DynamicResource Size.IconSmall}"
+                            Style="{StaticResource CaptionButtonStyle}" Click="OnMaximizeRestoreClick" ToolTip="最大化"/>
+                    <Button x:Name="CloseButton" DockPanel.Dock="Right" Width="40" Height="30"
+                            Content="&#xE8BB;" FontFamily="{DynamicResource Font.Icon}" FontSize="{DynamicResource Size.IconSmall}"
+                            Style="{StaticResource CaptionButtonStyle}" Click="OnCloseClick" ToolTip="关闭"/>
+                </DockPanel>
+            </Border>
+
+            <Grid Margin="14,4,14,14">
         <Grid.RowDefinitions>
             <RowDefinition Height="84" />
             <RowDefinition Height="*" />
@@ -267,4 +307,6 @@
             </StackPanel>
         </Border>
     </Grid>
+        </DockPanel>
+    </Border>
 </Window>

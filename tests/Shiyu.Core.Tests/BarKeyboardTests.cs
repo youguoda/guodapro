@@ -10,17 +10,34 @@ namespace Shiyu.Core.Tests;
 public class BarKeyboardTests
 {
     [Fact]
-    public void Escape_peels_the_most_recent_layer_first()
+    public void Escape_peels_every_filter_layer_before_hiding()
     {
-        // Preview (innermost) → group filter → type filter → hide.
+        // The full stack: preview → query → subtype → tag → type → favourite
+        // → group → hide. Every layer the footer can promise has a peel.
         Assert.Equal(BarKeyboard.EscapeAction.ClosePreview,
-            BarKeyboard.NextEscape(previewOpen: true, hasTagFilter: true, hasTypeFilter: true));
+            BarKeyboard.NextEscape(previewOpen: true, hasQuery: true, hasSubtypeFilter: true,
+                hasTagFilter: true, hasTypeFilter: true, hasFavoriteFilter: true, hasGroupFilter: true));
+        Assert.Equal(BarKeyboard.EscapeAction.ClearQuery,
+            BarKeyboard.NextEscape(previewOpen: false, hasQuery: true, hasSubtypeFilter: true,
+                hasTagFilter: true, hasTypeFilter: true, hasFavoriteFilter: true, hasGroupFilter: true));
+        Assert.Equal(BarKeyboard.EscapeAction.ClearSubtypeFilter,
+            BarKeyboard.NextEscape(previewOpen: false, hasQuery: false, hasSubtypeFilter: true,
+                hasTagFilter: true, hasTypeFilter: true, hasFavoriteFilter: true, hasGroupFilter: true));
         Assert.Equal(BarKeyboard.EscapeAction.ClearTagFilter,
-            BarKeyboard.NextEscape(previewOpen: false, hasTagFilter: true, hasTypeFilter: true));
+            BarKeyboard.NextEscape(previewOpen: false, hasQuery: false, hasSubtypeFilter: false,
+                hasTagFilter: true, hasTypeFilter: true, hasFavoriteFilter: true, hasGroupFilter: true));
         Assert.Equal(BarKeyboard.EscapeAction.ClearTypeFilter,
-            BarKeyboard.NextEscape(previewOpen: false, hasTagFilter: false, hasTypeFilter: true));
+            BarKeyboard.NextEscape(previewOpen: false, hasQuery: false, hasSubtypeFilter: false,
+                hasTagFilter: false, hasTypeFilter: true, hasFavoriteFilter: true, hasGroupFilter: true));
+        Assert.Equal(BarKeyboard.EscapeAction.ClearFavoriteFilter,
+            BarKeyboard.NextEscape(previewOpen: false, hasQuery: false, hasSubtypeFilter: false,
+                hasTagFilter: false, hasTypeFilter: false, hasFavoriteFilter: true, hasGroupFilter: true));
+        Assert.Equal(BarKeyboard.EscapeAction.ClearGroupFilter,
+            BarKeyboard.NextEscape(previewOpen: false, hasQuery: false, hasSubtypeFilter: false,
+                hasTagFilter: false, hasTypeFilter: false, hasFavoriteFilter: false, hasGroupFilter: true));
         Assert.Equal(BarKeyboard.EscapeAction.HideWindow,
-            BarKeyboard.NextEscape(previewOpen: false, hasTagFilter: false, hasTypeFilter: false));
+            BarKeyboard.NextEscape(previewOpen: false, hasQuery: false, hasSubtypeFilter: false,
+                hasTagFilter: false, hasTypeFilter: false, hasFavoriteFilter: false, hasGroupFilter: false));
     }
 
     [Fact]

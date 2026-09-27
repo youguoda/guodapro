@@ -12,23 +12,52 @@ public static class BarKeyboard
         /// <summary>The innermost layer: whatever preview is open goes away.</summary>
         ClosePreview,
 
+        /// <summary>The search query empties, list returns to full.</summary>
+        ClearQuery,
+
+        ClearSubtypeFilter,
+
         ClearTagFilter,
 
         ClearTypeFilter,
+
+        /// <summary>The ★-only toggle turns off.</summary>
+        ClearFavoriteFilter,
+
+        ClearGroupFilter,
 
         HideWindow,
     }
 
     /// <summary>
-    /// Escape undoes the most recent step, not the whole session: preview
-    /// first, then the group filter, then the type filter, and only when
-    /// nothing is left does it hide the window.
+    /// Escape undoes the most recent step, not the whole session: the preview,
+    /// then each filter layer from most-recently-touched to coarsest (query,
+    /// subtype, tag, type, favourite, group), and only when every layer is
+    /// clear does it hide the window. The footer's "Esc …" hint reads the same
+    /// stack, so what the text promises is what the key does.
     /// </summary>
-    public static EscapeAction NextEscape(bool previewOpen, bool hasTagFilter, bool hasTypeFilter)
+    public static EscapeAction NextEscape(
+        bool previewOpen,
+        bool hasQuery,
+        bool hasSubtypeFilter,
+        bool hasTagFilter,
+        bool hasTypeFilter,
+        bool hasFavoriteFilter,
+        bool hasGroupFilter)
     {
         if (previewOpen)
         {
             return EscapeAction.ClosePreview;
+        }
+
+        if (hasQuery)
+        {
+            return EscapeAction.ClearQuery;
+        }
+
+        if (hasSubtypeFilter)
+        {
+            return EscapeAction.ClearSubtypeFilter;
         }
 
         if (hasTagFilter)
@@ -39,6 +68,16 @@ public static class BarKeyboard
         if (hasTypeFilter)
         {
             return EscapeAction.ClearTypeFilter;
+        }
+
+        if (hasFavoriteFilter)
+        {
+            return EscapeAction.ClearFavoriteFilter;
+        }
+
+        if (hasGroupFilter)
+        {
+            return EscapeAction.ClearGroupFilter;
         }
 
         return EscapeAction.HideWindow;

@@ -2903,18 +2903,35 @@ internal partial class BarWindow : Window
     /// <summary>Escape peels the most recent layer; only an empty stack hides the window.</summary>
     private void StepEscape()
     {
+        var hasQuery = SearchBox.Text.Length > 0;
+        var hasSubtype = _subtypeIndex != 0;
         var hasTag = TagFilter.SelectedItem as string is { } tag && tag != AnyTag;
         var hasKind = _kindIndex != 0;
+        var hasFavorite = FavoriteOnly.IsChecked == true;
+        var hasGroup = _selectedGroup is not null;
 
         switch (BarKeyboard.NextEscape(
             previewOpen: _preview is { IsVisible: true },
+            hasQuery,
+            hasSubtype,
             hasTag,
-            hasKind))
+            hasKind,
+            hasFavorite,
+            hasGroup))
         {
             case BarKeyboard.EscapeAction.ClosePreview:
                 // The panel's level in the stack, ready since the keyboard
                 // model was written; this is its wiring.
                 RunPreviewCommand(_previewPolicy.Escape());
+                break;
+
+            case BarKeyboard.EscapeAction.ClearQuery:
+                SearchBox.Clear();
+                break;
+
+            case BarKeyboard.EscapeAction.ClearSubtypeFilter:
+                SetSubtype(0);
+                ApplyFilter();
                 break;
 
             case BarKeyboard.EscapeAction.ClearTagFilter:
@@ -2923,6 +2940,15 @@ internal partial class BarWindow : Window
 
             case BarKeyboard.EscapeAction.ClearTypeFilter:
                 SetKindIndex(0);
+                ApplyFilter();
+                break;
+
+            case BarKeyboard.EscapeAction.ClearFavoriteFilter:
+                FavoriteOnly.IsChecked = false;
+                break;
+
+            case BarKeyboard.EscapeAction.ClearGroupFilter:
+                SelectGroup(null);
                 break;
 
             case BarKeyboard.EscapeAction.HideWindow:

@@ -45,7 +45,11 @@ public partial class SettingsWindow : Window
         _apply = apply;
         _backup = backup;
 
-        Backdrop.Attach(this, () => BackdropKind.None);
+        Backdrop.Attach(this, () => BackdropKind.Mica);
+
+        // Borderless chrome (ticket 33): maximize visuals follow state.
+        StateChanged += (_, _) => TitlebarChrome.UpdateMaximizeVisuals(this, Shell, MaximizeButton);
+        TitlebarChrome.UpdateMaximizeVisuals(this, Shell, MaximizeButton);
 
         BuildTree();
 
@@ -968,6 +972,15 @@ public partial class SettingsWindow : Window
         => MessageBox.Show(
             this, message, "拾语", MessageBoxButton.OKCancel,
             MessageBoxImage.Warning, MessageBoxResult.Cancel) == MessageBoxResult.OK;
+
+    private void OnTitleBarDrag(object sender, MouseButtonEventArgs e)
+        => TitlebarChrome.DragOrMaximize(this, e);
+
+    private void OnMinimizeClick(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
+
+    private void OnMaximizeRestoreClick(object sender, RoutedEventArgs e) => TitlebarChrome.ToggleMaximize(this);
+
+    private void OnCloseClick(object sender, RoutedEventArgs e) => Close();
 
     private void OnClose(object sender, RoutedEventArgs e) => Close();
 }
