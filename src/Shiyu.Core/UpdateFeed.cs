@@ -129,7 +129,7 @@ public sealed record ReleaseManifest(
 public sealed record UpdateChannel(string Owner, string Repo, string AssetName)
 {
     /// <summary>The shipping channel. One constant; changing it is a release decision.</summary>
-    public static UpdateChannel Default { get; } = new("guodapro", "shiyu", "shiyu-win-x64.zip");
+    public static UpdateChannel Default { get; } = new("youguoda", "shiyu", "shiyu-win-x64.zip");
 
     public string LatestUrl => $"https://api.github.com/repos/{Owner}/{Repo}/releases/latest";
 }

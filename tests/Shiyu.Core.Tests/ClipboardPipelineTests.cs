@@ -133,4 +133,45 @@ public class ClipboardRecordingTests
             new[] { "alpha", "beta", "alpha" },
             store.Recent(limit: 10).Select(entry => entry.Text));
     }
+
+    [Fact]
+    public void A_pinned_entry_does_not_hide_the_previous_copy_from_the_duplicate_check()
+    {
+        using var database = new TempDatabase();
+        var clipboard = new FakeClipboardMonitor();
+        var clock = new TestClock(Noon);
+        using var store = EntryStore.Open(database.FilePath);
+        using var pipeline = new ClipboardPipeline(clipboard, store, clock, new ExclusionPolicy());
+
+        clipboard.Emit("pinned long ago");
+        store.SetPinned(Assert.Single(store.Recent(limit: 10)).Id, true);
+        clock.Advance(TimeSpan.FromMinutes(1));
+        clipboard.Emit("same text");
+        clock.Advance(TimeSpan.FromMinutes(1));
+        clipboard.Emit("same text");
+
+        Assert.Single(store.Recent(limit: 10), entry => entry.Text == "same text");
+        Assert.Equal(2, store.Count());
+    }
+
+    [Fact]
+    public void Copying_text_equal_to_an_older_pinned_entry_leaves_the_pin_alone()
+    {
+        using var database = new TempDatabase();
+        var clipboard = new FakeClipboardMonitor();
+        var clock = new TestClock(Noon);
+        using var store = EntryStore.Open(database.FilePath);
+        using var pipeline = new ClipboardPipeline(clipboard, store, clock, new ExclusionPolicy());
+
+        clipboard.Emit("alpha");
+        var pinned = Assert.Single(store.Recent(limit: 10));
+        store.SetPinned(pinned.Id, true);
+        clock.Advance(TimeSpan.FromMinutes(1));
+        clipboard.Emit("beta");
+        clock.Advance(TimeSpan.FromMinutes(1));
+        clipboard.Emit("alpha");
+
+        Assert.Equal(3, store.Count());
+        Assert.Equal(Noon, store.Get(pinned.Id)!.CreatedAt);
+    }
 }

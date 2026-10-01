@@ -32,6 +32,25 @@ public static class StartupRegistration
         }
     }
 
+    /// <summary>
+    /// Whether the entry launches this very executable. A copy moved or
+    /// reinstalled elsewhere leaves an entry that is "enabled" but starts the
+    /// old location — or nothing at all.
+    /// </summary>
+    public static bool PointsAt(string executablePath)
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(RunKey);
+            return key?.GetValue(ValueName) is string value
+                && string.Equals(value.Trim('"'), executablePath, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
     /// <summary>Returns whether the change stuck.</summary>
     public static bool Set(bool enabled, string executablePath)
     {

@@ -573,8 +573,25 @@ public sealed partial class EntryStore : IDisposable
         transaction.Commit();
     }
 
-    /// <summary>The newest entry, or null when the history is empty.</summary>
-    public Entry? MostRecent() => Recent(limit: 1).FirstOrDefault();
+    /// <summary>
+    /// The last thing copied, or null when the history is empty. Ordered by
+    /// time alone: the pipeline's duplicate check asks "was this the previous
+    /// copy", and a pinned entry from last week never is.
+    /// </summary>
+    public Entry? MostRecent()
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = """
+            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from, image_width, image_height,
+                   (SELECT group_concat(t.name, char(31)) FROM tags t
+                      JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
+            FROM entries
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1;
+            """;
+
+        return ReadEntries(command).FirstOrDefault();
+    }
 
     /// <summary>
     /// Finds entries whose text contains <paramref name="query"/>, newest first.

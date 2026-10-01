@@ -49,9 +49,15 @@ internal sealed class UpdateService
     /// <summary>The latest release, or null when the channel said nothing usable.</summary>
     public async Task<ReleaseManifest?> CheckAsync()
     {
-        var url = Environment.GetEnvironmentVariable(ApiOverrideVariable) is { Length: > 0 } overrideBase
-            ? overrideBase.TrimEnd('/') + "/releases/latest"
-            : _channel.LatestUrl;
+        var url = _channel.LatestUrl;
+#if DEBUG
+        // Debug only: a release build takes its update source from nothing
+        // but the compiled-in channel.
+        if (Environment.GetEnvironmentVariable(ApiOverrideVariable) is { Length: > 0 } overrideBase)
+        {
+            url = overrideBase.TrimEnd('/') + "/releases/latest";
+        }
+#endif
 
         using var response = await _http.GetAsync(url);
         if (!response.IsSuccessStatusCode)

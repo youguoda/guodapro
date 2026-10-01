@@ -264,15 +264,23 @@ public partial class App : Application
     /// tool nobody has, so this is on by default — but only ever written when
     /// it actually differs, so a user who turned it off is not fought with on
     /// every launch.
+    ///
+    /// Release builds only: autostart belongs to the installed copy, never to
+    /// whatever a development build last left in bin. An entry that points at
+    /// another location is taken over, so moving the install moves autostart.
     /// </summary>
     private void ApplyStartupPreference()
     {
-        if (StartupRegistration.IsEnabled() == _settings.StartWithWindows)
+#if !DEBUG
+        var path = Environment.ProcessPath ?? string.Empty;
+        if (StartupRegistration.IsEnabled() == _settings.StartWithWindows
+            && (!_settings.StartWithWindows || StartupRegistration.PointsAt(path)))
         {
             return;
         }
 
-        StartupRegistration.Set(_settings.StartWithWindows, Environment.ProcessPath ?? string.Empty);
+        StartupRegistration.Set(_settings.StartWithWindows, path);
+#endif
     }
 
     /// <summary>

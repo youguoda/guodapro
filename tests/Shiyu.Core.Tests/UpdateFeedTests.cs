@@ -5,6 +5,15 @@ namespace Shiyu.Core.Tests;
 public class UpdateFeedTests
 {
     [Fact]
+    public void The_default_channel_is_the_published_repository()
+    {
+        Assert.Equal(
+            "https://api.github.com/repos/youguoda/shiyu/releases/latest",
+            UpdateChannel.Default.LatestUrl);
+        Assert.Equal("shiyu-win-x64.zip", UpdateChannel.Default.AssetName);
+    }
+
+    [Fact]
     public void Tags_parse_with_or_without_the_v()
     {
         Assert.Equal(new UpdateVersion(1, 2, 3), UpdateVersion.Parse("v1.2.3"));
