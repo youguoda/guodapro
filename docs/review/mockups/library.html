@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>管理窗 · 目标稿</title>
+<link rel="stylesheet" href="mock.css">
+<style>
+  .library { width: 1100px; height: 640px; }
+  .l-head { height: 48px; display: flex; align-items: center; gap: 12px; padding: 0 16px; flex: none; }
+  .l-head .searchbox { width: 560px; }
+  .l-head .searchbox .ph { flex: 1; }
+  .filter-btn { height: 32px; display: inline-flex; align-items: center; gap: 8px; padding: 0 10px; border-radius: 4px; font-size: 14px; }
+  .filter-btn .icon { font-size: 16px; color: var(--text-2); }
+  .badge { min-width: 16px; height: 16px; border-radius: 8px; background: var(--accent); color: #fff; font-size: 11px; display: grid; place-items: center; padding: 0 4px; }
+  .count { margin-left: auto; font-size: 12px; color: var(--text-2); }
+
+  .cmd { height: 40px; display: flex; align-items: center; gap: 2px; padding: 0 12px; flex: none; }
+  .cmd .btn-ghost { height: 28px; padding: 0 8px; gap: 8px; }
+  .cmd .btn-ghost .icon { color: var(--text-2); }
+  .cmd .sep { width: 1px; height: 20px; background: var(--card-stroke); margin: 0 8px; }
+  .cmd .grow { flex: 1; }
+
+  .main { flex: 1; display: grid; grid-template-columns: 400px 1px 1fr; min-height: 0; }
+  .split { background: var(--card-stroke); }
+  .list { overflow: hidden; position: relative; padding: 0 8px; }
+  .grp { height: 32px; display: flex; align-items: center; padding: 0 12px; font-size: 12px; color: var(--text-2); }
+  .rowi { height: 56px; border-radius: 4px; padding: 8px 12px; position: relative; display: grid; grid-template-columns: 16px 1fr auto; column-gap: 8px; align-items: center; }
+  .rowi.sel { background: var(--selected); }
+  .rowi.sel::before { content: ""; position: absolute; left: 0; top: 20px; width: 3px; height: 16px; border-radius: 1.5px; background: var(--accent); }
+  .rowi.hover { background: var(--state-hover); }
+  .appi { width: 16px; height: 16px; border-radius: 4px; color: #fff; font-size: 9px; font-weight: 600; display: grid; place-items: center; }
+  .a1 { background: #2B6CE0; } .a2 { background: #E8762B; } .a3 { background: #2E9E6A; } .a4 { background: #6C4BD8; } .a5 { background: #4B5563; }
+  .r1 { font-size: 14px; line-height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .r2 { font-size: 12px; line-height: 16px; color: var(--text-2); grid-column: 2 / 4; }
+  .state { font-size: 12px; color: var(--text-2); }
+  .rowi.img { height: 72px; grid-template-columns: 64px 1fr; column-gap: 12px; }
+  .thumb { width: 64px; height: 48px; border-radius: 4px; background: linear-gradient(135deg, #9EC5FF, #C9B6FF 55%, #FFC4D6); grid-row: 1 / 3; }
+  .rowi.img .r2 { grid-column: 2; }
+  .toast { position: absolute; left: 16px; bottom: 16px; height: 40px; border-radius: 8px; background: var(--layer-flyout);
+    box-shadow: 0 0 0 1px var(--card-stroke), 0 8px 16px rgba(0,0,0,.14); display: flex; align-items: center; gap: 12px; padding: 0 8px 0 16px; font-size: 14px; overflow: hidden; }
+  .toast::after { content: ""; position: absolute; left: 0; bottom: 0; height: 2px; width: 62%; background: var(--accent); }
+  .toast .btn-ghost { height: 28px; color: var(--accent); gap: 6px; padding: 0 8px; }
+
+  .detail { padding: 16px 20px 20px; overflow: hidden; }
+  .dcard { background: var(--surface); border: 1px solid var(--card-stroke); border-radius: 8px; padding: 16px 20px; height: 100%; display: flex; flex-direction: column; }
+  .dmeta { font-size: 12px; line-height: 16px; color: var(--text-2); display: flex; gap: 8px; align-items: center; }
+  .dsep { height: 1px; background: var(--card-stroke); margin: 12px 0; }
+  .dbody { font-size: 18px; line-height: 31px; max-width: 680px; flex: 1; overflow: hidden; }
+  .dbody p + p { margin-top: 12px; }
+  .props { display: grid; grid-template-columns: 48px 1fr auto; row-gap: 10px; column-gap: 12px; align-items: center; font-size: 14px; }
+  .props .k { font-size: 12px; color: var(--text-2); }
+  .chip { height: 24px; border-radius: 4px; background: var(--selected); padding: 0 6px 0 8px; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; margin-right: 6px; }
+  .chip .icon { font-size: 10px; color: var(--text-2); }
+  .add { font-size: 12px; color: var(--accent); }
+  .muted { color: var(--text-3); }
+</style>
+</head>
+<body>
+<div class="desk-plain">
+  <div class="caption-label">管理窗（目标稿）：筛选以 token 进搜索框；顶部命令栏（危险操作收进 ⋯）；列表 400 + 详情；删除走 5 秒撤销条；全键盘可达</div>
+  <div class="window library">
+    <div class="titlebar">
+      <span class="logo">拾</span><span class="title">拾语 · 历史</span>
+      <span class="cap">&#xE921;</span><span class="cap">&#xE922;</span><span class="cap">&#xE8BB;</span>
+    </div>
+
+    <div class="l-head">
+      <div class="searchbox">
+        <span class="icon">&#xE721;</span>
+        <span class="token">类型：文本<span class="icon">&#xE711;</span></span>
+        <span class="token">近 7 天<span class="icon">&#xE711;</span></span>
+        <span class="ph">搜索历史…</span>
+        <span class="keys"><span class="keycap-display">Ctrl</span><span class="keycap-display">F</span></span>
+      </div>
+      <span class="filter-btn"><span class="icon">&#xE71C;</span>筛选<span class="badge">2</span></span>
+      <span class="count tabular">12 / 160</span>
+    </div>
+
+    <div class="cmd">
+      <span class="btn btn-ghost"><span class="icon">&#xE8C8;</span>复制</span>
+      <span class="btn btn-ghost"><span class="icon">&#xE718;</span>置顶</span>
+      <span class="btn btn-ghost"><span class="icon">&#xE734;</span>收藏</span>
+      <span class="btn btn-ghost"><span class="icon">&#xE8EC;</span>标签<span class="icon" style="font-size:10px">&#xE70D;</span></span>
+      <span class="sep"></span>
+      <span class="btn btn-ghost" title="删除 · D / Delete"><span class="icon">&#xE74D;</span></span>
+      <span class="grow"></span>
+      <span class="btn btn-ghost" title="更多"><span class="icon">&#xE712;</span></span>
+    </div>
+
+    <div class="main">
+      <div class="list">
+        <div class="grp">今天</div>
+        <div class="rowi sel"><span class="appi a1">W</span><span class="r1">示例正文：会议纪要的第一段，用来展示列表首行的单行截断效果……</span><span class="state"></span><span class="r2">3 分钟前 · 示例应用 · 128 字</span></div>
+        <div class="rowi hover"><span class="appi a2">B</span><span class="r1">https://example.com/docs/start</span><span class="state icon">&#xE735;</span><span class="r2">18 分钟前 · 浏览器 · 30 字</span></div>
+        <div class="rowi"><span class="appi a3">N</span><span class="r1">示例正文：一段中英混排的说明，Shiyu keeps it readable.</span><span class="state icon">&#xE718;</span><span class="r2">1 小时前 · 笔记 · 46 字</span></div>
+        <div class="rowi img"><span class="thumb"></span><span class="r1">图片 · 1920×1080</span><span class="r2">2 小时前 · 截图工具</span></div>
+        <div class="grp">昨天</div>
+        <div class="rowi"><span class="appi a4">C</span><span class="r1">示例正文：一段代码片段的占位文字</span><span class="state"></span><span class="r2">昨天 21:40 · 代码编辑器 · 212 字</span></div>
+        <div class="rowi"><span class="appi a5">S</span><span class="r1">示例正文：短句。</span><span class="state"></span><span class="r2">昨天 18:02 · 示例应用 · 6 字</span></div>
+        <div class="toast">已删除 1 条<span class="btn btn-ghost">撤销<span class="keycap-display" style="height:20px;min-width:20px;padding:0 5px;">Z</span></span></div>
+      </div>
+      <div class="split"></div>
+      <div class="detail">
+        <div class="dcard">
+          <div class="dmeta"><span class="appi a1">W</span>文本 · 示例应用 · 3 分钟前 · 128 字</div>
+          <div class="dsep"></div>
+          <div class="dbody">
+            <p>示例正文：会议纪要的第一段，用来展示详情栏里正文的阅读排版。正文使用内容字号 18、行高 1.7，一行约 40 个汉字。</p>
+            <p>第二段占位文字：散文用比例字体；只有链接、路径、颜色和代码这几类才换成等宽字体。</p>
+          </div>
+          <div class="dsep"></div>
+          <div class="props">
+            <span class="k">标签</span><span><span class="chip">示例标签甲<span class="icon">&#xE711;</span></span><span class="chip">示例标签乙<span class="icon">&#xE711;</span></span><span class="add">＋ 添加</span></span><span class="keycap-display">T</span>
+            <span class="k">备注</span><span class="muted">添加备注…</span><span class="keycap-display">N</span>
+            <span class="k">归组</span><span>未归组</span><span class="keycap-display">G</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

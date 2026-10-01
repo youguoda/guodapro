@@ -1,0 +1,160 @@
+/* 拾语目标设计样稿 · 共享令牌（与 docs/review/2026-10-01-ui-design.md §4 一致）
+   HTML 示意稿，用于对齐视觉方向；不是像素级规范，WPF 实现以报告中的令牌表为准。 */
+:root {
+  --font-ui: "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  --font-mono: "Cascadia Mono", Consolas, "Microsoft YaHei UI", monospace;
+  --font-icon: "Segoe Fluent Icons", "Segoe MDL2 Assets";
+
+  --text: #1F2328;
+  --text-2: #57606A;
+  --text-3: #62707B;
+  --text-on-accent: #FFFFFF;
+  --accent: #1A66DB;
+  --accent-hover: #1A5BC4;
+  --accent-subtle: rgba(26, 102, 219, .06);
+  --selected: rgba(26, 102, 219, .10);
+  --danger: #C0392B;
+  --success: #1A7F37;
+  --caution: #9A6700;
+  --brand: #FF1A66;
+
+  --mica: #F3F3F3;
+  --surface: #FFFFFF;
+  --surface-subtle: #F6F7F8;
+  --surface-input: #FFFFFF;
+  --layer-flyout: #FCFCFC;
+  --material: rgba(249, 249, 250, .85);
+
+  --card-stroke: rgba(0, 0, 0, .0588);
+  --stroke-strong: #848D97;
+  --divider: rgba(208, 215, 222, .6);
+
+  --state-hover: rgba(31, 35, 40, .05);
+  --state-pressed: rgba(31, 35, 40, .09);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { font-family: var(--font-ui); color: var(--text); -webkit-font-smoothing: antialiased; }
+.icon { font-family: var(--font-icon); font-style: normal; font-weight: normal; line-height: 1; display: inline-block; }
+.tabular { font-variant-numeric: tabular-nums; }
+
+/* ---------- type ---------- */
+.t-caption { font-size: 12px; line-height: 16px; }
+.t-caption-ml { font-size: 12px; line-height: 20px; }
+.t-body { font-size: 14px; line-height: 20px; }
+.t-body-strong { font-size: 14px; line-height: 20px; font-weight: 600; }
+.t-subtitle { font-size: 20px; line-height: 28px; font-weight: 600; }
+.t-content { font-size: 18px; line-height: 31px; }
+.c-2 { color: var(--text-2); }
+.c-3 { color: var(--text-3); }
+
+/* ---------- shared controls ---------- */
+.keycap {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 4px; border-radius: 4px;
+  background: var(--accent); color: var(--text-on-accent);
+  font-size: 12px; font-weight: 600; line-height: 18px;
+}
+.keycap-display {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 24px; height: 24px; padding: 0 8px; border-radius: 4px;
+  background: var(--surface); border: 1px solid var(--stroke-strong); border-bottom-width: 2px;
+  font-size: 12px; color: var(--text); line-height: 20px;
+}
+.keys { display: inline-flex; gap: 4px; align-items: center; }
+
+.btn {
+  height: 32px; padding: 0 12px; border-radius: 4px; min-width: 80px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  font-size: 14px; color: var(--text); background: var(--surface);
+  border: 1px solid var(--card-stroke); border-bottom-color: rgba(0, 0, 0, .16);
+}
+.btn .icon { font-size: 16px; }
+.btn-accent { background: var(--accent); color: var(--text-on-accent); border-color: transparent; }
+.btn-ghost { background: transparent; border-color: transparent; min-width: 0; color: var(--text); }
+.btn-ghost .icon { color: var(--text-2); }
+
+.icon-btn {
+  width: 32px; height: 32px; display: inline-grid; place-items: center; position: relative;
+  color: var(--text-2); font-size: 16px;
+}
+.icon-btn.is-hover::before {
+  content: ""; position: absolute; inset: 2px; border-radius: 4px; background: var(--state-hover);
+}
+.icon-btn.is-hover { color: var(--text); }
+.icon-btn .icon { position: relative; font-size: 16px; }
+.icon-btn.is-selected { color: var(--accent); }
+.icon-btn.is-selected::after {
+  content: ""; position: absolute; left: 10px; right: 10px; bottom: 1px; height: 3px;
+  border-radius: 1.5px; background: var(--accent);
+}
+
+.divider-v { width: 1px; height: 16px; background: var(--divider); margin: 0 4px; }
+.divider-h { height: 1px; background: var(--divider); }
+
+.searchbox {
+  height: 32px; border-radius: 4px; background: var(--surface-input);
+  border: 1px solid var(--card-stroke); border-bottom: 1px solid var(--stroke-strong);
+  display: flex; align-items: center; gap: 8px; padding: 0 8px 0 10px; font-size: 14px;
+}
+.searchbox .icon { font-size: 16px; color: var(--text-2); }
+.searchbox .ph { color: var(--text-2); flex: 1; white-space: nowrap; overflow: hidden; }
+.searchbox.pill { border-radius: 16px; border-bottom-color: var(--card-stroke); padding: 0 8px 0 12px; background: rgba(255, 255, 255, .72); }
+
+.token {
+  height: 24px; border-radius: 4px; padding: 0 6px 0 8px; display: inline-flex; align-items: center; gap: 6px;
+  background: var(--selected); font-size: 12px; color: var(--text); white-space: nowrap;
+}
+.token .icon { font-size: 10px; color: var(--text-2); }
+
+.combo {
+  width: 200px; height: 32px; border-radius: 4px; background: var(--surface-input);
+  border: 1px solid var(--card-stroke); border-bottom: 1px solid var(--stroke-strong);
+  display: flex; align-items: center; justify-content: space-between; padding: 0 10px 0 12px; font-size: 14px;
+}
+.combo .icon { font-size: 12px; color: var(--text-2); }
+.textbox {
+  width: 280px; height: 32px; border-radius: 4px; background: var(--surface-input);
+  border: 1px solid var(--card-stroke); border-bottom: 1px solid var(--stroke-strong);
+  display: flex; align-items: center; padding: 0 12px; font-size: 14px;
+}
+
+.toggle { display: inline-flex; align-items: center; gap: 12px; font-size: 14px; }
+.toggle .track { width: 40px; height: 20px; border-radius: 10px; position: relative; border: 1px solid var(--stroke-strong); }
+.toggle .track::after { content: ""; position: absolute; width: 12px; height: 12px; border-radius: 6px; top: 3px; left: 3px; background: var(--text-2); }
+.toggle.on .track { background: var(--accent); border-color: var(--accent); }
+.toggle.on .track::after { left: 23px; background: #fff; }
+
+/* ---------- desktop backdrops ---------- */
+.desk {
+  min-height: 100vh; padding: 28px;
+  background:
+    radial-gradient(1200px 600px at 10% 0%, #CFE3FF 0%, rgba(207, 227, 255, 0) 60%),
+    radial-gradient(900px 700px at 100% 100%, #FFE1EC 0%, rgba(255, 225, 236, 0) 55%),
+    linear-gradient(135deg, #EEF2F7, #F7F1F4);
+}
+.desk-plain { min-height: 100vh; padding: 28px; background: linear-gradient(135deg, #DCE3EC, #EDE6EA); }
+.caption-label {
+  font-size: 12px; color: #4A535C; margin-bottom: 10px; letter-spacing: .2px;
+}
+.row { display: flex; gap: 28px; align-items: flex-start; }
+
+/* ---------- regular window shell (system frame + Mica fallback) ---------- */
+.window {
+  border-radius: 8px; background: var(--mica); overflow: hidden; display: flex; flex-direction: column;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .10), 0 16px 40px rgba(0, 0, 0, .16), 0 2px 6px rgba(0, 0, 0, .06);
+}
+.titlebar { height: 32px; display: flex; align-items: center; flex: none; }
+.titlebar .logo {
+  width: 16px; height: 16px; border-radius: 4px; background: var(--brand); color: #fff;
+  font-size: 10px; display: grid; place-items: center; margin: 0 8px 0 16px; font-weight: 600;
+}
+.titlebar .title { font-size: 12px; color: var(--text-2); flex: 1; }
+.titlebar .cap { width: 46px; height: 32px; display: grid; place-items: center; font-family: var(--font-icon); font-size: 10px; color: var(--text); }
+
+/* ---------- floating overlay shell (DWM 8 radius + acrylic) ---------- */
+.overlay {
+  border-radius: 8px; background: var(--material);
+  backdrop-filter: blur(28px) saturate(140%);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .09), 0 12px 28px rgba(0, 0, 0, .16), 0 2px 6px rgba(0, 0, 0, .06);
+}

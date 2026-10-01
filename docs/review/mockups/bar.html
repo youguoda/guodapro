@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>窄条 · 目标稿</title>
+<link rel="stylesheet" href="mock.css">
+<style>
+  .bar { width: 384px; height: 720px; display: flex; flex-direction: column; }
+  .bar-head { padding: 8px 8px 4px; display: flex; flex-direction: column; gap: 4px; }
+  .head-row { display: flex; align-items: center; gap: 8px; height: 32px; }
+  .brand { width: 24px; height: 24px; border-radius: 6px; background: var(--brand); color: #fff;
+    font-size: 13px; display: grid; place-items: center; flex: none; }
+  .head-row .searchbox { flex: 1; }
+  .tools { display: flex; align-items: center; height: 32px; }
+  .tools .spacer { flex: 1; }
+  .tools .divider-v { margin: 0 4px; }
+  .ghost-drop { height: 32px; display: inline-flex; align-items: center; gap: 6px; padding: 0 8px; border-radius: 4px;
+    color: var(--text-2); font-size: 14px; }
+  .ghost-drop .icon { font-size: 16px; }
+  .ghost-drop .chev { font-size: 10px; }
+
+  .list { flex: 1; overflow: hidden; padding: 4px 2px 0 8px; margin-right: 6px; }
+  .card { position: relative; background: var(--surface); border: 1px solid var(--card-stroke); border-radius: 4px;
+    padding: 8px 12px 10px; margin-bottom: 8px; }
+  .card.hover { background: #F3F3F4; } /* Surface + StateHover(5%) composite */
+  .card.selected::after { content: ""; position: absolute; inset: -1px; border-radius: 4px; box-shadow: inset 0 0 0 2px var(--accent); pointer-events: none; }
+  .meta { height: 20px; display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--text-2); position: relative; }
+  .meta .when { margin-left: auto; }
+  .src { width: 18px; height: 18px; border-radius: 4px; display: grid; place-items: center; flex: none; color: #fff; font-size: 10px; font-weight: 600; }
+  .s-doc { background: #2B6CE0; } .s-web { background: #E8762B; } .s-note { background: #2E9E6A; } .s-code { background: #6C4BD8; } .s-shot { background: #4B5563; }
+  .body { margin-top: 6px; font-size: 18px; line-height: 31px; color: var(--text);
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .body.mono { font-family: var(--font-mono); font-size: 15px; line-height: 26px; }
+  .thumb { margin-top: 8px; height: 96px; border-radius: 4px; box-shadow: inset 0 0 0 1px var(--card-stroke);
+    background:
+      linear-gradient(160deg, rgba(255,255,255,0) 40%, rgba(255,255,255,.35) 60%, rgba(255,255,255,0) 61%),
+      linear-gradient(135deg, #9EC5FF 0%, #C9B6FF 55%, #FFC4D6 100%); }
+  .files { margin-top: 6px; }
+  .file { display: flex; align-items: center; gap: 8px; font-size: 15px; line-height: 24px; color: var(--text); }
+  .file .icon { font-size: 16px; color: var(--text-2); }
+  .file.dead { color: var(--text-3); text-decoration: line-through; }
+  .file .gone { font-size: 14px; color: var(--danger); text-decoration: none; }
+
+  /* hover tray: overlay centred on the meta row, 32 pitch, never part of layout */
+  .tray { position: absolute; right: -4px; top: -6px; height: 32px; display: flex; align-items: center; padding-left: 16px;
+    background: linear-gradient(to right, rgba(255,255,255,0), #FFFFFF 16px); }
+  .card.hover .tray { background: linear-gradient(to right, rgba(243,243,244,0), #F3F3F4 16px); }
+  .tray .icon-btn { width: 32px; height: 32px; }
+  .tray .divider-v { margin: 0 0; background: var(--card-stroke); }
+  .tray .danger.is-hover { color: var(--danger); }
+  .tray .danger.is-hover::before { background: rgba(192, 57, 43, .08); }
+
+  .foot { height: 28px; margin: 0 8px; border-top: 1px solid var(--card-stroke); display: flex; align-items: center;
+    padding: 0 4px; font-size: 14px; color: var(--text-3); }
+  .kc-slot { width: 18px; height: 18px; display: grid; place-items: center; flex: none; }
+  .cap-over { position: absolute; inset: 0; display: grid; place-items: center; }
+  .key-in { margin-left: auto; }
+</style>
+</head>
+<body>
+<div class="desk">
+<div class="row">
+
+  <!-- ====== A. 日常态 ====== -->
+  <div>
+    <div class="caption-label">A · 日常态：第 1 张为键盘选中（2 DIP 内环，底色不变）；第 2 张悬停（托盘叠加在元信息行上，不改卡高）</div>
+    <div class="bar overlay">
+      <div class="bar-head">
+        <div class="head-row">
+          <div class="brand" title="打开拾语主窗口">拾</div>
+          <div class="searchbox pill"><span class="icon">&#xE721;</span><span class="ph">搜索…</span></div>
+          <span class="icon-btn" title="保持在最前"><span class="icon">&#xE74A;</span></span>
+        </div>
+        <div class="tools">
+          <span class="icon-btn is-selected" title="全部"><span class="icon">&#xE8A9;</span></span>
+          <span class="icon-btn" title="文本"><span class="icon">&#xE8D2;</span></span>
+          <span class="icon-btn" title="图片"><span class="icon">&#xE8B9;</span></span>
+          <span class="icon-btn" title="文件"><span class="icon">&#xE8A5;</span></span>
+          <span class="divider-v"></span>
+          <span class="icon-btn" title="只看收藏"><span class="icon">&#xE734;</span></span>
+          <span class="divider-v"></span>
+          <span class="ghost-drop" title="标签"><span class="icon">&#xE8EC;</span><span class="icon chev">&#xE70D;</span></span>
+          <span class="spacer"></span>
+          <span class="icon-btn" title="子类型"><span class="icon">&#xE71C;</span></span>
+        </div>
+      </div>
+
+      <div class="list">
+        <div class="card selected">
+          <div class="meta"><span class="src s-doc">W</span><span class="when">刚刚</span></div>
+          <div class="body">示例正文：会议纪要的第一段，用来展示 18 号正文与 1.7 倍行高在三行截断下的效果，超出部分以省略号结束……</div>
+        </div>
+
+        <div class="card hover">
+          <div class="meta"><span class="src s-web">B</span><span class="kind">链接</span>
+            <div class="tray">
+              <span class="icon-btn" title="复制"><span class="icon">&#xE8C8;</span></span>
+              <span class="icon-btn" title="粘贴"><span class="icon">&#xE77F;</span></span>
+              <span class="icon-btn" title="纯文本粘贴"><span class="icon">&#xE8D2;</span></span>
+              <span class="icon-btn is-hover" title="置顶"><span class="icon">&#xE718;</span></span>
+              <span class="icon-btn" title="收藏"><span class="icon">&#xE734;</span></span>
+              <span class="icon-btn" title="备注"><span class="icon">&#xE70B;</span></span>
+              <span class="icon-btn" title="归组"><span class="icon">&#xE8B7;</span></span>
+              <span class="divider-v"></span>
+              <span class="icon-btn danger" title="删除"><span class="icon">&#xE74D;</span></span>
+            </div>
+          </div>
+          <div class="body mono">https://example.com/docs/start</div>
+        </div>
+
+        <div class="card">
+          <div class="meta"><span class="src s-note">N</span><span class="when">3 分钟前</span></div>
+          <div class="body">示例正文：一段中英混排的说明，Shiyu keeps Chinese and English readable side by side.</div>
+        </div>
+
+        <div class="card">
+          <div class="meta"><span class="src s-shot">S</span><span class="kind">图片 · 1920×1080</span><span class="when">12 分钟前</span></div>
+          <div class="thumb"></div>
+        </div>
+
+        <div class="card">
+          <div class="meta"><span class="src s-code">C</span><span class="kind">3 个文件</span><span class="when">1 小时前</span></div>
+          <div class="files">
+            <div class="file"><span class="icon">&#xE8A5;</span>示例文件一.docx</div>
+            <div class="file dead"><span class="icon">&#xE8A5;</span>示例文件二.pdf <span class="gone">（路径不存在）</span></div>
+            <div class="file"><span class="icon">&#xE8B7;</span>示例文件夹</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="meta"><span class="src s-doc">W</span><span class="when">昨天</span></div>
+          <div class="body">示例正文：短句。</div>
+        </div>
+      </div>
+
+      <div class="foot"><span class="tabular">160 条 · Esc 隐藏</span></div>
+    </div>
+  </div>
+
+  <!-- ====== B. 按住 Ctrl ====== -->
+  <div>
+    <div class="caption-label">B · 按住 Ctrl：数字盖住来源图标；←→ 替换当前类型字形；Tab 替换下拉箭头；F 在搜索框内（零位移）</div>
+    <div class="bar overlay">
+      <div class="bar-head">
+        <div class="head-row">
+          <div class="brand">拾</div>
+          <div class="searchbox pill"><span class="icon">&#xE721;</span><span class="ph">搜索…</span><span class="keycap key-in">F</span></div>
+          <span class="icon-btn"><span class="icon">&#xE74A;</span></span>
+        </div>
+        <div class="tools">
+          <span class="icon-btn is-selected"><span class="keycap">←→</span></span>
+          <span class="icon-btn"><span class="icon">&#xE8D2;</span></span>
+          <span class="icon-btn"><span class="icon">&#xE8B9;</span></span>
+          <span class="icon-btn"><span class="icon">&#xE8A5;</span></span>
+          <span class="divider-v"></span>
+          <span class="icon-btn"><span class="icon">&#xE734;</span></span>
+          <span class="divider-v"></span>
+          <span class="ghost-drop"><span class="icon">&#xE8EC;</span><span class="keycap">Tab</span></span>
+          <span class="spacer"></span>
+          <span class="icon-btn"><span class="icon">&#xE71C;</span></span>
+        </div>
+      </div>
+
+      <div class="list">
+        <div class="card selected">
+          <div class="meta"><span class="kc-slot"><span class="keycap">1</span></span>
+            <div class="tray">
+              <span class="icon-btn"><span class="cap-over"><span class="keycap">C</span></span></span>
+              <span class="icon-btn"><span class="icon">&#xE77F;</span></span>
+              <span class="icon-btn"><span class="icon">&#xE8D2;</span></span>
+              <span class="icon-btn"><span class="cap-over"><span class="keycap">P</span></span></span>
+              <span class="icon-btn"><span class="cap-over"><span class="keycap">S</span></span></span>
+              <span class="icon-btn"><span class="cap-over"><span class="keycap">N</span></span></span>
+              <span class="icon-btn"><span class="cap-over"><span class="keycap">G</span></span></span>
+              <span class="divider-v"></span>
+              <span class="icon-btn"><span class="cap-over"><span class="keycap">D</span></span></span>
+            </div>
+          </div>
+          <div class="body">示例正文：会议纪要的第一段，用来展示 18 号正文与 1.7 倍行高在三行截断下的效果，超出部分以省略号结束……</div>
+        </div>
+        <div class="card">
+          <div class="meta"><span class="kc-slot"><span class="keycap">2</span></span><span class="kind">链接</span><span class="when">刚刚</span></div>
+          <div class="body mono">https://example.com/docs/start</div>
+        </div>
+        <div class="card">
+          <div class="meta"><span class="kc-slot"><span class="keycap">3</span></span><span class="when">3 分钟前</span></div>
+          <div class="body">示例正文：一段中英混排的说明，Shiyu keeps Chinese and English readable side by side.</div>
+        </div>
+        <div class="card">
+          <div class="meta"><span class="kc-slot"><span class="keycap">4</span></span><span class="kind">图片 · 1920×1080</span><span class="when">12 分钟前</span></div>
+          <div class="thumb"></div>
+        </div>
+        <div class="card">
+          <div class="meta"><span class="kc-slot"><span class="keycap">5</span></span><span class="kind">3 个文件</span><span class="when">1 小时前</span></div>
+          <div class="files">
+            <div class="file"><span class="icon">&#xE8A5;</span>示例文件一.docx</div>
+            <div class="file dead"><span class="icon">&#xE8A5;</span>示例文件二.pdf <span class="gone">（路径不存在）</span></div>
+            <div class="file"><span class="icon">&#xE8B7;</span>示例文件夹</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="meta"><span class="kc-slot"><span class="keycap">6</span></span><span class="when">昨天</span></div>
+          <div class="body">示例正文：短句。</div>
+        </div>
+      </div>
+
+      <div class="foot"><span>Ctrl+数字 粘贴第 n 条 · 松开 Ctrl 收起键位</span></div>
+    </div>
+  </div>
+
+</div>
+</div>
+</body>
+</html>

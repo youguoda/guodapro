@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>翻译面板 · 目标稿</title>
+<link rel="stylesheet" href="mock.css">
+<style>
+  .panel { width: 420px; padding: 12px 16px; display: flex; flex-direction: column; }
+  .p-head { height: 32px; display: flex; align-items: center; gap: 2px; font-size: 14px; color: var(--text-2); }
+  .p-head .spacer { flex: 1; }
+  .seg { display: inline-flex; align-items: center; gap: 4px; margin-right: 4px; }
+  .seg span { position: relative; height: 32px; padding: 0 8px; display: inline-flex; align-items: center; font-size: 14px; color: var(--text-2); }
+  .seg span.on { color: var(--text); }
+  .seg span.on::after { content: ""; position: absolute; left: 50%; margin-left: -6px; bottom: 1px; width: 12px; height: 3px; border-radius: 1.5px; background: var(--accent); }
+
+  .src-text { margin-top: 4px; font-size: 15px; line-height: 26px; color: var(--text-2);
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .translation { margin-top: 12px; font-size: 18px; line-height: 31px; color: var(--text); }
+  .caret { display: inline-block; width: 2px; height: 18px; background: var(--accent); vertical-align: -3px; margin-left: 2px; }
+
+  .word-row { margin-top: 8px; display: flex; align-items: baseline; gap: 12px; }
+  .headword { font-size: 20px; line-height: 28px; font-weight: 600; }
+  .ipa { font-size: 15px; color: var(--text-2); }
+  .word-row .icon-btn { align-self: center; margin-left: -4px; }
+  .gloss { margin-top: 4px; font-size: 18px; line-height: 31px; }
+  .dict-sep { height: 1px; background: var(--card-stroke); margin: 12px 0; }
+  .pos { font-size: 14px; line-height: 20px; color: var(--text-2); margin: 4px 0 4px; }
+  .sense { display: grid; grid-template-columns: 24px 1fr; font-size: 15px; line-height: 26px; }
+  .sense .n { color: var(--text-3); }
+  .ex { font-size: 14px; line-height: 24px; color: var(--text-3); font-style: italic; }
+  .syn { font-size: 14px; line-height: 24px; color: var(--text-2); }
+  .syn b { font-weight: 400; color: var(--text-3); margin-right: 8px; }
+  .more { font-size: 14px; line-height: 24px; color: var(--accent); margin-top: 2px; }
+
+  .infobar { margin-top: 10px; border-radius: 4px; background: rgba(192, 57, 43, .08); padding: 8px 12px 10px;
+    display: grid; grid-template-columns: 24px 1fr; }
+  .infobar .icon { color: var(--danger); font-size: 16px; margin-top: 3px; }
+  .ib-title { font-size: 15px; line-height: 24px; color: var(--text); }
+  .ib-body { font-size: 14px; line-height: 22px; color: var(--text-2); }
+  .ib-actions { margin-top: 8px; display: flex; align-items: center; gap: 12px; }
+  .ib-actions .btn { height: 28px; min-width: 64px; }
+  .link { font-size: 14px; color: var(--accent); }
+  .ib-actions .details { margin-left: auto; font-size: 14px; color: var(--text-2); display: inline-flex; align-items: center; gap: 4px; }
+  .ib-actions .details .icon { font-size: 10px; color: var(--text-2); margin: 0; }
+
+  .p-foot { margin-top: 12px; height: 32px; display: flex; align-items: center; gap: 4px; }
+  .p-foot .hint { font-size: 14px; color: var(--text-3); flex: 1; }
+  .p-foot .btn-ghost { padding: 0 10px 0 8px; gap: 6px; }
+  .p-foot .btn-ghost.disabled { opacity: .4; }
+</style>
+</head>
+<body>
+<div class="desk">
+<div class="row">
+
+  <!-- ====== A. 单词态 ====== -->
+  <div>
+    <div class="caption-label">A · 单词态：词头 → 中文释义（答案）→ 不装框的词典；朗读挨着词头</div>
+    <div class="panel overlay">
+      <div class="p-head">
+        <span>英语</span>
+        <span class="icon-btn" title="换方向"><span class="icon">&#xE8AB;</span></span>
+        <span>中文</span>
+        <span class="spacer"></span>
+        <span class="icon-btn" title="关闭 (Esc)"><span class="icon">&#xE711;</span></span>
+      </div>
+
+      <div class="word-row">
+        <span class="headword">example</span>
+        <span class="ipa">/ɪɡˈzɑːmpl/</span>
+        <span class="icon-btn" title="朗读这个词"><span class="icon">&#xE767;</span></span>
+      </div>
+      <div class="gloss">例子；实例；榜样</div>
+
+      <div class="dict-sep"></div>
+
+      <div class="pos">名词</div>
+      <div class="sense"><span class="n">1</span><span>A thing characteristic of its kind or illustrating a general rule.</span></div>
+      <div class="sense"><span></span><span class="ex">This is a good example of modern design.</span></div>
+      <div class="sense" style="margin-top:4px"><span class="n">2</span><span>A person or thing regarded as worthy of imitation.</span></div>
+      <div class="sense"><span></span><span class="syn"><b>同义词</b>instance、sample、model</span></div>
+      <div class="pos" style="margin-top:10px">动词</div>
+      <div class="sense"><span class="n">1</span><span>Be illustrated or exemplified.</span></div>
+      <div class="sense"><span></span><span class="more">展开全部释义（5）</span></div>
+
+      <div class="p-foot">
+        <span class="hint">Esc 关闭</span>
+        <span class="btn btn-ghost"><span class="icon">&#xE8C8;</span>复制</span>
+        <span class="btn btn-ghost"><span class="icon">&#xE74E;</span>存入历史</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== B. 句子态 · 失败 ====== -->
+  <div>
+    <div class="caption-label">B · 句子态失败：错误就地报告（人话 + 下一步），已到达的部分译文保留</div>
+    <div class="panel overlay">
+      <div class="p-head">
+        <span>英语</span>
+        <span class="icon-btn" title="换方向"><span class="icon">&#xE8AB;</span></span>
+        <span>中文</span>
+        <span class="spacer"></span>
+        <span class="seg"><span class="on">整段</span><span>逐句</span></span>
+        <span class="icon-btn" title="关闭 (Esc)"><span class="icon">&#xE711;</span></span>
+      </div>
+
+      <div class="src-text">Sample source text that the user just selected, shown in a quieter colour and clipped to two lines so the answer stays first…</div>
+      <div class="translation">示例译文：已经到达的这一部分会保留下来，两成译文也有用</div>
+
+      <div class="infobar">
+        <span class="icon">&#xE783;</span>
+        <div>
+          <div class="ib-title">翻译服务：响应超时</div>
+          <div class="ib-body">网络较慢或服务繁忙。</div>
+          <div class="ib-actions">
+            <span class="btn"><span class="icon" style="color:var(--text-2);margin:0">&#xE72C;</span>重试</span>
+            <span class="link">服务设置</span>
+            <span class="details">详细信息<span class="icon">&#xE70D;</span></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="p-foot">
+        <span class="hint">Esc 关闭</span>
+        <span class="btn btn-ghost"><span class="icon">&#xE8C8;</span>复制</span>
+        <span class="btn btn-ghost"><span class="icon">&#xE767;</span>朗读</span>
+        <span class="btn btn-ghost disabled"><span class="icon">&#xE74E;</span>存入历史</span>
+      </div>
+    </div>
+
+    <div class="caption-label" style="margin-top:28px">C · 复制后光标旁的徽标：中性底，注意力只靠那一小块 accent</div>
+    <div style="display:flex; gap:24px; align-items:center;">
+      <div class="overlay" style="height:32px;border-radius:16px;display:inline-flex;align-items:center;gap:8px;padding:0 14px 0 6px;background:var(--layer-flyout);">
+        <span style="width:20px;height:20px;border-radius:6px;background:var(--accent);color:#fff;font-size:14px;display:grid;place-items:center;">译</span>
+        <span style="font-size:14px;">翻译</span>
+      </div>
+      <div class="overlay" style="height:32px;border-radius:16px;display:inline-flex;align-items:center;gap:8px;padding:0 14px 0 6px;background:var(--layer-flyout);">
+        <span style="width:20px;height:20px;border-radius:6px;background:var(--accent);color:#fff;font-size:14px;display:grid;place-items:center;">译</span>
+        <span style="font-size:14px;">查词</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+</body>
+</html>

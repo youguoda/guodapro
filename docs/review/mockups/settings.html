@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>设置窗 · 目标稿</title>
+<link rel="stylesheet" href="mock.css">
+<style>
+  .settings { width: 880px; height: 640px; }
+  .s-body { flex: 1; display: grid; grid-template-columns: 240px 1fr; min-height: 0; }
+  .nav { padding: 8px 12px 12px; display: flex; flex-direction: column; }
+  .nav .searchbox { width: 216px; }
+  .nav-items { margin-top: 12px; display: flex; flex-direction: column; gap: 4px; flex: 1; }
+  .nav-item { height: 36px; border-radius: 4px; display: flex; align-items: center; gap: 12px; padding: 0 12px; font-size: 14px; position: relative; }
+  .nav-item .icon { font-size: 16px; color: var(--text-2); }
+  .nav-item.sel { background: var(--selected); font-weight: 600; }
+  .nav-item.sel::before { content: ""; position: absolute; left: 0; top: 10px; width: 3px; height: 16px; border-radius: 1.5px; background: var(--accent); }
+  .nav-item.sel .icon { color: var(--accent); }
+  .nav-foot { border-top: 1px solid var(--card-stroke); padding-top: 8px; }
+
+  .content { overflow: hidden; padding: 0 32px 32px; }
+  .page-title { margin-top: 20px; }
+  .page-desc { margin-top: 4px; }
+  .group-title { margin: 24px 0 8px; }
+  .group-title.first { margin-top: 16px; }
+
+  .card { min-height: 64px; padding: 12px 16px; background: var(--surface); border: 1px solid var(--card-stroke);
+    border-radius: 4px; display: grid; grid-template-columns: 20px 1fr auto; column-gap: 16px; align-items: center; margin-bottom: 4px; }
+  .lead { font-size: 20px; color: var(--text); }
+  .lbl { font-size: 14px; line-height: 20px; }
+  .desc { font-size: 12px; line-height: 20px; color: var(--text-2); }
+
+  .rgroup { background: var(--surface); border: 1px solid var(--card-stroke); border-radius: 4px; overflow: hidden; margin-bottom: 4px; }
+  .rrow { padding: 12px 16px; display: grid; grid-template-columns: 20px 1fr auto; column-gap: 16px; align-items: center; position: relative; }
+  .rrow.sel::before { content: ""; position: absolute; left: 0; top: 24px; width: 3px; height: 16px; border-radius: 1.5px; background: var(--accent); }
+  .rrow + .rrow, .sub + .rrow { border-top: 1px solid var(--card-stroke); }
+  .radio { width: 20px; height: 20px; border-radius: 10px; border: 1px solid var(--stroke-strong); background: #fff; }
+  .radio.on { border: 6px solid var(--accent); }
+  .rrow.off .lbl, .rrow.off .desc { color: var(--text-3); }
+  .rrow.off .radio { border-color: #C5CBD1; background: var(--surface-subtle); }
+  .soon { font-size: 12px; color: var(--text-3); }
+  .sub { border-top: 1px solid var(--card-stroke); min-height: 48px; padding: 8px 16px 8px 52px; display: flex; align-items: center; justify-content: space-between; }
+  .sub .lbl { font-size: 14px; }
+  .sub .textbox { width: 280px; color: var(--text-2); }
+  .ok { font-size: 14px; color: var(--success); display: inline-flex; align-items: center; gap: 6px; margin-right: 12px; }
+  .ok .icon { font-size: 14px; }
+  .chev { font-size: 12px; color: var(--text-2); }
+  .right { display: flex; align-items: center; }
+</style>
+</head>
+<body>
+<div class="desk-plain">
+  <div class="caption-label">设置窗 · 翻译页（目标稿）：系统窗框 + Mica 回退色；左导航 240；设置卡 64 高、标签与说明同列、控件右对齐；即改即生效，没有"保存/关闭"底栏</div>
+  <div class="window settings">
+    <div class="titlebar">
+      <span class="logo">拾</span><span class="title">拾语 · 设置</span>
+      <span class="cap">&#xE921;</span><span class="cap">&#xE922;</span><span class="cap">&#xE8BB;</span>
+    </div>
+    <div class="s-body">
+      <div class="nav">
+        <div class="searchbox"><span class="icon">&#xE721;</span><span class="ph">搜索设置</span><span class="keys"><span class="keycap-display">Ctrl</span><span class="keycap-display">F</span></span></div>
+        <div class="nav-items">
+          <div class="nav-item"><span class="icon">&#xE713;</span>常规</div>
+          <div class="nav-item"><span class="icon">&#xE77F;</span>窄条</div>
+          <div class="nav-item"><span class="icon">&#xE72E;</span>记录与隐私</div>
+          <div class="nav-item sel"><span class="icon">&#xE774;</span>翻译</div>
+          <div class="nav-item"><span class="icon">&#xE765;</span>快捷键</div>
+        </div>
+        <div class="nav-foot"><div class="nav-item"><span class="icon">&#xE946;</span>关于</div></div>
+      </div>
+
+      <div class="content">
+        <div class="t-subtitle page-title">翻译</div>
+        <div class="t-caption-ml c-2 page-desc">只有被翻译的文本会离开这台电脑；剪贴板历史始终只在本机。</div>
+
+        <div class="t-body-strong group-title first">语言</div>
+        <div class="card">
+          <span class="icon lead">&#xE8C1;</span>
+          <div><div class="lbl">译文语言</div><div class="desc">翻译结果使用的语言</div></div>
+          <div class="combo"><span>简体中文</span><span class="icon">&#xE70D;</span></div>
+        </div>
+        <div class="card">
+          <span class="icon lead">&#xE774;</span>
+          <div><div class="lbl">源语言</div><div class="desc">"自动检测"适合大多数情况</div></div>
+          <div class="combo"><span>自动检测</span><span class="icon">&#xE70D;</span></div>
+        </div>
+
+        <div class="t-body-strong group-title">翻译方式</div>
+        <div class="rgroup">
+          <div class="rrow sel">
+            <span class="radio on"></span>
+            <div><div class="lbl">自备密钥（推荐）</div><div class="desc">使用你自己的 OpenAI 兼容服务；国内可直接访问的服务商已预设</div></div>
+            <span class="icon chev">&#xE70E;</span>
+          </div>
+          <div class="sub"><span class="lbl">服务商</span><div class="combo" style="width:280px"><span>示例服务商（国内可达）</span><span class="icon">&#xE70D;</span></div></div>
+          <div class="sub"><span class="lbl">API 密钥</span><div class="textbox">已保存，留空则不修改</div></div>
+          <div class="sub"><span class="lbl">连接状态</span><div class="right"><span class="ok"><span class="icon">&#xE73E;</span>连接成功 · 用时 0.8 秒</span><span class="btn">测试连接</span></div></div>
+          <div class="rrow off">
+            <span class="radio"></span>
+            <div><div class="lbl">公共通道</div><div class="desc">无需配置。服务部署完成、并通过国内可达性检查后开放</div></div>
+            <span class="soon">即将推出</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
