@@ -121,10 +121,10 @@ public sealed partial class EntryStore
                 return;
             }
 
-            using var transaction = _connection.BeginTransaction();
+            using var write = BeginWrite();
             using (var command = _connection.CreateCommand())
             {
-                command.Transaction = transaction;
+                command.Transaction = write.Transaction;
                 command.CommandText = "UPDATE groups SET position = $position WHERE id = $id;";
 
                 var position = command.Parameters.Add("$position", SqliteType.Integer);
@@ -139,7 +139,7 @@ public sealed partial class EntryStore
                 command.ExecuteNonQuery();
             }
 
-            transaction.Commit();
+            write.Commit();
         }
     }
 

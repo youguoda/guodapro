@@ -22,6 +22,9 @@ public sealed partial class EntryStore : IDisposable
     /// </summary>
     private readonly object _gate = new();
 
+    /// <summary>The transaction <see cref="RunInTransaction"/> holds open, if any. Touched only under the gate.</summary>
+    private SqliteTransaction? _batch;
+
     /// <summary>Internal for tests: writing rows the way an older build would have.</summary>
     internal SqliteConnection Connection => _connection;
 
@@ -596,8 +599,9 @@ public sealed partial class EntryStore : IDisposable
     {
         lock (_gate)
         {
-            using var transaction = _connection.BeginTransaction();
+            using var write = BeginWrite();
             using var command = _connection.CreateCommand();
+            command.Transaction = write.Transaction;
             command.CommandText = """
                 INSERT INTO entries (text, source_app, created_at)
                 VALUES ($text, $sourceApp, $createdAt);
@@ -615,7 +619,7 @@ public sealed partial class EntryStore : IDisposable
                 command.ExecuteNonQuery();
             }
 
-            transaction.Commit();
+            write.Commit();
         }
     }
 
@@ -1032,6 +1036,66 @@ public sealed partial class EntryStore : IDisposable
         }
 
         return entries;
+    }
+
+    /// <summary>
+    /// Runs <paramref name="work"/> as one transaction: every write inside it
+    /// lands together, or — when it throws — none does. Members that would
+    /// open a transaction of their own join this one instead, since SQLite
+    /// cannot nest them. The gate is held throughout and every other caller
+    /// waits, so the work should be writes already prepared — never reading
+    /// files or waiting on anything.
+    /// </summary>
+    internal void RunInTransaction(Action work)
+    {
+        lock (_gate)
+        {
+            if (_batch is not null)
+            {
+                work();
+                return;
+            }
+
+            using var transaction = _connection.BeginTransaction();
+            _batch = transaction;
+            try
+            {
+                work();
+                transaction.Commit();
+            }
+            finally
+            {
+                _batch = null;
+            }
+        }
+    }
+
+    /// <summary>A write that spans statements: inside the open batch when there is one, else in its own transaction.</summary>
+    private WriteScope BeginWrite()
+        => _batch is { } open
+            ? new WriteScope(open, owned: false)
+            : new WriteScope(_connection.BeginTransaction(), owned: true);
+
+    private readonly struct WriteScope(SqliteTransaction transaction, bool owned) : IDisposable
+    {
+        public SqliteTransaction Transaction => transaction;
+
+        /// <summary>A joined write commits when its batch does, never on its own.</summary>
+        public void Commit()
+        {
+            if (owned)
+            {
+                transaction.Commit();
+            }
+        }
+
+        public void Dispose()
+        {
+            if (owned)
+            {
+                transaction.Dispose();
+            }
+        }
     }
 
     private void Execute(string sql)

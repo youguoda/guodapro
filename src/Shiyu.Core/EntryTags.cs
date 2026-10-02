@@ -82,10 +82,11 @@ public sealed partial class EntryStore
                 return;
             }
 
-            using var transaction = _connection.BeginTransaction();
+            using var write = BeginWrite();
 
             using (var insertTag = _connection.CreateCommand())
             {
+                insertTag.Transaction = write.Transaction;
                 insertTag.CommandText = "INSERT OR IGNORE INTO tags (name) VALUES ($name);";
                 insertTag.Parameters.AddWithValue("$name", name);
                 insertTag.ExecuteNonQuery();
@@ -93,6 +94,7 @@ public sealed partial class EntryStore
 
             using (var link = _connection.CreateCommand())
             {
+                link.Transaction = write.Transaction;
                 link.CommandText = """
                     INSERT OR IGNORE INTO entry_tags (entry_id, tag_id)
                     SELECT $entryId, id FROM tags WHERE name = $name;
@@ -102,7 +104,7 @@ public sealed partial class EntryStore
                 link.ExecuteNonQuery();
             }
 
-            transaction.Commit();
+            write.Commit();
         }
     }
 

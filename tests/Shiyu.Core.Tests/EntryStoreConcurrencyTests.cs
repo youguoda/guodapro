@@ -96,4 +96,53 @@ public class EntryStoreConcurrencyTests
         Assert.Equal(appended.Count + imported.Count, store.Count());
         Assert.Equal(created.Count + Threads, groupNames.Count);
     }
+
+    [Fact]
+    public void A_write_batch_commits_as_one_or_not_at_all()
+    {
+        using var database = new TempDatabase();
+        using var store = EntryStore.Open(database.FilePath);
+        store.Append("kept before", "ZCode", Noon);
+        store.CreateGroup("原分组");
+
+        Assert.Throws<InvalidOperationException>(() => store.RunInTransaction(() =>
+        {
+            store.ClearAll();
+            store.CreateGroup("不会留下的分组");
+            store.ImportEntry(new Entry(0, "不会留下的条目", "ZCode", Noon.AddMinutes(1)), "不会留下的分组");
+            throw new InvalidOperationException("boom");
+        }));
+
+        // A half-imported library is exactly what the batch exists to prevent:
+        // nothing from the failed run may be there, and everything before it
+        // must still be.
+        Assert.Equal(1, store.Count());
+        Assert.Equal("kept before", store.Recent(limit: 10).Single().Text);
+        Assert.Equal("原分组", Assert.Single(store.Groups()).Name);
+        Assert.Empty(store.AllTags());
+
+        store.RunInTransaction(() =>
+        {
+            store.ClearAll();
+            var group = store.CreateGroup("恢复的分组");
+            store.SetGroupHidden(group, true);
+            store.ImportEntry(
+                new Entry(0, "恢复的条目", "ZCode", Noon.AddMinutes(2)) { IsPinned = true, Tags = ["回来了"] },
+                "恢复的分组");
+        });
+
+        var restored = store.Recent(limit: 10).Single();
+        Assert.Equal("恢复的条目", restored.Text);
+        Assert.True(restored.IsPinned);
+        Assert.Equal(["回来了"], restored.Tags);
+        var group = Assert.Single(store.Groups());
+        Assert.Equal("恢复的分组", group.Name);
+        Assert.True(group.Hidden);
+        Assert.Equal(group.Id, restored.GroupId);
+
+        // Nested batches join the outer one — SQLite cannot nest transactions,
+        // and a batch inside a batch is a caller keeping its own atomicity.
+        store.RunInTransaction(() => store.RunInTransaction(() => store.Append("nested", "ZCode", Noon)));
+        Assert.Equal(2, store.Count());
+    }
 }

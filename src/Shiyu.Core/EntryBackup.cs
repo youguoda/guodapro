@@ -13,10 +13,10 @@ public sealed partial class EntryStore
     {
         lock (_gate)
         {
-            using var transaction = _connection.BeginTransaction();
-            ExecuteIn(transaction, "DELETE FROM entries;");
-            ExecuteIn(transaction, "DELETE FROM groups;");
-            transaction.Commit();
+            using var write = BeginWrite();
+            ExecuteIn(write.Transaction, "DELETE FROM entries;");
+            ExecuteIn(write.Transaction, "DELETE FROM groups;");
+            write.Commit();
         }
     }
 
@@ -30,7 +30,8 @@ public sealed partial class EntryStore
     {
         lock (_gate)
         {
-            using var transaction = _connection.BeginTransaction();
+            using var write = BeginWrite();
+            var transaction = write.Transaction;
 
             long? groupId = null;
             if (groupName is { Length: > 0 } name)
@@ -102,7 +103,7 @@ public sealed partial class EntryStore
                 }
             }
 
-            transaction.Commit();
+            write.Commit();
         }
     }
 
