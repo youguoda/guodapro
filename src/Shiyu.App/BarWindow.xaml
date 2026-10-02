@@ -27,7 +27,8 @@
 
       Key-hint badges (ticket 14) sit inside the visuals they explain: hold
       Ctrl and every actionable icon swaps in place for the key that drives
-      it. The badges and the key handler read BarKeys, one source.
+      it. The badge texts and tooltip keys come from Core's KeyMap (§5.2,
+      ticket 25); BarKeys answers from the same table.
 
       共享观感自票 19 起住在 Themes/Controls.xaml（SearchBox/KeyCap/
       IconButton/KindTab）；这里只剩窄条自己的密度档与卡片模板。
@@ -583,12 +584,13 @@
                             <ToggleButton x:Name="KindChipAll" Tag="0"
                                           Style="{StaticResource KindSegmentChip}"
                                           Cursor="Hand" Click="OnKindChipClicked"
-                                          ToolTip="全部（←→ 切换类型）">
+                                          ToolTip="全部">
                                 <Grid>
                                     <TextBlock Text="&#xE8A9;" FontFamily="{DynamicResource Font.Icon}"
                                                FontSize="{DynamicResource Size.IconS}"/>
                                     <!-- ←→ 就地替换当前选中类型的字形（§6.1 键帽）：
-                                         追加到行尾正是它被裁成横线的原因。 -->
+                                         追加到行尾正是它被裁成横线的原因。
+                                         帽上文本与 tooltip 的键来自 KeyMap（构造器）。 -->
                                     <ContentControl x:Name="KindCapAll" Style="{DynamicResource KeyCap}"
                                                     Content="←→" Visibility="Collapsed"
                                                     IsHitTestVisible="False"/>
@@ -635,7 +637,7 @@
                         <Grid x:Name="FavoriteHost">
                             <ToggleButton x:Name="FavoriteOnly" Style="{StaticResource StarToggleStyle}"
                                           Checked="OnFilterChanged" Unchecked="OnFilterChanged"
-                                          ToolTip="只看收藏（Alt+S）"/>
+                                          ToolTip="只看收藏"/>
                             <ContentControl x:Name="FavoriteKeyBadge" Style="{DynamicResource KeyCap}"
                                             Content="Alt+S" HorizontalAlignment="Center"
                                             VerticalAlignment="Center" Visibility="Collapsed"
@@ -646,7 +648,7 @@
                         <Grid MaxWidth="112">
                             <Button x:Name="TagFilter" Style="{StaticResource GhostDropdown}"
                                     MinWidth="48" Click="OnTagFilterClicked"
-                                    ToolTip="标签筛选（Tab 循环）">
+                                    ToolTip="标签筛选">
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="&#xE8EC;" FontFamily="{DynamicResource Font.Icon}"
                                                FontSize="{DynamicResource Size.IconS}" VerticalAlignment="Center"/>

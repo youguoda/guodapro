@@ -125,6 +125,23 @@ internal partial class BarWindow : Window
         _kindCaps = [KindCapAll, KindCapText, KindCapImage, KindCapFiles];
         SetKindIndex(0);
 
+        // 键位即数据（§5.2/O-42）：按住 Ctrl 浮出的键帽与 tooltip 里的组合键
+        // 全部从 KeyMap 来——改表即改帽，XAML 里的字只是占位。帽上文本取
+        // 短形（Ctrl 正被按住时搜索帽只写 F），tooltip 取完整键。
+        SearchKeyBadge.Content = KeyMap.BadgeText("search");
+        FavoriteKeyBadge.Content = KeyMap.BadgeText("favorite-filter");
+        TagKeyBadge.Content = KeyMap.BadgeText("tag");
+        var kindCap = KeyMap.BadgeText("kind");
+        foreach (var cap in _kindCaps)
+        {
+            cap.Content = kindCap;
+        }
+
+        FavoriteOnly.ToolTip = $"只看收藏（{KeyMap.BadgeText("favorite-filter")}）";
+        TagFilter.ToolTip = $"标签筛选（{KeyMap.BadgeText("tag")} 循环）";
+        KindChipAll.ToolTip = $"全部（{KeyMap.BadgeText("kind")} 切换类型）";
+        SearchBox.ToolTip = $"搜索（{KeyMap.BadgeText("search")} 聚焦）";
+
         PinnedList.ItemsSource = _pinned;
         Cards.ItemsSource = _cards;
 

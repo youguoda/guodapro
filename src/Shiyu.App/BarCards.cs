@@ -482,12 +482,19 @@ internal partial class BarWindow
     /// <summary>
     /// One feedback row at a time; an undo keeps it on show for the full five
     /// seconds the user was promised, a plain confirmation leaves quickly.
+    /// A pending L2 key hint rides the same row（§5.2：一句话教一个键）.
     /// </summary>
     private void ShowFeedback(string text, IReadOnlyList<(Entry Entry, string? Group)>? undo = null)
     {
         _feedbackTimer?.Stop();
         _feedbackHostOpen = true;
         _undoPending = undo;
+
+        if (_pendingKeyHint is { } hint)
+        {
+            text = $"{text} · {hint}";
+            _pendingKeyHint = null;
+        }
 
         FeedbackLabel.Text = text;
         UndoButton.Visibility = undo is null ? Visibility.Collapsed : Visibility.Visible;
@@ -538,6 +545,9 @@ internal partial class BarWindow
 
     /// <summary>Whether the footer is currently teaching instead of counting.</summary>
     private bool _hintShowing;
+
+    /// <summary>L2 待说的一句（§5.2）：随动作自己的反馈一行说出，或由反馈行代说。</summary>
+    private string? _pendingKeyHint;
 
     private void ShowFirstUseHint()
     {

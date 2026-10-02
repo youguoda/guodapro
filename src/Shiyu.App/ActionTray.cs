@@ -215,10 +215,11 @@ internal sealed class ActionTray : Grid
 
     /// <summary>
     /// While Ctrl is held, buttons that answer to a letter show the letter
-    /// instead of their glyph — the badge and the key handler both read
-    /// <see cref="BarKeys"/>, so they cannot disagree. Letters are UI-font
-    /// text, not symbol-font codepoints, so the family swaps with the
-    /// content. Buttons without a key (and ⋯) keep their glyph.
+    /// instead of their glyph — the badge, the tooltip and the key handler all
+    /// read <see cref="KeyMap"/> through <see cref="BarKeys"/>, so they cannot
+    /// disagree. Letters are UI-font text, not symbol-font codepoints, so the
+    /// family swaps with the content. Buttons without a key (and ⋯) keep their
+    /// glyph.
     /// </summary>
     public void ShowHints(bool on)
     {

@@ -91,10 +91,14 @@ internal partial class BarWindow
         }
     }
 
-    /// <summary>What the menu shows next to an action: the key that runs it.</summary>
+    /// <summary>
+    /// What the menu shows next to an action: the key that runs it. The whole
+    /// column renders from KeyMap（键位即数据，§5.2）——贴（Enter）与字母行
+    /// 同一张表，改表即改菜单列。
+    /// </summary>
     private static string ShortcutFor(string action) => action switch
     {
-        "paste" => "Enter",
+        "paste" => KeyMap.Find("paste")?.Bar ?? string.Empty,
         _ => BarKeys.TrayKey(action) ?? string.Empty,
     };
 
@@ -596,6 +600,10 @@ internal partial class BarWindow
 
         FirstUseHints.RegisterAction();
 
+        // L2 适时教学（§5.2）：只数鼠标路径（feedback 带按钮即鼠标触发）；
+        // 第 3 次且从未提示过时拿到那句话，随动作自己的反馈一行说出。
+        _pendingKeyHint = feedback is not null ? MouseKeyHints.Note(id) : null;
+
         switch (id)
         {
             case "copy":
@@ -665,6 +673,7 @@ internal partial class BarWindow
                 // for it what the hidden button answers for the mouse.
                 if (DeleteIsProtected(card))
                 {
+                    _pendingKeyHint = null;
                     return;
                 }
 
@@ -685,6 +694,13 @@ internal partial class BarWindow
                         [(snapshot, groupName)]);
                 }
                 break;
+        }
+
+        // 动作没有自己的反馈行时（置顶/收藏就地改卡），提示条自己占一行；
+        // 已经随反馈说过的（ShowFeedback 消费掉），这里自然为空。
+        if (_pendingKeyHint is { } hint)
+        {
+            ShowFeedback(hint);
         }
     }
 
