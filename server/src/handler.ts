@@ -1,6 +1,7 @@
 import type { Env, RelayServices } from "./types.js";
 import { readLimits } from "./limits.js";
 import { saltedHash } from "./hash.js";
+import { normalizeIp } from "./ip.js";
 import { normalizeLanguage } from "./langs.js";
 import { KvStore, Quota, type Identity } from "./quota.js";
 import { ZhipuUpstream } from "./upstream.js";
@@ -68,7 +69,8 @@ export async function handleTranslate(
     });
   }
 
-  const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
+  // IP 先规范化（IPv6 折叠到 /64）再哈希：IP 层按网段而不是按单个地址记账（O-19）。
+  const ip = normalizeIp(request.headers.get("CF-Connecting-IP") ?? "unknown");
   const identity: Identity = { clientId, ipHash: await saltedHash(env.IP_HASH_SALT, ip) };
 
   const denial = await quota.reserve(identity, chars);

@@ -289,6 +289,48 @@ describe("/translate：配额拒绝", () => {
   });
 });
 
+describe("/translate：IPv6 /64 聚合", () => {
+  it("同一 /64 的两个不同写法写进同一个 IP 桶", async () => {
+    const kv = new MemoryKV();
+    const { env, services } = open(fakeUpstream().upstream, kv);
+
+    await call(env, services, body("device-a", "hello"), { ip: "2001:db8:85a3:7334::1" });
+    await call(env, services, body("device-b", "world"), { ip: "2001:0DB8:85A3:7334:0:0:0:2" });
+
+    const sharedHash = await saltedHash("test-salt", "2001:db8:85a3:7334::");
+    expect(kv.count(`i:${sharedHash}:${Day}`)).toBe(10);
+  });
+
+  it("同网段第三台设备按 IP 层拒绝——换地址写法刷不了额度", async () => {
+    const kv = new MemoryKV();
+    const { env, services } = open(fakeUpstream().upstream, kv);
+
+    // 用压缩写法的 /64 键把 IP 层灌到 296（两台设备各计一次，绕开设备层
+    // 200 的上限）；再用全展开写法的同网段地址发请求——必须命中同一个
+    // IP 桶而被拒。
+    const sharedHash = await saltedHash("test-salt", "2001:db8:85a3:7334::");
+    await services.quota.reserve({ clientId: "device-a", ipHash: sharedHash }, 200);
+    await services.quota.reserve({ clientId: "device-b", ipHash: sharedHash }, 96);
+    const response = await call(env, services, body("device-c", "hello"), {
+      ip: "2001:0db8:85a3:7334:0000:0000:0000:0002",
+    });
+
+    expect(response.status).toBe(429);
+    expect((await errorOf(response)).code).toBe("QUOTA_IP");
+  });
+
+  it("IPv4-mapped 写法与明文 IPv4 同桶", async () => {
+    const kv = new MemoryKV();
+    const { env, services } = open(fakeUpstream().upstream, kv);
+
+    await call(env, services, body("device-a", "hello"), { ip: "203.0.113.7" });
+    await call(env, services, body("device-b", "world"), { ip: "::ffff:203.0.113.7" });
+
+    const sharedHash = await saltedHash("test-salt", "203.0.113.7");
+    expect(kv.count(`i:${sharedHash}:${Day}`)).toBe(10);
+  });
+});
+
 describe("路由", () => {
   it("不存在的路径 404", async () => {
     const response = await worker.fetch(
