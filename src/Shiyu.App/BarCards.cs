@@ -175,8 +175,8 @@ internal partial class BarWindow
             groupName,
             _store.Count());
 
-        EmptyHeadline.Text = copy.Headline;
-        EmptyHint.Text = copy.Hint;
+        Empty.Title = copy.Headline;
+        Empty.Description = copy.Hint;
         EmptyClear.Visibility = copy.OfferClear ? Visibility.Visible : Visibility.Collapsed;
     }
 

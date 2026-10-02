@@ -1,4 +1,4 @@
-﻿<Window x:Class="Shiyu.App.BarWindow"
+<Window x:Class="Shiyu.App.BarWindow"
         x:ClassModifier="internal"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -8,7 +8,7 @@
         ShowInTaskbar="False"
         WindowStartupLocation="Manual"
         Background="Transparent"
-        FontSize="{DynamicResource Size.Body}"
+        FontSize="{DynamicResource Type.Body}"
         TextElement.FontFamily="{DynamicResource Font.Ui}"
         TextElement.Foreground="{DynamicResource Brush.Text}"
         PreviewKeyDown="OnPreviewKeyDown"
@@ -28,6 +28,9 @@
       Key-hint badges (ticket 14) sit inside the visuals they explain: hold
       Ctrl and every actionable icon swaps in place for the key that drives
       it. The badges and the key handler read BarKeys, one source.
+
+      共享观感自票 19 起住在 Themes/Controls.xaml（SearchBox/KeyCap/
+      IconButton/KindTab）；这里只剩窄条自己的密度档与卡片模板。
     -->
     <Window.Resources>
 
@@ -37,131 +40,21 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="Chrome" CornerRadius="{DynamicResource Radius.Thumb}"
-                                Background="Transparent">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Brush.StateHover}"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <!-- The small rounded key badge, wherever it appears. -->
-        <Style x:Key="KeyBadge" TargetType="Border">
-            <Setter Property="CornerRadius" Value="{DynamicResource Radius.Thumb}"/>
-            <Setter Property="Background" Value="{DynamicResource Brush.Accent}"/>
-            <Setter Property="Width" Value="16"/>
-            <Setter Property="Height" Value="16"/>
-            <Setter Property="VerticalAlignment" Value="Center"/>
-        </Style>
-
-        <!--
-          Kind as underline tabs (the Windows 11 TabView idiom): no boxes to
-          collide in a 372px bar — the selected facet reads by a 2px accent
-          rule under the label, the rest stay quiet secondary text.
-        -->
-        <Style x:Key="KindTab" TargetType="ToggleButton">
-            <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}"/>
-            <Setter Property="FontSize" Value="{DynamicResource Size.Secondary}"/>
-            <Setter Property="Padding" Value="6,0"/>
-            <Setter Property="Margin" Value="0,0,2,0"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ToggleButton">
-                        <Grid>
-                            <ContentPresenter x:Name="TabText"
-                                              HorizontalAlignment="Center" VerticalAlignment="Center"
-                                              Margin="{TemplateBinding Padding}"
-                                              TextElement.Foreground="{TemplateBinding Foreground}"/>
-                            <Border x:Name="Underline" VerticalAlignment="Bottom" Height="2"
-                                    CornerRadius="1" Margin="{TemplateBinding Padding}"
-                                    Background="Transparent"/>
+                        <Grid x:Name="Root" Background="Transparent">
+                            <Border x:Name="Chrome" CornerRadius="{DynamicResource Radius.Thumb}"
+                                    Background="Transparent">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
                         </Grid>
                         <ControlTemplate.Triggers>
-                            <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Underline" Property="Background" Value="{DynamicResource Brush.Accent}"/>
-                                <Setter Property="Foreground" Value="{DynamicResource Brush.Text}"/>
-                            </Trigger>
-                            <MultiTrigger>
-                                <MultiTrigger.Conditions>
-                                    <Condition Property="IsMouseOver" Value="True"/>
-                                    <Condition Property="IsChecked" Value="False"/>
-                                </MultiTrigger.Conditions>
-                                <Setter Property="Foreground" Value="{DynamicResource Brush.Text}"/>
-                                <Setter TargetName="Underline" Property="Background" Value="{DynamicResource Brush.StateHover}"/>
-                            </MultiTrigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <!-- Compact icon button used by the header (clear / subtype). -->
-        <Style x:Key="HeaderIconButton" TargetType="Button">
-            <Setter Property="Width" Value="26"/>
-            <Setter Property="Height" Value="24"/>
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="Chrome" CornerRadius="{DynamicResource Radius.Small}"
-                                Background="Transparent">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Brush.StateHover}"/>
                             </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <!--
-          The search line (ticket 39): a pill with the magnifier living
-          inside it and a placeholder that vanishes with the first
-          character. The F key badge overlays the right edge as before.
-        -->
-        <Style x:Key="SearchBoxStyle" TargetType="TextBox">
-            <Setter Property="Foreground" Value="{DynamicResource Brush.Text}"/>
-            <Setter Property="CaretBrush" Value="{DynamicResource Brush.Text}"/>
-            <Setter Property="SelectionBrush" Value="{DynamicResource Brush.Accent}"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="TextBox">
-                        <Border x:Name="Chrome" CornerRadius="{DynamicResource Radius.Pill}"
-                                Background="{DynamicResource Brush.SurfaceInput}"
-                                BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1">
-                            <DockPanel Margin="9,0,28,0">
-                                <TextBlock DockPanel.Dock="Left" Text="&#xE721;"
-                                           FontFamily="{DynamicResource Font.Icon}"
-                                           FontSize="{DynamicResource Size.IconSmall}"
-                                           Foreground="{DynamicResource Brush.TextTertiary}"
-                                           VerticalAlignment="Center" Margin="0,0,7,0"
-                                           IsHitTestVisible="False"/>
-                                <Grid VerticalAlignment="Center" Margin="0,6">
-                                    <ScrollViewer x:Name="PART_ContentHost" Focusable="False"
-                                                  VerticalAlignment="Center"/>
-                                    <TextBlock x:Name="Placeholder" Text="搜索…"
-                                               IsHitTestVisible="False" Visibility="Collapsed"
-                                               Foreground="{DynamicResource Brush.TextTertiary}"/>
-                                </Grid>
-                            </DockPanel>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="Text" Value="">
-                                <Setter TargetName="Placeholder" Property="Visibility" Value="Visible"/>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Brush.StatePressed}"/>
                             </Trigger>
-                            <Trigger Property="IsKeyboardFocusWithin" Value="True">
-                                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource Brush.Accent}"/>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Root" Property="Opacity" Value="0.4"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -184,10 +77,12 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ToggleButton">
-                        <Border x:Name="Chrome" CornerRadius="{DynamicResource Radius.Small}"
-                                Background="Transparent">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
+                        <Grid x:Name="Root" Background="Transparent">
+                            <Border x:Name="Chrome" CornerRadius="{DynamicResource Radius.Control}"
+                                    Background="Transparent">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                        </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsChecked" Value="True">
                                 <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Brush.Accent}"/>
@@ -200,6 +95,12 @@
                                 </MultiTrigger.Conditions>
                                 <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Brush.StateHover}"/>
                             </MultiTrigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Brush.StatePressed}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Root" Property="Opacity" Value="0.4"/>
+                            </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
@@ -219,22 +120,24 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ToggleButton">
-                        <Border x:Name="Chrome" CornerRadius="{DynamicResource Radius.Small}"
-                                Background="Transparent">
-                            <Grid>
-                                <TextBlock x:Name="StarOut" Text="&#xE734;"
-                                           FontFamily="{DynamicResource Font.Icon}"
-                                           FontSize="{DynamicResource Size.IconSmall}"
-                                           Foreground="{DynamicResource Brush.TextSecondary}"
-                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                <TextBlock x:Name="StarIn" Text="&#xE735;"
-                                           FontFamily="{DynamicResource Font.Icon}"
-                                           FontSize="{DynamicResource Size.IconSmall}"
-                                           Foreground="{DynamicResource Brush.Accent}"
-                                           HorizontalAlignment="Center" VerticalAlignment="Center"
-                                           Visibility="Collapsed"/>
-                            </Grid>
-                        </Border>
+                        <Grid x:Name="Root" Background="Transparent">
+                            <Border x:Name="Chrome" CornerRadius="{DynamicResource Radius.Control}"
+                                    Background="Transparent">
+                                <Grid>
+                                    <TextBlock x:Name="StarOut" Text="&#xE734;"
+                                               FontFamily="{DynamicResource Font.Icon}"
+                                               FontSize="{DynamicResource Size.IconS}"
+                                               Foreground="{DynamicResource Brush.TextSecondary}"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="StarIn" Text="&#xE735;"
+                                               FontFamily="{DynamicResource Font.Icon}"
+                                               FontSize="{DynamicResource Size.IconS}"
+                                               Foreground="{DynamicResource Brush.Accent}"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               Visibility="Collapsed"/>
+                                </Grid>
+                            </Border>
+                        </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsChecked" Value="True">
                                 <Setter TargetName="StarOut" Property="Visibility" Value="Collapsed"/>
@@ -247,6 +150,12 @@
                                 </MultiTrigger.Conditions>
                                 <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Brush.StateHover}"/>
                             </MultiTrigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Brush.StatePressed}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Root" Property="Opacity" Value="0.4"/>
+                            </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
@@ -282,9 +191,11 @@
         </Style>
 
         <DataTemplate x:Key="CardTemplate" DataType="{x:Type local:BarCard}">
-            <Border x:Name="Card" CornerRadius="{DynamicResource Radius.Card}"
+            <!-- 卡片（§4.7）：Surface + 1 DIP CardStroke、圆角 4、间距 8；
+                 选中 = 2 DIP accent 内描边 + Selected 底。 -->
+            <Border x:Name="Card" CornerRadius="{DynamicResource Radius.Control}"
                     Background="{DynamicResource Brush.Surface}"
-                    BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1.5"
+                    BorderBrush="{DynamicResource Brush.CardStroke}" BorderThickness="1"
                     Padding="10,8" MouseLeftButtonDown="OnCardPressed"
                     MouseRightButtonUp="OnCardRightClick"
                     MouseEnter="OnCardMouseEnter" MouseLeave="OnCardMouseLeave"
@@ -306,7 +217,7 @@
                             <Border CornerRadius="{DynamicResource Radius.Thumb}"
                                     Background="{DynamicResource Brush.Accent}"
                                     Visibility="{Binding FallbackIconVisibility}">
-                                <TextBlock Text="拾" FontSize="{DynamicResource Size.Hint}"
+                                <TextBlock Text="拾" FontSize="{DynamicResource Type.Caption}"
                                            Foreground="{DynamicResource Brush.TextOnAccent}"
                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
@@ -314,7 +225,7 @@
                             <local:RowKeyBadge Visibility="Collapsed"/>
                         </Grid>
                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                            <local:HandoverText Text="{Binding WhenText}" FontSize="{DynamicResource Size.Caption}"
+                            <local:HandoverText Text="{Binding WhenText}" FontSize="{DynamicResource Type.Caption}"
                                                 Foreground="{DynamicResource Brush.TextSecondary}"
                                                 VerticalAlignment="Center"
                                                 ToolTip="{Binding WhenToolTip}"/>
@@ -323,10 +234,10 @@
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
                                     ToolTip="{Binding KindToolTip}">
                             <TextBlock Text="{Binding KindGlyph}" FontFamily="{DynamicResource Font.Icon}"
-                                       FontSize="{DynamicResource Size.IconSmall}"
+                                       FontSize="{DynamicResource Size.IconXs}"
                                        Foreground="{DynamicResource Brush.TextSecondary}"
                                        VerticalAlignment="Center" Margin="0,0,4,0"/>
-                            <TextBlock Text="{Binding KindText}" FontSize="{DynamicResource Size.Caption}"
+                            <TextBlock Text="{Binding KindText}" FontSize="{DynamicResource Type.Caption}"
                                        Foreground="{DynamicResource Brush.TextSecondary}"
                                        VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                         </StackPanel>
@@ -346,14 +257,14 @@
                         <local:EntryBodyText x:Name="TextBody" Text="{Binding Face}"
                                    TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
                                    MaxHeight="{Binding TextMaxHeight}"
-                                   FontSize="{DynamicResource Size.BodyLarge}"
-                                   LineHeight="{DynamicResource Line.BodyLarge}"
+                                   FontSize="{DynamicResource Type.Content}"
+                                   LineHeight="{DynamicResource Line.Content}"
                                    LineStackingStrategy="BlockLineHeight"
                                    Foreground="{DynamicResource Brush.Text}"
                                    ToolTip="{Binding DragToolTip}"/>
                         <Border x:Name="ImageBody" Height="{Binding ImageHeight}"
                                 ClipToBounds="True"
-                                CornerRadius="{DynamicResource Radius.Small}"
+                                CornerRadius="{DynamicResource Radius.Control}"
                                 Background="{DynamicResource Brush.SurfaceSubtle}"
                                 Visibility="{Binding ImageVisibility}">
                             <Image Source="{Binding Thumbnail}" Stretch="Uniform"
@@ -366,7 +277,7 @@
                         <StackPanel x:Name="FilesBody" Visibility="{Binding FilesVisibility}">
                             <Border Height="{Binding ImageHeight}"
                                     ClipToBounds="True"
-                                    CornerRadius="{DynamicResource Radius.Small}"
+                                    CornerRadius="{DynamicResource Radius.Control}"
                                     Background="{DynamicResource Brush.SurfaceSubtle}"
                                     Visibility="{Binding FilePreviewVisibility}"
                                     Margin="0,0,0,4">
@@ -381,11 +292,11 @@
                                                    Margin="0,0,6,0" VerticalAlignment="Center"
                                                    RenderOptions.BitmapScalingMode="HighQuality"/>
                                             <TextBlock x:Name="RowName" Text="{Binding Name}"
-                                                       FontSize="{DynamicResource Size.Secondary}"
+                                                       FontSize="{DynamicResource Type.Body}"
                                                        Foreground="{DynamicResource Brush.Text}"
                                                        TextTrimming="CharacterEllipsis"/>
                                             <TextBlock x:Name="RowDead" Text="（路径不存在）"
-                                                       FontSize="{DynamicResource Size.Hint}"
+                                                       FontSize="{DynamicResource Type.Caption}"
                                                        Foreground="{DynamicResource Brush.Danger}"
                                                        Margin="6,0,0,0" VerticalAlignment="Center"
                                                        Visibility="{Binding DeadVisibility}"/>
@@ -402,7 +313,7 @@
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
-                            <TextBlock FontSize="{DynamicResource Size.Hint}"
+                            <TextBlock FontSize="{DynamicResource Type.Caption}"
                                        Foreground="{DynamicResource Brush.TextTertiary}"
                                        Margin="0,2,0,0" Text="{Binding FileTail}"/>
                         </StackPanel>
@@ -417,22 +328,24 @@
                     <StackPanel Grid.Row="1" Orientation="Horizontal"
                                 HorizontalAlignment="Right" VerticalAlignment="Bottom">
                         <TextBlock Text="&#xE72E;" FontFamily="{DynamicResource Font.Icon}"
-                                   FontSize="{DynamicResource Size.Hint}"
+                                   FontSize="{DynamicResource Size.IconXs}"
                                    Foreground="{DynamicResource Brush.TextTertiary}"
                                    ToolTip="受删除保护：先取消收藏或置顶，或在设置中调整保护"
                                    Visibility="{Binding ProtectionVisibility}"/>
-                        <TextBlock Text="译" FontSize="{DynamicResource Size.Hint}"
+                        <TextBlock Text="译" FontSize="{DynamicResource Type.Caption}"
                                    Foreground="{DynamicResource Brush.Accent}"
                                    ToolTip="拾语生成的译文，已关联原文条目"
                                    Visibility="{Binding TranslationVisibility}"/>
-                        <TextBlock Text="{Binding GroupBadge}" FontSize="{DynamicResource Size.Hint}"
+                        <TextBlock Text="{Binding GroupBadge}" FontSize="{DynamicResource Type.Caption}"
                                    Foreground="{DynamicResource Brush.TextTertiary}"
                                    Margin="4,0,0,0"
                                    Visibility="{Binding GroupBadgeVisibility}"/>
-                        <TextBlock Text="★" FontSize="{DynamicResource Size.Hint}"
+                        <!-- E735：与收藏动作同一字形（§4.6 字符换字形）。 -->
+                        <TextBlock Text="&#xE735;" FontFamily="{DynamicResource Font.Icon}"
+                                   FontSize="{DynamicResource Size.IconXs}"
                                    Foreground="{DynamicResource Brush.Accent}"
                                    Visibility="{Binding FavoriteVisibility}"/>
-                        <TextBlock Text="已置顶" FontSize="{DynamicResource Size.Hint}"
+                        <TextBlock Text="已置顶" FontSize="{DynamicResource Type.Caption}"
                                    Foreground="{DynamicResource Brush.TextTertiary}"
                                    Margin="6,0,0,0"
                                    Visibility="{Binding PinnedVisibility}"/>
@@ -453,8 +366,9 @@
                     <Setter TargetName="ImageBody" Property="Visibility" Value="Collapsed"/>
                 </DataTrigger>
                 <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                    <Setter TargetName="Card" Property="Background" Value="{DynamicResource Brush.SurfaceSubtle}"/>
+                    <Setter TargetName="Card" Property="Background" Value="{DynamicResource Brush.Selected}"/>
                     <Setter TargetName="Card" Property="BorderBrush" Value="{DynamicResource Brush.Accent}"/>
+                    <Setter TargetName="Card" Property="BorderThickness" Value="2"/>
                 </DataTrigger>
             </DataTemplate.Triggers>
         </DataTemplate>
@@ -463,11 +377,12 @@
     <!--
       The floating Win11 shell: a translucent brand tint over the DWM Acrylic
       backdrop (ticket 03's recipe — the material renders only on a layered
-      window, which this now is), rounded at the Window tier, one soft shadow.
-      The header and footer draw nothing themselves so the material reads as
-      one continuous sheet behind everything.
+      window, which this now is), rounded at the Overlay tier (8, 与 DWM
+      同心，ADR-0012 §5), one soft shadow. The header and footer draw
+      nothing themselves so the material reads as one continuous sheet
+      behind everything.
     -->
-    <Border x:Name="Shell" CornerRadius="{DynamicResource Radius.Window}"
+    <Border x:Name="Shell" CornerRadius="{DynamicResource Radius.Overlay}"
             Background="{DynamicResource Brush.SurfaceMaterial}"
             BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1">
         <Border.Effect>
@@ -482,7 +397,7 @@
           the inner one consumed - the whole dispatcher freezes.
         -->
         <Border x:Name="Header" DockPanel.Dock="Top"
-                Padding="10,8">
+                Padding="8,8">
             <StackPanel>
                 <!--
                   第一行（票 39）：品牌图标 · 弹性空隙 · 圆角搜索框 · 置顶开关。
@@ -497,31 +412,32 @@
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <Border Grid.Column="0" Width="24" Height="24"
-                            CornerRadius="{DynamicResource Radius.Card}" ClipToBounds="True"
-                            VerticalAlignment="Center" Margin="0,0,10,0"
+                            CornerRadius="{DynamicResource Radius.Control}" ClipToBounds="True"
+                            VerticalAlignment="Center" Margin="0,0,8,0"
                             ToolTip="拾语 · 剪贴板历史窄条">
                         <Image Source="{DynamicResource Brand.Mark}" Stretch="UniformToFill"
                                RenderOptions.BitmapScalingMode="HighQuality"/>
                     </Border>
                     <Grid Grid.Column="1" Margin="0,0,8,0">
-                        <TextBox x:Name="SearchBox" Style="{StaticResource SearchBoxStyle}"
-                                 TextChanged="OnSearchChanged" VerticalContentAlignment="Center"/>
+                        <TextBox x:Name="SearchBox" Style="{DynamicResource SearchBox}"
+                                 local:InputProps.Placeholder="搜索…"
+                                 local:InputProps.RightGutter="28"
+                                 TextChanged="OnSearchChanged"/>
                         <!-- F: focus search. -->
-                        <Border x:Name="SearchKeyBadge" Style="{StaticResource KeyBadge}"
-                                HorizontalAlignment="Right" Margin="0,0,8,0" Visibility="Collapsed">
-                            <TextBlock Text="F" FontSize="{DynamicResource Size.Hint}"
-                                       Foreground="{DynamicResource Brush.TextOnAccent}"
-                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
+                        <ContentControl x:Name="SearchKeyBadge" Style="{DynamicResource KeyCap}"
+                                        Content="F"
+                                        HorizontalAlignment="Right" Margin="0,0,8,0"
+                                        VerticalAlignment="Center" Visibility="Collapsed"/>
                     </Grid>
                     <!-- 置顶：Topmost 开关。图标随态（E8417 填充/accent =
                          开；E718 常规/次级 = 关），tooltip 写明当前状态。 -->
-                    <Button x:Name="TopmostToggle" Grid.Column="2" Width="28" Height="28"
+                    <Button x:Name="TopmostToggle" Grid.Column="2"
+                            Width="28" Height="28"
                             Cursor="Hand" Click="OnTopmostToggle"
-                            Style="{StaticResource HeaderIconButton}">
+                            Style="{DynamicResource IconButton}">
                         <TextBlock x:Name="TopmostGlyph" Text="&#xE718;"
                                    FontFamily="{DynamicResource Font.Icon}"
-                                   FontSize="{DynamicResource Size.IconMedium}"/>
+                                   FontSize="{DynamicResource Size.IconS}"/>
                     </Button>
                 </Grid>
                 <!--
@@ -538,71 +454,66 @@
                                       Cursor="Hand" Click="OnKindChipClicked"
                                       ToolTip="全部（←→ 切换类型）">
                             <TextBlock Text="&#xE8A9;" FontFamily="{DynamicResource Font.Icon}"
-                                       FontSize="{DynamicResource Size.IconSmall}"/>
+                                       FontSize="{DynamicResource Size.IconS}"/>
                         </ToggleButton>
                         <ToggleButton x:Name="KindChipText" Tag="1"
                                       Style="{StaticResource KindIconChip}"
                                       Cursor="Hand" Click="OnKindChipClicked"
                                       ToolTip="只看文本">
                             <TextBlock Text="&#xE8D2;" FontFamily="{DynamicResource Font.Icon}"
-                                       FontSize="{DynamicResource Size.IconSmall}"/>
+                                       FontSize="{DynamicResource Size.IconS}"/>
                         </ToggleButton>
                         <ToggleButton x:Name="KindChipImage" Tag="2"
                                       Style="{StaticResource KindIconChip}"
                                       Cursor="Hand" Click="OnKindChipClicked"
                                       ToolTip="只看图片">
                             <TextBlock Text="&#xE8B9;" FontFamily="{DynamicResource Font.Icon}"
-                                       FontSize="{DynamicResource Size.IconSmall}"/>
+                                       FontSize="{DynamicResource Size.IconS}"/>
                         </ToggleButton>
                         <ToggleButton x:Name="KindChipFiles" Tag="3"
                                       Style="{StaticResource KindIconChip}"
                                       Cursor="Hand" Click="OnKindChipClicked"
                                       ToolTip="只看文件">
                             <TextBlock Text="&#xE8B7;" FontFamily="{DynamicResource Font.Icon}"
-                                       FontSize="{DynamicResource Size.IconSmall}"/>
+                                       FontSize="{DynamicResource Size.IconS}"/>
                         </ToggleButton>
                         <!-- ←→: cycle the kind facet. -->
-                        <Border x:Name="KindKeyBadge" Style="{StaticResource KeyBadge}"
-                                Margin="4,0,0,0" Visibility="Collapsed">
-                            <TextBlock Text="←→" FontSize="{DynamicResource Size.Hint}"
-                                       Foreground="{DynamicResource Brush.TextOnAccent}"
-                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
+                        <ContentControl x:Name="KindKeyBadge" Style="{DynamicResource KeyCap}"
+                                        Content="←→"
+                                        VerticalAlignment="Center"
+                                        Margin="4,0,0,0" Visibility="Collapsed"/>
                     </StackPanel>
-                    <Border Width="1" Margin="6,4" Background="{DynamicResource Brush.Border}"/>
+                    <Border Width="1" Margin="6,4" Background="{DynamicResource Brush.Divider}"/>
                     <ToggleButton x:Name="FavoriteOnly" Style="{StaticResource StarToggleStyle}"
                                   Checked="OnFilterChanged" Unchecked="OnFilterChanged"/>
-                    <Border Width="1" Margin="6,4" Background="{DynamicResource Brush.Border}"/>
+                    <Border Width="1" Margin="6,4" Background="{DynamicResource Brush.Divider}"/>
                     <Button x:Name="GroupMenuButton" Width="26" Height="24"
-                            Style="{StaticResource HeaderIconButton}" Click="OnGroupMenuClicked"
+                            Style="{DynamicResource IconButton}" Click="OnGroupMenuClicked"
                             ToolTip="分组：切换抽屉、删除分组、新建分组（头部管分组本身，卡片管卡片的归属）">
                         <TextBlock Text="&#xE712;" FontFamily="{DynamicResource Font.Icon}"
-                                   FontSize="{DynamicResource Size.IconSmall}"/>
+                                   FontSize="{DynamicResource Size.IconS}"/>
                     </Button>
-                    <Border Width="1" Margin="6,4" Background="{DynamicResource Brush.Border}"/>
+                    <Border Width="1" Margin="6,4" Background="{DynamicResource Brush.Divider}"/>
                     <Grid Margin="2,0,0,0">
                         <ComboBox x:Name="TagFilter" Width="80"
                                   SelectionChanged="OnFilterChanged"/>
                         <!-- Tab: cycle the tag filter. -->
-                        <Border x:Name="TagKeyBadge" Style="{StaticResource KeyBadge}"
-                                HorizontalAlignment="Right" Margin="0,0,6,0" Width="24"
-                                Visibility="Collapsed">
-                            <TextBlock Text="Tab" FontSize="{DynamicResource Size.Hint}"
-                                       Foreground="{DynamicResource Brush.TextOnAccent}"
-                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
+                        <ContentControl x:Name="TagKeyBadge" Style="{DynamicResource KeyCap}"
+                                        Content="Tab"
+                                        HorizontalAlignment="Right" Margin="0,0,6,0"
+                                        VerticalAlignment="Center" Visibility="Collapsed"/>
                     </Grid>
                     <Button x:Name="SubtypeButton" Width="26" Height="24" Margin="4,0,0,0"
-                            Style="{StaticResource HeaderIconButton}" Click="OnSubtypeButtonClicked"
+                            Style="{DynamicResource IconButton}" Click="OnSubtypeButtonClicked"
                             ToolTip="按子类型筛选：链接 / 邮箱 / 颜色 / 路径">
                         <TextBlock Text="&#xE71C;" FontFamily="{DynamicResource Font.Icon}"
-                                   FontSize="{DynamicResource Size.IconSmall}"/>
+                                   FontSize="{DynamicResource Size.IconS}"/>
                     </Button>
                     <Button x:Name="ClearFilters" Width="26" Height="24" Margin="2,0,0,0"
-                            Style="{StaticResource HeaderIconButton}" Click="OnClearFilters"
+                            Style="{DynamicResource IconButton}" Click="OnClearFilters"
                             ToolTip="清除全部筛选">
                         <TextBlock Text="&#xE711;" FontFamily="{DynamicResource Font.Icon}"
-                                   FontSize="{DynamicResource Size.IconSmall}"/>
+                                   FontSize="{DynamicResource Size.IconS}"/>
                     </Button>
                 </StackPanel>
             </StackPanel>
@@ -613,17 +524,17 @@
           shows only its pile), the tag combo above is a label that stacks on
           top of whatever else is asked.
         -->
-        <Border x:Name="GroupHostBorder" DockPanel.Dock="Top" Padding="10,0,10,6"
+        <Border x:Name="GroupHostBorder" DockPanel.Dock="Top" Padding="8,0,8,6"
                 Visibility="Collapsed">
             <ScrollViewer x:Name="GroupHost" HorizontalScrollBarVisibility="Hidden"
                           VerticalScrollBarVisibility="Disabled"
                           SizeChanged="OnGroupHostResized">
                 <StackPanel x:Name="GroupRow" Orientation="Horizontal">
                     <ToggleButton x:Name="AllGroupChip" Content="全部" Padding="7,0" Margin="0,0,2,0"
-                                  Style="{StaticResource KindTab}"
+                                  Style="{DynamicResource KindTab}"
                                   Click="OnGroupChipClicked" ToolTip="不看特定分组"/>
                     <ToggleButton x:Name="GroupOverflow" Content="⋯" Width="26"
-                                  Style="{StaticResource KindTab}"
+                                  Style="{DynamicResource KindTab}"
                                   Click="OnGroupOverflowClicked" ToolTip="收起的分组"
                                   Visibility="Collapsed"/>
                 </StackPanel>
@@ -633,7 +544,7 @@
         <Border x:Name="PinnedHost" DockPanel.Dock="Top" Padding="8,6,8,0"
                 Visibility="Collapsed">
             <StackPanel>
-                <TextBlock Text="置顶" FontSize="{DynamicResource Size.Hint}"
+                <TextBlock Text="置顶" FontSize="{DynamicResource Type.Caption}"
                            Foreground="{DynamicResource Brush.TextTertiary}" Margin="2,0,0,3"/>
                 <!--
                   The same container type as the main list: pinned cards need
@@ -647,21 +558,21 @@
             </StackPanel>
         </Border>
 
-        <Border DockPanel.Dock="Bottom" Padding="10,4">
+        <Border DockPanel.Dock="Bottom" Padding="8,4">
             <Grid>
-                <TextBlock x:Name="CountLabel" FontSize="{DynamicResource Size.Hint}"
+                <TextBlock x:Name="CountLabel" FontSize="{DynamicResource Type.Caption}"
                            Foreground="{DynamicResource Brush.TextTertiary}"
                            VerticalAlignment="Center"/>
                 <DockPanel x:Name="FeedbackHost" LastChildFill="False"
                            VerticalAlignment="Center" Visibility="Collapsed">
                     <Button x:Name="UndoButton" DockPanel.Dock="Right" Content="撤销"
-                            Padding="8,1" FontSize="{DynamicResource Size.Caption}"
+                            Padding="8,1" Height="{DynamicResource Control.HeightDense}"
                             Cursor="Hand" Click="OnUndoDelete"
                             Margin="0,0,24,0"
                             Visibility="Collapsed"
                             ToolTip="恢复刚删除的条目（Ctrl+Z）"/>
                     <TextBlock x:Name="FeedbackLabel" VerticalAlignment="Center"
-                               FontSize="{DynamicResource Size.Hint}"
+                               FontSize="{DynamicResource Type.Caption}"
                                Foreground="{DynamicResource Brush.TextSecondary}"/>
                 </DockPanel>
                 <Thumb x:Name="SizeGrip" HorizontalAlignment="Right" Width="22" Height="14"
@@ -691,19 +602,13 @@
                     Background="{DynamicResource Brush.Surface}"
                     HorizontalAlignment="Center" VerticalAlignment="Center"
                     MaxWidth="300" Margin="16,0">
-                <StackPanel>
-                    <TextBlock x:Name="EmptyHeadline" TextWrapping="Wrap" TextAlignment="Center"
-                               FontSize="{DynamicResource Size.BodyLarge}"
-                               Foreground="{DynamicResource Brush.Text}"/>
-                    <TextBlock x:Name="EmptyHint" TextWrapping="Wrap" TextAlignment="Center"
-                               Margin="0,6,0,0"
-                               FontSize="{DynamicResource Size.Caption}"
-                               Foreground="{DynamicResource Brush.TextTertiary}"/>
-                    <Button x:Name="EmptyClear" Content="清除筛选" Margin="0,10,0,0"
-                            Padding="14,5,14,5" HorizontalAlignment="Center"
+                <local:EmptyState x:Name="Empty" Glyph="&#xE8A9;">
+                    <Button x:Name="EmptyClear" Content="清除筛选" Margin="0,0,0,0"
+                            Height="{DynamicResource Control.HeightDense}"
+                            Padding="14,0" HorizontalAlignment="Center"
                             Cursor="Hand" Click="OnClearFilters"
                             Visibility="Collapsed"/>
-                </StackPanel>
+                </local:EmptyState>
             </Border>
         </Grid>
     </DockPanel>
