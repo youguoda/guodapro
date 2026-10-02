@@ -89,7 +89,10 @@ internal sealed class UpdateService
 
         try
         {
-            var finalizer = Process.Start(new ProcessStartInfo(stagedExe, arguments) { UseShellExecute = false });
+            // using：记下 pid 后立即还句柄（O-43）。Dispose 不杀进程——
+            // 交接出去的 finalizer 自己要活到替换完成。
+            using var finalizer = Process.Start(
+                new ProcessStartInfo(stagedExe, arguments) { UseShellExecute = false });
             Trace($"apply: finalizer pid={(finalizer is null ? "null" : finalizer.Id.ToString())}");
         }
         catch (Exception failure)
@@ -155,8 +158,8 @@ internal sealed class UpdateService
             {
                 // Launched before the staging reset on purpose: the reset
                 // removes this process's own files, and everything after it
-                // must already be loaded.
-                Process.Start(new ProcessStartInfo(
+                // must already be loaded. 打开即弃（O-43）。
+                using var restarted = Process.Start(new ProcessStartInfo(
                     Path.Combine(installDirectory, "Shiyu.App.exe")) { UseShellExecute = true });
             }
             catch (Exception failure) when (

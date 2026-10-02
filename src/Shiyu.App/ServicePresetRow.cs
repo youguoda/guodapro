@@ -217,7 +217,10 @@ internal sealed class ServicePresetRow
 
         try
         {
-            Process.Start(new ProcessStartInfo(preset.ApiKeyUrl) { UseShellExecute = true });
+            // .NET 9 的 Process 持有操作系统句柄直到终结器回收（O-43）：
+            // 打开即弃，浏览器照常活，句柄当场还。
+            using var opened = Process.Start(
+                new ProcessStartInfo(preset.ApiKeyUrl) { UseShellExecute = true });
         }
         catch (Exception)
         {

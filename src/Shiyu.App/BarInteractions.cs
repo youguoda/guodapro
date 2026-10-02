@@ -449,7 +449,9 @@ internal partial class BarWindow
                 ? "mailto:" + card.Text.Trim()
                 : card.Text.Trim();
 
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(target)
+            // 打开即弃（O-43）：.NET 9 的 Process 是 IDisposable，弃置不写
+            // 句柄要等到终结器——浏览器自己会活。
+            using var opened = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(target)
             {
                 UseShellExecute = true,
             });
@@ -717,7 +719,8 @@ internal partial class BarWindow
 
         try
         {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(target)
+            // 同 OpenUri：打开即弃（O-43）。
+            using var opened = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(target)
             {
                 UseShellExecute = true,
             });
@@ -743,7 +746,7 @@ internal partial class BarWindow
 
         try
         {
-            System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{target}\"");
+            using var opened = System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{target}\"");
         }
         catch (Exception failure)
         {

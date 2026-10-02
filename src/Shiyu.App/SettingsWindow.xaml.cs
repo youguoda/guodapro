@@ -798,10 +798,12 @@ public partial class SettingsWindow : Window
         {
             try
             {
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(AppPaths.DataDirectory)
-                {
-                    UseShellExecute = true,
-                });
+                // 打开即弃（O-43）：资源管理器自己会活，句柄当场还。
+                using var opened = System.Diagnostics.Process.Start(
+                    new System.Diagnostics.ProcessStartInfo(AppPaths.DataDirectory)
+                    {
+                        UseShellExecute = true,
+                    });
             }
             catch (Exception failure)
             {
