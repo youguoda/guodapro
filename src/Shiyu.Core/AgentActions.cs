@@ -197,6 +197,7 @@ public sealed class AgentRun(IStreamingModel model)
         catch (Exception unexpected)
         {
             // An unreachable agent must leave the rest of Shiyu working.
+            Log.Event(LogEvent.AgentActionFailed, unexpected);
             State = TranslationState.Failed;
             Error = unexpected.Message;
         }

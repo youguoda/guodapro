@@ -120,6 +120,7 @@ internal sealed class UpdateWindow : Window
         }
         catch (Exception failure)
         {
+            Log.Event(LogEvent.UpdateApplyFailed, failure, ("window", 1));
             _progress.Value = 0;
             _status.Text = "操作失败：" + failure.Message;
             _check.IsEnabled = true;
@@ -155,6 +156,7 @@ internal sealed class UpdateWindow : Window
         }
         catch (Exception failure)
         {
+            Log.Event(LogEvent.UpdateCheckFailed, failure, ("window", 1));
             _status.Text = "检查失败：" + failure.Message;
         }
         finally

@@ -88,10 +88,11 @@ internal static class FirstUseHints
                 }
             }
         }
-        catch (Exception)
+        catch (Exception failure) when (
+            failure is IOException or UnauthorizedAccessException or JsonException)
         {
-            // A broken hints file costs nothing: defaults re-show the hints,
-            // which is strictly better than blocking startup.
+            // expected: 提示状态文件坏了或读不了——默认值会重新展示提示，
+            // 这严格好过挡住启动。
         }
     }
 
@@ -101,9 +102,10 @@ internal static class FirstUseHints
         {
             File.WriteAllText(FilePath, JsonSerializer.Serialize(new State(_summonsLeft, _actionsSeen)));
         }
-        catch (Exception)
+        catch (Exception failure) when (
+            failure is IOException or UnauthorizedAccessException)
         {
-            // Same stakes as the load: hints are cosmetic, never critical.
+            // expected: 与读同一副筹码——提示是锦上添花，绝不关键。
         }
     }
 }

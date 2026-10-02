@@ -26,9 +26,12 @@ public sealed class LlmDictionaryApi(IStreamingModel model) : IDictionaryApi, ID
 
             return Parse(builder.ToString(), word);
         }
-        catch (Exception)
+        catch (Exception failure)
         {
-            // 模型不可用与模型胡说对查词者是同一件事：没有卡。
+            // 模型不可用与模型胡说对查词者是同一件事：没有卡。但慢路失败
+            // 值得一行日志（O-24）：快路已不可达、慢路也倒了，词典卡就
+            // 彻底没了——这只有日志看得见。
+            Log.Event(LogEvent.DictionaryLookupFailed, failure, ("leg", 1));
             return null;
         }
     }
@@ -76,6 +79,7 @@ public sealed class LlmDictionaryApi(IStreamingModel model) : IDictionaryApi, ID
         }
         catch (Exception)
         {
+            // expected: 模型输出抠不出合法 JSON——没有卡，不算故障。
             return null;
         }
     }

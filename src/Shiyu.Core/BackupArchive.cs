@@ -431,6 +431,7 @@ public static class BackupArchive
                     failure is FormatException or ArgumentException or ArgumentNullException
                     or ArgumentOutOfRangeException or InvalidOperationException)
                 {
+                    // expected: 已知形状的备份数据损坏——翻译成一句人话再抛。
                     throw new BackupException("备份里的条目数据损坏了，导入已取消，现有数据完好。");
                 }
 
@@ -446,6 +447,7 @@ public static class BackupArchive
         }
         catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
         {
+            // expected: 图片解压的 IO 失败——同样收进人话。
             throw new BackupException("备份里的图片解不出来，导入已取消，现有数据完好。");
         }
 
@@ -557,6 +559,7 @@ public static class BackupArchive
             or KeyNotFoundException
             or ArgumentException)
         {
+            // expected: 已知形状的中途失败——事务已保证全撤回，收进人话。
             throw new BackupException(
                 "备份导入没能完成，已全部撤回——现有的历史和图片一点没动，可以换个备份再试。");
         }
@@ -591,7 +594,8 @@ public static class BackupArchive
             }
             catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
             {
-                // See the method doc: the row is already committed and copes.
+                // expected: 见本方法文档——行已提交、缺图的读路径能自洽，
+                // 落地的导入不该为一个可再解压的文件报告自己失败。
             }
         }
 
@@ -612,8 +616,8 @@ public static class BackupArchive
         }
         catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
         {
-            // Nothing that follows depends on the staging directory; an
-            // undeletable leftover is a few files with a recognisable name.
+            // expected: 后面没人依赖暂存目录；删不掉的残余只是几个名字
+            // 认得出的文件。
         }
     }
 

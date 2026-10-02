@@ -100,6 +100,9 @@ internal sealed class UpdateService
         }
         catch (Exception failure)
         {
+            // 安装没能交接出去（O-24）：用户点了"安装"却停在原地，这里没法
+            // 从服务够到窗口——留给日志与托盘兜底去说。
+            Log.Event(LogEvent.UpdateApplyFailed, failure, ("stage", 1));
             Trace("apply: start failed " + failure.Message);
             return;
         }
@@ -115,8 +118,10 @@ internal sealed class UpdateService
                 System.IO.Path.Combine(System.IO.Path.GetTempPath(), "shiyu-apply.log"),
                 $"{DateTime.Now:HH:mm:ss.fff} {line}{Environment.NewLine}");
         }
-        catch (Exception)
+        catch (Exception failure) when (
+            failure is IOException or UnauthorizedAccessException)
         {
+            // expected: 落 trace 失败——trace 自己不能成为它要记录的故障。
         }
     }
 
@@ -160,10 +165,11 @@ internal sealed class UpdateService
                 Process.Start(new ProcessStartInfo(
                     Path.Combine(installDirectory, "Shiyu.App.exe")) { UseShellExecute = true });
             }
-            catch (Exception)
+            catch (Exception failure) when (
+                failure is System.ComponentModel.Win32Exception or InvalidOperationException)
             {
-                // The new version is installed; if it cannot even start here,
-                // the user still has it to start by hand.
+                // expected: 新版本已装好，只是没能在这里代为启动——用户
+                // 手上仍有它可点。
             }
 
             try
@@ -172,9 +178,10 @@ internal sealed class UpdateService
                 // from — that one is the relaunched application's first chore.
                 UpdateStaging.CleanAfterApply(dataRoot);
             }
-            catch (Exception)
+            catch (Exception failure) when (
+                failure is IOException or UnauthorizedAccessException)
             {
-                // Staging leftovers are clutter, never a boot problem.
+                // expected: 暂存目录的残余是杂物，从来不是启动问题。
             }
         }
 

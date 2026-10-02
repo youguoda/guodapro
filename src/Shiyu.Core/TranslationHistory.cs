@@ -157,10 +157,12 @@ public sealed class TranslationBatch(
                 progress?.Report((done, entryIds.Count));
                 throw;
             }
-            catch (Exception)
+            catch (Exception failure)
             {
                 // One unreachable entry does not take the batch down; the
-                // rest keep going and the summary says how many fell.
+                // rest keep going and the summary says how many fell. 汇总
+                // 只给数字（O-24），哪一条、为什么，日志里补齐。
+                Log.Event(LogEvent.TranslationFailed, failure, ("batch", 1), ("done", done));
                 failed++;
             }
 

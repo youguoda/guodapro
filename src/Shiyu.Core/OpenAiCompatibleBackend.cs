@@ -220,7 +220,7 @@ public sealed class OpenAiCompatibleBackend(
         }
         catch (Exception)
         {
-            // The status code alone is still worth reporting.
+            // expected: 读错误体失败——状态码本身仍值得报告。
         }
 
         return detail is null ? $"翻译失败：{reason}。" : $"翻译失败：{reason}。{detail}";

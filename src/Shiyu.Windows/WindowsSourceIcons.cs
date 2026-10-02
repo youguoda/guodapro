@@ -53,8 +53,8 @@ public sealed class WindowsSourceIcons : ISourceIconProvider
         }
         catch (Exception)
         {
-            // A missing or odd icon is the normal case, not an error: the
-            // cache stores a tombstone and the list shows Shiyu's own mark.
+            // expected: 图标缺失或古怪是常态而非错误——缓存存墓碑行，
+            // 列表显示拾语自己的标记。
             return null;
         }
     }

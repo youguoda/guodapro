@@ -58,7 +58,7 @@ public sealed class SourceIconCache
         }
         catch (Exception)
         {
-            // The icon is never worth the entry.
+            // expected: 图标永远不值得条目——墓碑行照样会存下。
         }
     }
 }

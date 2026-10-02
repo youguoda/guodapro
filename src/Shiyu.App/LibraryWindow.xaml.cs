@@ -306,8 +306,11 @@ public partial class LibraryWindow : Window
 
                 DetailImage.Visibility = Visibility.Visible;
             }
-            catch (Exception)
+            catch (Exception failure) when (
+                failure is IOException or UnauthorizedAccessException
+                or NotSupportedException or System.IO.FileFormatException)
             {
+                // expected: 原图损坏或已被清理——收起图片区，条目本身照常。
                 DetailImage.Visibility = Visibility.Collapsed;
             }
         }
@@ -703,50 +706,62 @@ public partial class LibraryWindow : Window
             return;
         }
 
-        var selected = EntryList.SelectedItems.OfType<EntryItem>().ToList();
-        if (selected.Count == 0)
+        // async void 逃出去的异常是进程级崩溃（O-05）：面板组装与运行途中
+        // 的意外要么记进日志，要么变成状态栏的一句人话，绝不带走常驻的
+        // 记录工具。
+        try
         {
-            Status("请先选中要处理的条目");
-            return;
-        }
-
-        var entries = selected
-            .Select(item => new Entry(item.Id, item.Text, null, DateTimeOffset.UtcNow))
-            .ToList();
-
-        AgentPanel.Visibility = Visibility.Visible;
-        AgentTitle.Text = $"{AgentActions.Label(kind)} · {entries.Count} 条";
-        AgentOutput.Text = "正在处理…";
-        SuggestedTags.ItemsSource = null;
-
-        var run = new AgentRun(_model());
-        _agentRun = run;
-        run.Updated += () => Dispatcher.Invoke(() =>
-        {
-            if (!ReferenceEquals(_agentRun, run))
+            var selected = EntryList.SelectedItems.OfType<EntryItem>().ToList();
+            if (selected.Count == 0)
             {
+                Status("请先选中要处理的条目");
                 return;
             }
 
-            if (run.Output.Length > 0)
+            var entries = selected
+                .Select(item => new Entry(item.Id, item.Text, null, DateTimeOffset.UtcNow))
+                .ToList();
+
+            AgentPanel.Visibility = Visibility.Visible;
+            AgentTitle.Text = $"{AgentActions.Label(kind)} · {entries.Count} 条";
+            AgentOutput.Text = "正在处理…";
+            SuggestedTags.ItemsSource = null;
+
+            var run = new AgentRun(_model());
+            _agentRun = run;
+            run.Updated += () => Dispatcher.Invoke(() =>
             {
-                AgentOutput.Text = run.Output;
-            }
+                if (!ReferenceEquals(_agentRun, run))
+                {
+                    return;
+                }
 
-            if (run.State == TranslationState.Failed)
+                if (run.Output.Length > 0)
+                {
+                    AgentOutput.Text = run.Output;
+                }
+
+                if (run.State == TranslationState.Failed)
+                {
+                    // An unreachable agent leaves everything else working; the
+                    // message says so rather than looking like a broken window.
+                    AgentOutput.Text = $"处理失败：{run.Error}";
+                }
+            });
+
+            await run.RunAsync(kind, entries);
+
+            if (kind == AgentActionKind.SuggestTags && run.State == TranslationState.Finished)
             {
-                // An unreachable agent leaves everything else working; the
-                // message says so rather than looking like a broken window.
-                AgentOutput.Text = $"处理失败：{run.Error}";
+                SuggestedTags.ItemsSource = AgentActions.ParseSuggestedTags(run.Output);
+                AgentOutput.Text = "点击下面的标签即可加到所选条目：";
             }
-        });
-
-        await run.RunAsync(kind, entries);
-
-        if (kind == AgentActionKind.SuggestTags && run.State == TranslationState.Finished)
+        }
+        catch (Exception failure)
         {
-            SuggestedTags.ItemsSource = AgentActions.ParseSuggestedTags(run.Output);
-            AgentOutput.Text = "点击下面的标签即可加到所选条目：";
+            // RunAsync 已把模型失败收敛成状态；这里是面板自身的意外。
+            Log.Event(LogEvent.AgentActionFailed, failure);
+            Status($"处理失败：{failure.Message}");
         }
     }
 
@@ -842,7 +857,9 @@ public partial class LibraryWindow : Window
         }
         catch (Exception failure)
         {
-            // A dead backend must cost nothing but this one sentence.
+            // A dead backend must cost nothing but this one sentence —
+            // 以及一行日志（O-24）：批量失败的实际原因只在日志里看得全。
+            Log.Event(LogEvent.BatchTranslationFailed, failure, ("selected", selected.Count));
             Status($"翻译服务不可用：{failure.Message}");
         }
         finally

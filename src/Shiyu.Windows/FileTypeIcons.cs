@@ -68,6 +68,7 @@ public sealed class FileTypeIcons
         }
         catch (Exception)
         {
+            // expected: 图标取不到/转不成位图——没有图标而已。
             return null;
         }
     }

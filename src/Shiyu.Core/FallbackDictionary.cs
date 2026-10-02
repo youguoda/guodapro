@@ -32,6 +32,8 @@ public sealed class FallbackDictionary(IDictionaryApi primary, IDictionaryApi? s
         }
         catch (Exception)
         {
+            // expected: 家族契约——任何失败都只是没有卡，绝不抛。两条腿
+            // 各自的失败已在各自门口留痕（DictionaryLookupFailed）。
             return null;
         }
     }
