@@ -181,6 +181,12 @@ public sealed record AppSettings
     /// <summary>Summons and hides the resident narrow bar.</summary>
     public string BarHotkey { get; init; } = "Ctrl+Shift+B";
 
+    /// <summary>
+    /// 打开历史管理窗（§5.1 快捷键页新增）。默认不设：与四个默认键不同，
+    /// 管理窗有托盘与窄条入口，不设键不缺路；空串 = 不注册。
+    /// </summary>
+    public string LibraryHotkey { get; init; } = string.Empty;
+
     // --- narrow bar density ---
     // Density is how much content each card clamps, never how small the text
     // gets: sizes and paddings stay fixed so the list can never look cramped

@@ -14,6 +14,9 @@ public enum HotkeyAction
 
     /// <summary>翻译剪贴板内容。</summary>
     ClipboardTranslate,
+
+    /// <summary>打开历史管理窗（默认不设，§5.1）。</summary>
+    Library,
 }
 
 /// <summary>One hotkey that parsed and survived deduplication, ready to register.</summary>
@@ -41,13 +44,17 @@ public static class HotkeyPlan
             [HotkeyAction.QuickBar] = "快速条",
             [HotkeyAction.Bar] = "窄条",
             [HotkeyAction.ClipboardTranslate] = "翻译剪贴板",
+            [HotkeyAction.Library] = "打开管理窗",
         };
 
     /// <summary>
-    /// Builds the registration plan for the four hotkeys in the settings.
+    /// Builds the registration plan for the hotkeys in the settings.
     /// Bindings come back in the order Shiyu registers them; Problems are
     /// plain Chinese sentences, each naming the action (or the two actions)
     /// it is about.
+    ///
+    /// 空串是"不设"，不是错误（打开管理窗默认不设，§5.1）：清掉一个键
+    /// 应当是合法的卸载，而不是一条开机就响的报错。
     /// </summary>
     public static (IReadOnlyList<HotkeyBinding> Bindings, IReadOnlyList<string> Problems) Build(
         AppSettings settings)
@@ -60,6 +67,7 @@ public static class HotkeyPlan
             (HotkeyAction.QuickBar, settings.QuickBarHotkey),
             (HotkeyAction.Bar, settings.BarHotkey),
             (HotkeyAction.ClipboardTranslate, settings.ClipboardTranslateHotkey),
+            (HotkeyAction.Library, settings.LibraryHotkey),
         };
 
         var problems = new List<string>();
@@ -67,6 +75,12 @@ public static class HotkeyPlan
 
         foreach (var (action, text) in slots)
         {
+            // Empty means deliberately unset — no binding, no complaint.
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                continue;
+            }
+
             var spec = HotkeySpec.Parse(text);
             if (spec is null)
             {
@@ -74,7 +88,7 @@ public static class HotkeyPlan
                 // text, so "缺修饰键" is covered here rather than as a second
                 // rule that could drift from the first.
                 problems.Add(
-                    $"{ActionNames[action]}的快捷键「{text?.Trim() ?? ""}」无法识别，"
+                    $"{ActionNames[action]}的快捷键「{text.Trim()}」无法识别，"
                     + "需要形如 Ctrl+Shift+Z 且至少带一个修饰键。");
                 continue;
             }

@@ -16,8 +16,8 @@ public class SettingsSearchTests
 
         var hit = Assert.Single(hits);
         Assert.Equal("store.retention-days", hit.Item.Id);
-        Assert.Equal("数据", hit.PageTitle);
-        Assert.Equal("清理", hit.SectionTitle);
+        Assert.Equal("记录与隐私", hit.PageTitle);
+        Assert.Equal("保留与保护", hit.SectionTitle);
     }
 
     [Fact]
