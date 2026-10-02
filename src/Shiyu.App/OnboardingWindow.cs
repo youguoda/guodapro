@@ -194,6 +194,13 @@ internal sealed class OnboardingWindow : Window
         _stepLabel.Text = $"第 {index + 1} 步，共 {_steps.Count} 步";
         _back.Visibility = index == 0 ? Visibility.Collapsed : Visibility.Visible;
         _next.Content = index == _steps.Count - 1 ? "完成" : "下一步";
+
+        // 欢迎屏自带「开始 / 跳过，用默认设置」两枚主按钮（§5.3）：脚注里
+        // 再挂一组下一步/跳过就是同一件事问两遍——只留步数标签（Enter 照常
+        // 前进）。
+        var footerButtons = index == 0 ? Visibility.Collapsed : Visibility.Visible;
+        _skip.Visibility = footerButtons;
+        _next.Visibility = footerButtons;
     }
 
     private void Next()
@@ -700,8 +707,11 @@ internal sealed class OnboardingWindow : Window
         MarkSelected(ownCard, selected: true);
         panel.Children.Add(ownCard);
 
-        var relayCard = Card("公共通道 · 即将推出", "零配置零密钥；上线条件（大陆可达、服务端加固、运营费用）未满足前不可选。", new TextBlock());
-        relayCard.IsEnabled = false;
+        var relayCard = Card(
+            "公共通道 · 即将推出",
+            "零配置零密钥；上线条件（大陆可达、服务端加固、运营费用）未满足前不可选。",
+            new TextBlock(),
+            disabled: true);
         panel.Children.Add(relayCard);
 
         var privacy = new TextBlock
@@ -905,12 +915,20 @@ internal sealed class OnboardingWindow : Window
         return chip;
     }
 
-    /// <summary>一张卡（§5.3 的主卡/子卡/次卡）：Surface 底、1px 边、Radius.Control、标题加说明在上。</summary>
-    private static Border Card(string title, string description, FrameworkElement body)
+    /// <summary>
+    /// 一张卡（§5.3 的主卡/子卡/次卡）：Surface 底、1px 边、Radius.Control、
+    /// 标题加说明在上。<paramref name="disabled"/> 把文字压到 TextTertiary——
+    /// IsEnabled 挡不住点击之外的视觉，"即将推出"必须一眼看出点不动。
+    /// </summary>
+    private static Border Card(string title, string description, FrameworkElement body, bool disabled = false)
     {
         var heading = new TextBlock { Text = title };
         heading.SetResourceReference(TextElement.FontSizeProperty, "Type.Body");
         heading.FontWeight = FontWeights.SemiBold;
+        heading.SetResourceReference(
+            TextBlock.ForegroundProperty,
+            disabled ? "Brush.TextTertiary" : "Brush.Text");
+
         var caption = new TextBlock
         {
             Text = description,
@@ -918,7 +936,9 @@ internal sealed class OnboardingWindow : Window
             Margin = new Thickness(0, 2, 0, 8),
         };
         caption.SetResourceReference(TextElement.FontSizeProperty, "Type.Caption");
-        caption.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
+        caption.SetResourceReference(
+            TextBlock.ForegroundProperty,
+            disabled ? "Brush.TextTertiary" : "Brush.TextSecondary");
 
         var panel = new StackPanel();
         panel.Children.Add(heading);
@@ -930,6 +950,7 @@ internal sealed class OnboardingWindow : Window
             Child = panel,
             Padding = new Thickness(14, 12, 14, 12),
             Margin = new Thickness(0, 0, 0, 10),
+            IsEnabled = !disabled,
         };
         card.SetResourceReference(BackgroundProperty, "Brush.Surface");
         card.SetResourceReference(Border.BorderBrushProperty, "Brush.Border");

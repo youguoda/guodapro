@@ -120,6 +120,13 @@ public partial class App
             case "panel":
                 _modules!.Translation.ShowPanel(text);
                 break;
+
+            // 票 25：引导五屏的走查通道。探针原则上跳过首启引导（票 15），
+            // 但 §5.3 的验收要真走一遍五屏——显式点名才打开，与 settings
+            // 同族；数据落在本探针目录里，走完即记 OnboardingCompleted。
+            case "onboarding":
+                new OnboardingWindow(shell.SettingsStore, firstRun: true, shell).Show();
+                break;
         }
     }
 }
