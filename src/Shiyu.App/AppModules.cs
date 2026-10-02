@@ -38,6 +38,8 @@ internal sealed class AppModules
 
         modules.Selection.Attach(shell);
         modules.Settings.Attach(shell);
+        modules.Library.Attach(shell);
+        modules.Update.Attach(shell);
         shell.Connect();
         modules.Bar.Attach(shell);
         modules.Translation.Attach(shell);
