@@ -18,12 +18,22 @@ public class LogTests
 
         public void Dispose() => Log.Detach();
 
+        /// <summary>
+        /// 行的结构是"时间 级别 事件 字段…"，事件名恰是第三个词。并行跑的
+        /// 别的测试类会驱动产品代码往这个进程级 sink 里也落几行（Backup、
+        /// 编排器的失败路径都记日志）——断言只认本用例的事件，Ambient 静态
+        /// 量在并行测试里就该这么读，否则是掷骰子。
+        /// </summary>
+        private string SingleLineOf(string eventName)
+            => Assert.Single(_sink.Lines.Where(line =>
+                line.Split(' ').Length > 2 && line.Split(' ')[2] == eventName));
+
         [Fact]
         public void An_event_lands_as_one_line_with_its_fields()
         {
             Log.Event(LogEvent.RetentionSwept, ("removed", 3), ("days", 30));
 
-            var line = Assert.Single(_sink.Lines);
+            var line = SingleLineOf(nameof(LogEvent.RetentionSwept));
             Assert.Contains("info RetentionSwept", line);
             Assert.Contains("removed=3", line);
             Assert.Contains("days=30", line);
@@ -35,7 +45,7 @@ public class LogTests
         {
             Log.Event(LogEvent.UpdateChecked, ("found", true), ("quiet", false));
 
-            var line = Assert.Single(_sink.Lines);
+            var line = SingleLineOf(nameof(LogEvent.UpdateChecked));
             Assert.Contains("found=true", line);
             Assert.Contains("quiet=false", line);
         }
@@ -45,7 +55,7 @@ public class LogTests
         {
             Log.Event(LogEvent.TranslationFailed, new InvalidOperationException("boom"));
 
-            var line = Assert.Single(_sink.Lines);
+            var line = SingleLineOf(nameof(LogEvent.TranslationFailed));
             Assert.StartsWith("error TranslationFailed", line.Substring(line.IndexOf(' ') + 1));
             Assert.Contains("InvalidOperationException: boom", line);
         }
