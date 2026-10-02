@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Windows;
@@ -692,6 +693,8 @@ public partial class App : Application
         _messageWindow?.Dispose();
         _store?.Dispose();
         _hotkeys?.Dispose();
+        // 两个低级钩子各自住在专用线程上（O-16）：Dispose 投 WM_QUIT、在钩子
+        // 线程上卸钩后 Join（带超时），退出路径不会因它们挂住。
         _winV?.Dispose();
         _mouseDrag?.Dispose();
         _singleInstance?.Dispose();
@@ -710,8 +713,19 @@ public partial class App : Application
         {
             if (_winV is null)
             {
-                _winV = new WinVHook();
-                _winV.Triggered += ToggleBar;
+                try
+                {
+                    _winV = new WinVHook();
+                    _winV.Triggered += ToggleBar;
+                }
+                catch (Win32Exception failure)
+                {
+                    // 装钩失败回告（O-16）：字段保持 null——null 就是"未接管"
+                    // 的唯一事实，下次进设置或重启会再试。装不上的钩子若装作
+                    // 在管，用户要按下 Win+V 看到系统面板弹出那一刻才知道。
+                    _tray?.ShowNotification(
+                        "拾语", $"未能接管 Win+V：{failure.Message}。本次运行不接管。");
+                }
             }
         }
         else if (_winV is not null)
@@ -733,8 +747,17 @@ public partial class App : Application
         {
             if (_mouseDrag is null)
             {
-                _mouseDrag = new MouseDragHook();
-                _mouseDrag.DragCompleted += OnDragSelected;
+                try
+                {
+                    _mouseDrag = new MouseDragHook();
+                    _mouseDrag.DragCompleted += OnDragSelected;
+                }
+                catch (Win32Exception failure)
+                {
+                    // 同 Win+V：字段保持 null，徽标本次不生效，失败要说出来。
+                    _tray?.ShowNotification(
+                        "拾语", $"未能开启拖选翻译徽标：{failure.Message}。本次运行不开启。");
+                }
             }
         }
         else if (_mouseDrag is not null)
