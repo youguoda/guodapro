@@ -2,6 +2,7 @@
 
 **来源：** UI 报告 §2（R1、R4、R6）、U-01；优化报告 O-28
 **Blocked by:** —
+**Branch:** `v3/ui-root`（已并 master，218d3f5；合并后全套 706/706）
 **Status:** ready-for-human（代码与测试已落，余像素级探针验收）
 
 **What to build:**

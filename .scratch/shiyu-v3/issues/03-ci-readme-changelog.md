@@ -14,6 +14,6 @@
 - CI 第一次全绿后：开启 master 分支保护（必须通过 CI；管理员可直接推送）。
 
 **验收：**
-- [ ] 推送后 Actions 两个 job 均为绿（本次推送即首次运行）
+- [x] 推送后 Actions 两个 job 均为绿（首跑 36968827578：windows 1m39s / server 22s）
 - [x] README 每条事实都能在仓库中找到依据；不含个人数据
-- [ ] 分支保护已开启，状态检查名与 workflow 一致（CI 绿后执行）
+- [x] 分支保护已开启（required: CI / windows、CI / server；管理员直推放行）
