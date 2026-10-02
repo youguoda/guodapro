@@ -11,6 +11,20 @@ public sealed partial class EntryStore : IDisposable
 {
     private readonly SqliteConnection _connection;
 
+    /// <summary>
+    /// Every public member runs under this gate. One connection serves the
+    /// UI thread and the pool (image recording, retention, backup), and a
+    /// connection is not safe to share: a command made on one thread adopts
+    /// whatever transaction another thread has open, and last_insert_rowid()
+    /// belongs to the connection, not the caller. Monitor is re-entrant, so
+    /// members calling members is fine. Nothing public returns a lazy
+    /// sequence — a reader that outlived the lock would be unguarded.
+    /// </summary>
+    private readonly object _gate = new();
+
+    /// <summary>The transaction <see cref="RunInTransaction"/> holds open, if any. Touched only under the gate.</summary>
+    private SqliteTransaction? _batch;
+
     /// <summary>Internal for tests: writing rows the way an older build would have.</summary>
     internal SqliteConnection Connection => _connection;
 
@@ -337,29 +351,32 @@ public sealed partial class EntryStore : IDisposable
         string? html = null,
         string? rtf = null)
     {
-        var subtype = SubtypeClassifier.Detect(text);
-
-        using var command = _connection.CreateCommand();
-        command.CommandText = """
-            INSERT INTO entries (text, source_app, created_at, sub_type, html, rtf)
-            VALUES ($text, $sourceApp, $createdAt, $subtype, $html, $rtf)
-            RETURNING id;
-            """;
-        command.Parameters.AddWithValue("$text", text);
-        command.Parameters.AddWithValue("$sourceApp", (object?)sourceApp ?? DBNull.Value);
-        command.Parameters.AddWithValue("$createdAt", createdAt.ToUnixTimeMilliseconds());
-        command.Parameters.AddWithValue("$subtype",
-            subtype == EntrySubtype.None ? DBNull.Value : (object)subtype.ToString());
-        command.Parameters.AddWithValue("$html", (object?)html ?? DBNull.Value);
-        command.Parameters.AddWithValue("$rtf", (object?)rtf ?? DBNull.Value);
-
-        var id = (long)command.ExecuteScalar()!;
-        return new Entry(id, text, sourceApp, createdAt)
+        lock (_gate)
         {
-            Subtype = subtype,
-            Html = html,
-            Rtf = rtf,
-        };
+            var subtype = SubtypeClassifier.Detect(text);
+
+            using var command = _connection.CreateCommand();
+            command.CommandText = """
+                INSERT INTO entries (text, source_app, created_at, sub_type, html, rtf)
+                VALUES ($text, $sourceApp, $createdAt, $subtype, $html, $rtf)
+                RETURNING id;
+                """;
+            command.Parameters.AddWithValue("$text", text);
+            command.Parameters.AddWithValue("$sourceApp", (object?)sourceApp ?? DBNull.Value);
+            command.Parameters.AddWithValue("$createdAt", createdAt.ToUnixTimeMilliseconds());
+            command.Parameters.AddWithValue("$subtype",
+                subtype == EntrySubtype.None ? DBNull.Value : (object)subtype.ToString());
+            command.Parameters.AddWithValue("$html", (object?)html ?? DBNull.Value);
+            command.Parameters.AddWithValue("$rtf", (object?)rtf ?? DBNull.Value);
+
+            var id = (long)command.ExecuteScalar()!;
+            return new Entry(id, text, sourceApp, createdAt)
+            {
+                Subtype = subtype,
+                Html = html,
+                Rtf = rtf,
+            };
+        }
     }
 
     /// <summary>
@@ -371,27 +388,30 @@ public sealed partial class EntryStore : IDisposable
         string? sourceApp,
         DateTimeOffset createdAt)
     {
-        var capped = paths.Count > FileEntries.Cap;
-        var kept = FileEntries.WithinCap(paths, out _);
-        var label = FileEntries.Label(paths, capped);
-
-        using var command = _connection.CreateCommand();
-        command.CommandText = """
-            INSERT INTO entries (text, source_app, created_at, kind, files)
-            VALUES ($label, $sourceApp, $createdAt, 2, $files)
-            RETURNING id;
-            """;
-        command.Parameters.AddWithValue("$label", label);
-        command.Parameters.AddWithValue("$sourceApp", (object?)sourceApp ?? DBNull.Value);
-        command.Parameters.AddWithValue("$createdAt", createdAt.ToUnixTimeMilliseconds());
-        command.Parameters.AddWithValue("$files", string.Join("\n", kept));
-
-        var id = (long)command.ExecuteScalar()!;
-        return new Entry(id, label, sourceApp, createdAt)
+        lock (_gate)
         {
-            Kind = EntryKind.Files,
-            Files = kept,
-        };
+            var capped = paths.Count > FileEntries.Cap;
+            var kept = FileEntries.WithinCap(paths, out _);
+            var label = FileEntries.Label(paths, capped);
+
+            using var command = _connection.CreateCommand();
+            command.CommandText = """
+                INSERT INTO entries (text, source_app, created_at, kind, files)
+                VALUES ($label, $sourceApp, $createdAt, 2, $files)
+                RETURNING id;
+                """;
+            command.Parameters.AddWithValue("$label", label);
+            command.Parameters.AddWithValue("$sourceApp", (object?)sourceApp ?? DBNull.Value);
+            command.Parameters.AddWithValue("$createdAt", createdAt.ToUnixTimeMilliseconds());
+            command.Parameters.AddWithValue("$files", string.Join("\n", kept));
+
+            var id = (long)command.ExecuteScalar()!;
+            return new Entry(id, label, sourceApp, createdAt)
+            {
+                Kind = EntryKind.Files,
+                Files = kept,
+            };
+        }
     }
 
     /// <summary>
@@ -400,20 +420,26 @@ public sealed partial class EntryStore : IDisposable
     /// </summary>
     public bool HasApplicationIcon(string name)
     {
-        using var command = _connection.CreateCommand();
-        command.CommandText = "SELECT COUNT(*) FROM applications WHERE name = $name;";
-        command.Parameters.AddWithValue("$name", name);
-        return Convert.ToInt64(command.ExecuteScalar()) > 0;
+        lock (_gate)
+        {
+            using var command = _connection.CreateCommand();
+            command.CommandText = "SELECT COUNT(*) FROM applications WHERE name = $name;";
+            command.Parameters.AddWithValue("$name", name);
+            return Convert.ToInt64(command.ExecuteScalar()) > 0;
+        }
     }
 
     /// <summary>The cached icon's PNG bytes, or null when none was found.</summary>
     public byte[]? ApplicationIcon(string name)
     {
-        using var command = _connection.CreateCommand();
-        command.CommandText = "SELECT icon FROM applications WHERE name = $name;";
-        command.Parameters.AddWithValue("$name", name);
-        var result = command.ExecuteScalar();
-        return result is byte[] png ? png : null;
+        lock (_gate)
+        {
+            using var command = _connection.CreateCommand();
+            command.CommandText = "SELECT icon FROM applications WHERE name = $name;";
+            command.Parameters.AddWithValue("$name", name);
+            var result = command.ExecuteScalar();
+            return result is byte[] png ? png : null;
+        }
     }
 
     /// <summary>
@@ -422,14 +448,17 @@ public sealed partial class EntryStore : IDisposable
     /// </summary>
     public void SaveApplicationIcon(string name, byte[]? png)
     {
-        using var command = _connection.CreateCommand();
-        command.CommandText = """
-            INSERT OR IGNORE INTO applications (name, icon)
-            VALUES ($name, $icon);
-            """;
-        command.Parameters.AddWithValue("$name", name);
-        command.Parameters.AddWithValue("$icon", (object?)png ?? DBNull.Value);
-        command.ExecuteNonQuery();
+        lock (_gate)
+        {
+            using var command = _connection.CreateCommand();
+            command.CommandText = """
+                INSERT OR IGNORE INTO applications (name, icon)
+                VALUES ($name, $icon);
+                """;
+            command.Parameters.AddWithValue("$name", name);
+            command.Parameters.AddWithValue("$icon", (object?)png ?? DBNull.Value);
+            command.ExecuteNonQuery();
+        }
     }
 
     /// <summary>
@@ -445,30 +474,33 @@ public sealed partial class EntryStore : IDisposable
         int width = 0,
         int height = 0)
     {
-        using var command = _connection.CreateCommand();
-        command.CommandText = """
-            INSERT INTO entries (text, source_app, created_at, kind, thumbnail, original_path, image_width, image_height)
-            VALUES ($text, $sourceApp, $createdAt, $kind, $thumbnail, $originalPath, $w, $h)
-            RETURNING id;
-            """;
-        command.Parameters.AddWithValue("$text", label);
-        command.Parameters.AddWithValue("$sourceApp", (object?)sourceApp ?? DBNull.Value);
-        command.Parameters.AddWithValue("$createdAt", createdAt.ToUnixTimeMilliseconds());
-        command.Parameters.AddWithValue("$kind", (int)EntryKind.Image);
-        command.Parameters.AddWithValue("$thumbnail", thumbnailPng);
-        command.Parameters.AddWithValue("$originalPath", originalPath);
-        command.Parameters.AddWithValue("$w", width);
-        command.Parameters.AddWithValue("$h", height);
-
-        var id = (long)command.ExecuteScalar()!;
-        return new Entry(id, label, sourceApp, createdAt)
+        lock (_gate)
         {
-            Kind = EntryKind.Image,
-            ThumbnailPng = thumbnailPng,
-            OriginalPath = originalPath,
-            ImageWidth = width,
-            ImageHeight = height,
-        };
+            using var command = _connection.CreateCommand();
+            command.CommandText = """
+                INSERT INTO entries (text, source_app, created_at, kind, thumbnail, original_path, image_width, image_height)
+                VALUES ($text, $sourceApp, $createdAt, $kind, $thumbnail, $originalPath, $w, $h)
+                RETURNING id;
+                """;
+            command.Parameters.AddWithValue("$text", label);
+            command.Parameters.AddWithValue("$sourceApp", (object?)sourceApp ?? DBNull.Value);
+            command.Parameters.AddWithValue("$createdAt", createdAt.ToUnixTimeMilliseconds());
+            command.Parameters.AddWithValue("$kind", (int)EntryKind.Image);
+            command.Parameters.AddWithValue("$thumbnail", thumbnailPng);
+            command.Parameters.AddWithValue("$originalPath", originalPath);
+            command.Parameters.AddWithValue("$w", width);
+            command.Parameters.AddWithValue("$h", height);
+
+            var id = (long)command.ExecuteScalar()!;
+            return new Entry(id, label, sourceApp, createdAt)
+            {
+                Kind = EntryKind.Image,
+                ThumbnailPng = thumbnailPng,
+                OriginalPath = originalPath,
+                ImageWidth = width,
+                ImageHeight = height,
+            };
+        }
     }
 
     /// <summary>
@@ -477,35 +509,46 @@ public sealed partial class EntryStore : IDisposable
     /// </summary>
     public void ClearOriginal(long id)
     {
-        using var command = _connection.CreateCommand();
-        command.CommandText = "UPDATE entries SET original_path = NULL WHERE id = $id;";
-        command.Parameters.AddWithValue("$id", id);
-        command.ExecuteNonQuery();
+        lock (_gate)
+        {
+            using var command = _connection.CreateCommand();
+            command.CommandText = "UPDATE entries SET original_path = NULL WHERE id = $id;";
+            command.Parameters.AddWithValue("$id", id);
+            command.ExecuteNonQuery();
+        }
     }
 
     /// <summary>Every image entry that still has an original on disk.</summary>
     public IReadOnlyList<Entry> ImagesWithOriginals(bool keepFavorites = false, bool keepPinned = false)
-        => ImagesWhere($"original_path IS NOT NULL AND NOT ({ProtectedConditionFor(keepFavorites, keepPinned)})");
+    {
+        lock (_gate)
+        {
+            return ImagesWhere($"original_path IS NOT NULL AND NOT ({ProtectedConditionFor(keepFavorites, keepPinned)})");
+        }
+    }
 
     /// <summary>Image entries with originals, created within the range.</summary>
     public IReadOnlyList<Entry> ImagesCreatedBetween(
         DateTimeOffset from, DateTimeOffset to, bool keepFavorites = false, bool keepPinned = false)
     {
-        using var command = _connection.CreateCommand();
-        command.CommandText = $"""
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from, image_width, image_height,
-                   (SELECT group_concat(t.name, char(31)) FROM tags t
-                      JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
-            FROM entries
-            WHERE kind = $kind AND original_path IS NOT NULL
-              AND created_at BETWEEN $from AND $to
-              AND NOT ({ProtectedConditionFor(keepFavorites, keepPinned)});
-            """;
-        command.Parameters.AddWithValue("$kind", (int)EntryKind.Image);
-        command.Parameters.AddWithValue("$from", from.ToUnixTimeMilliseconds());
-        command.Parameters.AddWithValue("$to", to.ToUnixTimeMilliseconds());
+        lock (_gate)
+        {
+            using var command = _connection.CreateCommand();
+            command.CommandText = $"""
+                SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from, image_width, image_height,
+                       (SELECT group_concat(t.name, char(31)) FROM tags t
+                          JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
+                FROM entries
+                WHERE kind = $kind AND original_path IS NOT NULL
+                  AND created_at BETWEEN $from AND $to
+                  AND NOT ({ProtectedConditionFor(keepFavorites, keepPinned)});
+                """;
+            command.Parameters.AddWithValue("$kind", (int)EntryKind.Image);
+            command.Parameters.AddWithValue("$from", from.ToUnixTimeMilliseconds());
+            command.Parameters.AddWithValue("$to", to.ToUnixTimeMilliseconds());
 
-        return ReadEntries(command);
+            return ReadEntries(command);
+        }
     }
 
     private IReadOnlyList<Entry> ImagesWhere(string condition)
@@ -527,22 +570,25 @@ public sealed partial class EntryStore : IDisposable
     public IReadOnlyList<Entry> ImagesWithOriginalsBefore(
         DateTimeOffset cutoff, int limit, bool keepFavorites = false, bool keepPinned = false)
     {
-        using var command = _connection.CreateCommand();
-        command.CommandText = $"""
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from, image_width, image_height,
-                   (SELECT group_concat(t.name, char(31)) FROM tags t
-                      JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
-            FROM entries
-            WHERE kind = $kind AND original_path IS NOT NULL AND created_at < $cutoff
-              AND NOT ({ProtectedConditionFor(keepFavorites, keepPinned)})
-            ORDER BY created_at ASC
-            LIMIT $limit;
-            """;
-        command.Parameters.AddWithValue("$kind", (int)EntryKind.Image);
-        command.Parameters.AddWithValue("$cutoff", cutoff.ToUnixTimeMilliseconds());
-        command.Parameters.AddWithValue("$limit", limit);
+        lock (_gate)
+        {
+            using var command = _connection.CreateCommand();
+            command.CommandText = $"""
+                SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from, image_width, image_height,
+                       (SELECT group_concat(t.name, char(31)) FROM tags t
+                          JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
+                FROM entries
+                WHERE kind = $kind AND original_path IS NOT NULL AND created_at < $cutoff
+                  AND NOT ({ProtectedConditionFor(keepFavorites, keepPinned)})
+                ORDER BY created_at ASC
+                LIMIT $limit;
+                """;
+            command.Parameters.AddWithValue("$kind", (int)EntryKind.Image);
+            command.Parameters.AddWithValue("$cutoff", cutoff.ToUnixTimeMilliseconds());
+            command.Parameters.AddWithValue("$limit", limit);
 
-        return ReadEntries(command);
+            return ReadEntries(command);
+        }
     }
 
     /// <summary>
@@ -551,26 +597,30 @@ public sealed partial class EntryStore : IDisposable
     /// </summary>
     public void AppendMany(IEnumerable<NewEntry> entries)
     {
-        using var transaction = _connection.BeginTransaction();
-        using var command = _connection.CreateCommand();
-        command.CommandText = """
-            INSERT INTO entries (text, source_app, created_at)
-            VALUES ($text, $sourceApp, $createdAt);
-            """;
-
-        var text = command.Parameters.Add("$text", SqliteType.Text);
-        var sourceApp = command.Parameters.Add("$sourceApp", SqliteType.Text);
-        var createdAt = command.Parameters.Add("$createdAt", SqliteType.Integer);
-
-        foreach (var entry in entries)
+        lock (_gate)
         {
-            text.Value = entry.Text;
-            sourceApp.Value = (object?)entry.SourceApp ?? DBNull.Value;
-            createdAt.Value = entry.CreatedAt.ToUnixTimeMilliseconds();
-            command.ExecuteNonQuery();
-        }
+            using var write = BeginWrite();
+            using var command = _connection.CreateCommand();
+            command.Transaction = write.Transaction;
+            command.CommandText = """
+                INSERT INTO entries (text, source_app, created_at)
+                VALUES ($text, $sourceApp, $createdAt);
+                """;
 
-        transaction.Commit();
+            var text = command.Parameters.Add("$text", SqliteType.Text);
+            var sourceApp = command.Parameters.Add("$sourceApp", SqliteType.Text);
+            var createdAt = command.Parameters.Add("$createdAt", SqliteType.Integer);
+
+            foreach (var entry in entries)
+            {
+                text.Value = entry.Text;
+                sourceApp.Value = (object?)entry.SourceApp ?? DBNull.Value;
+                createdAt.Value = entry.CreatedAt.ToUnixTimeMilliseconds();
+                command.ExecuteNonQuery();
+            }
+
+            write.Commit();
+        }
     }
 
     /// <summary>
@@ -580,17 +630,20 @@ public sealed partial class EntryStore : IDisposable
     /// </summary>
     public Entry? MostRecent()
     {
-        using var command = _connection.CreateCommand();
-        command.CommandText = """
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from, image_width, image_height,
-                   (SELECT group_concat(t.name, char(31)) FROM tags t
-                      JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
-            FROM entries
-            ORDER BY created_at DESC, id DESC
-            LIMIT 1;
-            """;
+        lock (_gate)
+        {
+            using var command = _connection.CreateCommand();
+            command.CommandText = """
+                SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from, image_width, image_height,
+                       (SELECT group_concat(t.name, char(31)) FROM tags t
+                          JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
+                FROM entries
+                ORDER BY created_at DESC, id DESC
+                LIMIT 1;
+                """;
 
-        return ReadEntries(command).FirstOrDefault();
+            return ReadEntries(command).FirstOrDefault();
+        }
     }
 
     /// <summary>
@@ -604,26 +657,29 @@ public sealed partial class EntryStore : IDisposable
     /// </summary>
     public IReadOnlyList<Entry> Search(string query, int limit, int offset = 0)
     {
-        if (string.IsNullOrWhiteSpace(query))
+        lock (_gate)
         {
-            return [];
+            if (string.IsNullOrWhiteSpace(query))
+            {
+                return [];
+            }
+
+            using var command = _connection.CreateCommand();
+            command.CommandText = """
+                SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from, image_width, image_height,
+                       (SELECT group_concat(t.name, char(31)) FROM tags t
+                          JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
+                FROM entries
+                WHERE text LIKE $pattern ESCAPE '\'
+                ORDER BY pinned DESC, created_at DESC, id DESC
+                LIMIT $limit OFFSET $offset;
+                """;
+            command.Parameters.AddWithValue("$pattern", $"%{EscapeForLike(query)}%");
+            command.Parameters.AddWithValue("$limit", limit);
+            command.Parameters.AddWithValue("$offset", offset);
+
+            return ReadEntries(command);
         }
-
-        using var command = _connection.CreateCommand();
-        command.CommandText = """
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from, image_width, image_height,
-                   (SELECT group_concat(t.name, char(31)) FROM tags t
-                      JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
-            FROM entries
-            WHERE text LIKE $pattern ESCAPE '\'
-            ORDER BY pinned DESC, created_at DESC, id DESC
-            LIMIT $limit OFFSET $offset;
-            """;
-        command.Parameters.AddWithValue("$pattern", $"%{EscapeForLike(query)}%");
-        command.Parameters.AddWithValue("$limit", limit);
-        command.Parameters.AddWithValue("$offset", offset);
-
-        return ReadEntries(command);
     }
 
     /// <summary>
@@ -635,27 +691,30 @@ public sealed partial class EntryStore : IDisposable
     /// </summary>
     public IReadOnlyList<Entry> Find(HistoryFilter filter, int limit, int offset = 0)
     {
-        var conditions = new List<string>();
+        lock (_gate)
+        {
+            var conditions = new List<string>();
 
-        using var command = _connection.CreateCommand();
+            using var command = _connection.CreateCommand();
 
-        BuildFilterConditions(filter, command, conditions);
+            BuildFilterConditions(filter, command, conditions);
 
-        var where = conditions.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", conditions);
+            var where = conditions.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", conditions);
 
-        command.CommandText = $"""
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from, image_width, image_height,
-                   (SELECT group_concat(t.name, char(31)) FROM tags t
-                      JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
-            FROM entries
-            {where}
-            ORDER BY pinned DESC, created_at DESC, id DESC
-            LIMIT $limit OFFSET $offset;
-            """;
-        command.Parameters.AddWithValue("$limit", limit);
-        command.Parameters.AddWithValue("$offset", offset);
+            command.CommandText = $"""
+                SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from, image_width, image_height,
+                       (SELECT group_concat(t.name, char(31)) FROM tags t
+                          JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
+                FROM entries
+                {where}
+                ORDER BY pinned DESC, created_at DESC, id DESC
+                LIMIT $limit OFFSET $offset;
+                """;
+            command.Parameters.AddWithValue("$limit", limit);
+            command.Parameters.AddWithValue("$offset", offset);
 
-        return ReadEntries(command);
+            return ReadEntries(command);
+        }
     }
 
     /// <summary>
@@ -665,16 +724,19 @@ public sealed partial class EntryStore : IDisposable
     /// </summary>
     public int CountMatching(HistoryFilter filter)
     {
-        var conditions = new List<string>();
+        lock (_gate)
+        {
+            var conditions = new List<string>();
 
-        using var command = _connection.CreateCommand();
+            using var command = _connection.CreateCommand();
 
-        BuildFilterConditions(filter, command, conditions);
+            BuildFilterConditions(filter, command, conditions);
 
-        var where = conditions.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", conditions);
+            var where = conditions.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", conditions);
 
-        command.CommandText = $"SELECT COUNT(*) FROM entries {where};";
-        return Convert.ToInt32(command.ExecuteScalar());
+            command.CommandText = $"SELECT COUNT(*) FROM entries {where};";
+            return Convert.ToInt32(command.ExecuteScalar());
+        }
     }
 
     /// <summary>
@@ -754,26 +816,32 @@ public sealed partial class EntryStore : IDisposable
     /// </summary>
     public IReadOnlyList<Entry> Page(int limit, int offset)
     {
-        using var command = _connection.CreateCommand();
-        command.CommandText = """
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from, image_width, image_height,
-                   (SELECT group_concat(t.name, char(31)) FROM tags t
-                      JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
-            FROM entries
-            ORDER BY pinned DESC, created_at DESC, id DESC
-            LIMIT $limit OFFSET $offset;
-            """;
-        command.Parameters.AddWithValue("$limit", limit);
-        command.Parameters.AddWithValue("$offset", offset);
+        lock (_gate)
+        {
+            using var command = _connection.CreateCommand();
+            command.CommandText = """
+                SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from, image_width, image_height,
+                       (SELECT group_concat(t.name, char(31)) FROM tags t
+                          JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
+                FROM entries
+                ORDER BY pinned DESC, created_at DESC, id DESC
+                LIMIT $limit OFFSET $offset;
+                """;
+            command.Parameters.AddWithValue("$limit", limit);
+            command.Parameters.AddWithValue("$offset", offset);
 
-        return ReadEntries(command);
+            return ReadEntries(command);
+        }
     }
 
     public int Count()
     {
-        using var command = _connection.CreateCommand();
-        command.CommandText = "SELECT COUNT(*) FROM entries;";
-        return Convert.ToInt32(command.ExecuteScalar());
+        lock (_gate)
+        {
+            using var command = _connection.CreateCommand();
+            command.CommandText = "SELECT COUNT(*) FROM entries;";
+            return Convert.ToInt32(command.ExecuteScalar());
+        }
     }
 
     /// <summary>
@@ -782,33 +850,42 @@ public sealed partial class EntryStore : IDisposable
     /// </summary>
     public int CountProtected(bool keepFavorites, bool keepPinned)
     {
-        using var command = _connection.CreateCommand();
-        command.CommandText = $"SELECT COUNT(*) FROM entries WHERE {ProtectedConditionFor(keepFavorites, keepPinned)};";
-        return Convert.ToInt32(command.ExecuteScalar());
+        lock (_gate)
+        {
+            using var command = _connection.CreateCommand();
+            command.CommandText = $"SELECT COUNT(*) FROM entries WHERE {ProtectedConditionFor(keepFavorites, keepPinned)};";
+            return Convert.ToInt32(command.ExecuteScalar());
+        }
     }
 
     /// <summary>The protected entries inside a time range — for a range delete's confirmation copy.</summary>
     public int CountProtectedBetween(
         DateTimeOffset from, DateTimeOffset to, bool keepFavorites, bool keepPinned)
     {
-        using var command = _connection.CreateCommand();
-        command.CommandText = $"""
-            SELECT COUNT(*) FROM entries
-            WHERE created_at BETWEEN $from AND $to
-              AND {ProtectedConditionFor(keepFavorites, keepPinned)};
-            """;
-        command.Parameters.AddWithValue("$from", from.ToUnixTimeMilliseconds());
-        command.Parameters.AddWithValue("$to", to.ToUnixTimeMilliseconds());
-        return Convert.ToInt32(command.ExecuteScalar());
+        lock (_gate)
+        {
+            using var command = _connection.CreateCommand();
+            command.CommandText = $"""
+                SELECT COUNT(*) FROM entries
+                WHERE created_at BETWEEN $from AND $to
+                  AND {ProtectedConditionFor(keepFavorites, keepPinned)};
+                """;
+            command.Parameters.AddWithValue("$from", from.ToUnixTimeMilliseconds());
+            command.Parameters.AddWithValue("$to", to.ToUnixTimeMilliseconds());
+            return Convert.ToInt32(command.ExecuteScalar());
+        }
     }
 
     /// <summary>Returns whether there was anything to delete.</summary>
     public bool Delete(long id)
     {
-        using var command = _connection.CreateCommand();
-        command.CommandText = "DELETE FROM entries WHERE id = $id;";
-        command.Parameters.AddWithValue("$id", id);
-        return command.ExecuteNonQuery() > 0;
+        lock (_gate)
+        {
+            using var command = _connection.CreateCommand();
+            command.CommandText = "DELETE FROM entries WHERE id = $id;";
+            command.Parameters.AddWithValue("$id", id);
+            return command.ExecuteNonQuery() > 0;
+        }
     }
 
     /// <summary>
@@ -821,15 +898,18 @@ public sealed partial class EntryStore : IDisposable
     public int DeleteCreatedBetween(
         DateTimeOffset from, DateTimeOffset to, bool keepFavorites = false, bool keepPinned = false)
     {
-        using var command = _connection.CreateCommand();
-        command.CommandText = $"""
-            DELETE FROM entries
-            WHERE created_at BETWEEN $from AND $to
-              AND NOT ({ProtectedConditionFor(keepFavorites, keepPinned)});
-            """;
-        command.Parameters.AddWithValue("$from", from.ToUnixTimeMilliseconds());
-        command.Parameters.AddWithValue("$to", to.ToUnixTimeMilliseconds());
-        return command.ExecuteNonQuery();
+        lock (_gate)
+        {
+            using var command = _connection.CreateCommand();
+            command.CommandText = $"""
+                DELETE FROM entries
+                WHERE created_at BETWEEN $from AND $to
+                  AND NOT ({ProtectedConditionFor(keepFavorites, keepPinned)});
+                """;
+            command.Parameters.AddWithValue("$from", from.ToUnixTimeMilliseconds());
+            command.Parameters.AddWithValue("$to", to.ToUnixTimeMilliseconds());
+            return command.ExecuteNonQuery();
+        }
     }
 
     /// <summary>
@@ -861,9 +941,12 @@ public sealed partial class EntryStore : IDisposable
     /// </summary>
     public int DeleteAll(bool keepFavorites = false, bool keepPinned = false)
     {
-        using var command = _connection.CreateCommand();
-        command.CommandText = $"DELETE FROM entries WHERE NOT ({ProtectedConditionFor(keepFavorites, keepPinned)});";
-        return command.ExecuteNonQuery();
+        lock (_gate)
+        {
+            using var command = _connection.CreateCommand();
+            command.CommandText = $"DELETE FROM entries WHERE NOT ({ProtectedConditionFor(keepFavorites, keepPinned)});";
+            return command.ExecuteNonQuery();
+        }
     }
 
     /// <summary>
@@ -879,27 +962,33 @@ public sealed partial class EntryStore : IDisposable
     /// </summary>
     public void Touch(long id, DateTimeOffset at)
     {
-        using var command = _connection.CreateCommand();
-        command.CommandText = "UPDATE entries SET created_at = $createdAt WHERE id = $id;";
-        command.Parameters.AddWithValue("$createdAt", at.ToUnixTimeMilliseconds());
-        command.Parameters.AddWithValue("$id", id);
-        command.ExecuteNonQuery();
+        lock (_gate)
+        {
+            using var command = _connection.CreateCommand();
+            command.CommandText = "UPDATE entries SET created_at = $createdAt WHERE id = $id;";
+            command.Parameters.AddWithValue("$createdAt", at.ToUnixTimeMilliseconds());
+            command.Parameters.AddWithValue("$id", id);
+            command.ExecuteNonQuery();
+        }
     }
 
     public IReadOnlyList<Entry> Recent(int limit)
     {
-        using var command = _connection.CreateCommand();
-        command.CommandText = """
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from, image_width, image_height,
-                   (SELECT group_concat(t.name, char(31)) FROM tags t
-                      JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
-            FROM entries
-            ORDER BY pinned DESC, created_at DESC, id DESC
-            LIMIT $limit;
-            """;
-        command.Parameters.AddWithValue("$limit", limit);
+        lock (_gate)
+        {
+            using var command = _connection.CreateCommand();
+            command.CommandText = """
+                SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from, image_width, image_height,
+                       (SELECT group_concat(t.name, char(31)) FROM tags t
+                          JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
+                FROM entries
+                ORDER BY pinned DESC, created_at DESC, id DESC
+                LIMIT $limit;
+                """;
+            command.Parameters.AddWithValue("$limit", limit);
 
-        return ReadEntries(command);
+            return ReadEntries(command);
+        }
     }
 
     /// <summary>A column written before an unknown value appeared — never worth a broken list over.</summary>
@@ -949,6 +1038,66 @@ public sealed partial class EntryStore : IDisposable
         return entries;
     }
 
+    /// <summary>
+    /// Runs <paramref name="work"/> as one transaction: every write inside it
+    /// lands together, or — when it throws — none does. Members that would
+    /// open a transaction of their own join this one instead, since SQLite
+    /// cannot nest them. The gate is held throughout and every other caller
+    /// waits, so the work should be writes already prepared — never reading
+    /// files or waiting on anything.
+    /// </summary>
+    internal void RunInTransaction(Action work)
+    {
+        lock (_gate)
+        {
+            if (_batch is not null)
+            {
+                work();
+                return;
+            }
+
+            using var transaction = _connection.BeginTransaction();
+            _batch = transaction;
+            try
+            {
+                work();
+                transaction.Commit();
+            }
+            finally
+            {
+                _batch = null;
+            }
+        }
+    }
+
+    /// <summary>A write that spans statements: inside the open batch when there is one, else in its own transaction.</summary>
+    private WriteScope BeginWrite()
+        => _batch is { } open
+            ? new WriteScope(open, owned: false)
+            : new WriteScope(_connection.BeginTransaction(), owned: true);
+
+    private readonly struct WriteScope(SqliteTransaction transaction, bool owned) : IDisposable
+    {
+        public SqliteTransaction Transaction => transaction;
+
+        /// <summary>A joined write commits when its batch does, never on its own.</summary>
+        public void Commit()
+        {
+            if (owned)
+            {
+                transaction.Commit();
+            }
+        }
+
+        public void Dispose()
+        {
+            if (owned)
+            {
+                transaction.Dispose();
+            }
+        }
+    }
+
     private void Execute(string sql)
     {
         using var command = _connection.CreateCommand();
@@ -956,5 +1105,11 @@ public sealed partial class EntryStore : IDisposable
         command.ExecuteNonQuery();
     }
 
-    public void Dispose() => _connection.Dispose();
+    public void Dispose()
+    {
+        lock (_gate)
+        {
+            _connection.Dispose();
+        }
+    }
 }

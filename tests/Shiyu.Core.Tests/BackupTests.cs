@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Text;
 using Shiyu.Core;
 
@@ -74,9 +75,10 @@ public class BackupTests : IDisposable
         Assert.Equal(0, store.Count());
 
         var outcome = BackupArchive.Import(
-            backup, store, _images, overwrite: true, applySettings: _ => { }, passwordUtf16: null);
+            backup, store, _images, overwrite: true, passwordUtf16: null);
 
         Assert.Equal(3, outcome.Added);
+        Assert.Equal("{}", outcome.SettingsJson);
         var restored = store.Recent(limit: 10);
         Assert.Equal(3, restored.Count);
 
@@ -107,12 +109,12 @@ public class BackupTests : IDisposable
         Assert.Equal("SHIYUBK1"u8.ToArray(), magic.Take(8).ToArray());
 
         var wrong = Assert.Throws<BackupException>(() =>
-            BackupArchive.Import(backup, store, _images, overwrite: false, applySettings: null, PasswordOf("battery staple")));
+            BackupArchive.Import(backup, store, _images, overwrite: false, PasswordOf("battery staple")));
         Assert.Contains("口令", wrong.Message);
 
         store.ClearAll();
         var outcome = BackupArchive.Import(
-            backup, store, _images, overwrite: true, applySettings: _ => { }, PasswordOf("correct horse"));
+            backup, store, _images, overwrite: true, PasswordOf("correct horse"));
         Assert.Equal(3, outcome.Added);
     }
 
@@ -124,7 +126,7 @@ public class BackupTests : IDisposable
         BackupArchive.Export(backup, store, _images, settingsJson: null, PasswordOf("secret"));
 
         var error = Assert.Throws<BackupException>(() =>
-            BackupArchive.Import(backup, store, _images, overwrite: false, applySettings: null, passwordUtf16: null));
+            BackupArchive.Import(backup, store, _images, overwrite: false, passwordUtf16: null));
         Assert.Contains("口令", error.Message);
     }
 
@@ -136,14 +138,15 @@ public class BackupTests : IDisposable
         BackupArchive.Export(backup, store, _images, settingsJson: null, passwordUtf16: null);
 
         var first = BackupArchive.Import(
-            backup, store, _images, overwrite: false, applySettings: null, passwordUtf16: null);
+            backup, store, _images, overwrite: false, passwordUtf16: null);
         Assert.Equal(3, first.SkippedExisting);
         Assert.Equal(0, first.Added);
+        Assert.Null(first.SettingsJson);
 
         using var other = EntryStore.Open(new TempDatabase().FilePath);
         other.Append("something new", "ZCode", Noon);
         BackupArchive.Import(
-            backup, other, _images, overwrite: false, applySettings: null, passwordUtf16: null);
+            backup, other, _images, overwrite: false, passwordUtf16: null);
 
         Assert.Equal(4, other.Count());
         Assert.Single(other.Recent(limit: 10), entry => entry.Text == "something new");
@@ -162,7 +165,7 @@ public class BackupTests : IDisposable
         BackupArchive.Export(backup, other, _images, settingsJson: null, passwordUtf16: null);
 
         var outcome = BackupArchive.Import(
-            backup, store, _images, overwrite: false, applySettings: null, passwordUtf16: null);
+            backup, store, _images, overwrite: false, passwordUtf16: null);
         Assert.Equal(1, outcome.SkippedExisting);
         Assert.Equal(0, outcome.Added);
     }
@@ -175,18 +178,18 @@ public class BackupTests : IDisposable
         var junk = Path.Combine(_images, "junk.shiyubk");
         File.WriteAllBytes(junk, "definitely not a backup"u8.ToArray());
         var error = Assert.Throws<BackupException>(() =>
-            BackupArchive.Import(junk, store, _images, overwrite: false, applySettings: null, passwordUtf16: null));
+            BackupArchive.Import(junk, store, _images, overwrite: false, passwordUtf16: null));
         Assert.Contains("拾语", error.Message);
 
         var truncated = Path.Combine(_images, "cut.shiyubk");
         File.WriteAllBytes(truncated, "SHIYUBK1"u8.ToArray());
         Assert.Throws<BackupException>(() =>
-            BackupArchive.Import(truncated, store, _images, overwrite: false, applySettings: null, PasswordOf("x")));
+            BackupArchive.Import(truncated, store, _images, overwrite: false, PasswordOf("x")));
 
         // A refused import leaves what was there.
         store.Append("survivor", "ZCode", Noon);
         Assert.Throws<BackupException>(() =>
-            BackupArchive.Import(junk, store, _images, overwrite: false, applySettings: null, passwordUtf16: null));
+            BackupArchive.Import(junk, store, _images, overwrite: false, passwordUtf16: null));
         Assert.Equal(1, store.Count());
     }
 
@@ -202,7 +205,7 @@ public class BackupTests : IDisposable
         using var target = EntryStore.Open(new TempDatabase().FilePath);
         target.Append("old world", "explorer", Noon);
         var outcome = BackupArchive.Import(
-            backup, target, _images, overwrite: true, applySettings: null, passwordUtf16: null);
+            backup, target, _images, overwrite: true, passwordUtf16: null);
 
         Assert.Equal(4, outcome.Added);
         Assert.Equal(4, target.Count());
@@ -230,5 +233,157 @@ public class BackupTests : IDisposable
 
         Assert.Equal(ContentFingerprint.Of(one), ContentFingerprint.Of(two));
         Assert.NotEqual(ContentFingerprint.Of(one), ContentFingerprint.Of(three));
+    }
+
+    // --- atomicity (O-03) ---------------------------------------------------
+
+    /// <summary>
+    /// A moment-in-time picture of the library and its images — one string, so
+    /// two pictures compare by content and a diff names what moved.
+    /// </summary>
+    private static string Snapshot(EntryStore store, string imagesDirectory)
+        => string.Join("|",
+            store.Count(),
+            string.Join(",", store.Recent(limit: 100).Select(entry => entry.Text).OrderBy(text => text)),
+            string.Join(",", store.Groups().Select(group => group.Name + (group.Hidden ? "!" : "")).OrderBy(name => name)),
+            string.Join(",", store.AllTags().OrderBy(tag => tag)),
+            Directory.Exists(imagesDirectory)
+                ? string.Join(",", Directory.GetFiles(imagesDirectory).Select(Path.GetFileName).OrderBy(name => name))
+                : string.Empty);
+
+    [Fact]
+    public void An_overwrite_that_fails_part_way_leaves_the_library_and_the_images_exactly_as_they_were()
+    {
+        using var source = SeededStore();
+        var backup = Path.Combine(_images, "half.shiyubk");
+        BackupArchive.Export(backup, source, _images, settingsJson: null, passwordUtf16: null);
+
+        using var database = new TempDatabase();
+        using var store = EntryStore.Open(database.FilePath);
+        store.Append("old world", "explorer", Noon);
+        store.CreateGroup("旧分组");
+        File.WriteAllBytes(Path.Combine(_images, "existing.png"), [9, 9, 9, 9]);
+
+        // Fails the import after the clear, on the very first insert — the
+        // point where the old implementation had already committed an empty
+        // history. RAISE(ABORT) is what a constraint or disk failure looks
+        // like to SqliteTransaction; a TEMP trigger leaves no schema trace
+        // once the connection is gone.
+        using (var sabotage = store.Connection.CreateCommand())
+        {
+            sabotage.CommandText = """
+                CREATE TEMP TRIGGER break_import AFTER INSERT ON entries
+                BEGIN SELECT RAISE(ABORT, 'import cut short'); END;
+                """;
+            sabotage.ExecuteNonQuery();
+        }
+
+        var before = Snapshot(store, _images);
+        var failure = Assert.Throws<BackupException>(() =>
+            BackupArchive.Import(backup, store, _images, overwrite: true, passwordUtf16: null));
+
+        Assert.Contains("撤回", failure.Message);
+        Assert.Equal(before, Snapshot(store, _images));
+        Assert.False(Directory.Exists(_images + ".import"), "the staging directory must not outlive a failed import");
+
+        // And the library is still usable: removing the fault and retrying
+        // lands the whole import, images included.
+        using (var repair = store.Connection.CreateCommand())
+        {
+            repair.CommandText = "DROP TRIGGER break_import;";
+            repair.ExecuteNonQuery();
+        }
+
+        var outcome = BackupArchive.Import(backup, store, _images, overwrite: true, passwordUtf16: null);
+        Assert.Equal(3, outcome.Added);
+        // The original was already on disk from the fixture, so nothing moves;
+        // the entry still points at a file that is there.
+        Assert.True(File.Exists(Path.Combine(_images, "original.png")));
+    }
+
+    [Fact]
+    public void A_backup_with_unreadable_entries_is_refused_before_a_single_row_changes()
+    {
+        var backup = Path.Combine(_images, "corrupt.shiyubk");
+        using (var zip = ZipFile.Open(backup, ZipArchiveMode.Create))
+        {
+            ZipEntry(zip, "manifest.json", """{"Format":1,"CreatedAtMs":0,"Entries":2,"Images":0,"Encrypted":false}""");
+            ZipEntry(zip, "groups.json", "[]");
+            ZipEntry(zip, "settings.json", "{}");
+            ZipEntry(zip, "entries.json", "[{\"Text\":\"broken");
+        }
+
+        using var store = EntryStore.Open(_database.FilePath);
+        store.Append("survivor", "ZCode", Noon);
+        var before = Snapshot(store, _images);
+
+        var failure = Assert.Throws<BackupException>(() =>
+            BackupArchive.Import(backup, store, _images, overwrite: true, passwordUtf16: null));
+        Assert.Contains("损坏", failure.Message);
+
+        Assert.Equal(before, Snapshot(store, _images));
+        Assert.False(Directory.Exists(_images + ".import"));
+    }
+
+    [Fact]
+    public void An_overwrite_into_a_fresh_images_directory_lands_counts_groups_and_originals()
+    {
+        using var source = SeededStore();
+        var backup = Path.Combine(_images, "fresh.shiyubk");
+        BackupArchive.Export(backup, source, _images, settingsJson: null, passwordUtf16: null);
+
+        var freshImages = Path.Combine(_images, "fresh-images");
+        using var database = new TempDatabase();
+        using var store = EntryStore.Open(database.FilePath);
+
+        var outcome = BackupArchive.Import(
+            backup, store, freshImages, overwrite: true, passwordUtf16: null);
+
+        Assert.Equal(3, outcome.Added);
+        Assert.Equal(1, outcome.ImagesRestored);
+        Assert.Equal(1, outcome.GroupsCreated);
+        Assert.Equal(3, store.Count());
+
+        var image = store.Recent(limit: 10).Single(entry => entry.Kind == EntryKind.Image);
+        Assert.Equal(Path.Combine(freshImages, "original.png"), image.OriginalPath);
+        Assert.True(File.Exists(image.OriginalPath));
+        Assert.Equal("甲", Assert.Single(store.Groups()).Icon);
+        Assert.False(Directory.Exists(freshImages + ".import"));
+    }
+
+    [Fact]
+    public void A_merge_that_fails_part_way_also_rolls_back_to_the_letter()
+    {
+        using var other = EntryStore.Open(new TempDatabase().FilePath);
+        other.Append("same words", "ZCode", Noon);
+        other.Append("brand new", "ZCode", Noon.AddMinutes(1));
+        var backup = Path.Combine(_images, "merge-fail.shiyubk");
+        BackupArchive.Export(backup, other, _images, settingsJson: null, passwordUtf16: null);
+
+        using var store = EntryStore.Open(_database.FilePath);
+        store.Append("same words", "another machine", Noon);
+
+        using (var sabotage = store.Connection.CreateCommand())
+        {
+            sabotage.CommandText = """
+                CREATE TEMP TRIGGER break_merge AFTER INSERT ON entries
+                BEGIN SELECT RAISE(ABORT, 'merge cut short'); END;
+                """;
+            sabotage.ExecuteNonQuery();
+        }
+
+        var before = Snapshot(store, _images);
+        Assert.Throws<BackupException>(() =>
+            BackupArchive.Import(backup, store, _images, overwrite: false, passwordUtf16: null));
+
+        Assert.Equal(before, Snapshot(store, _images));
+        Assert.False(Directory.Exists(_images + ".import"));
+    }
+
+    private static void ZipEntry(ZipArchive zip, string name, string content)
+    {
+        var entry = zip.CreateEntry(name);
+        using var writer = new StreamWriter(entry.Open());
+        writer.Write(content);
     }
 }

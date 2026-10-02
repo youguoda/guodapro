@@ -5,17 +5,20 @@ public sealed partial class EntryStore
     /// <summary>One entry by id, or null — the batch translator's lookup.</summary>
     public Entry? Get(long id)
     {
-        using var command = _connection.CreateCommand();
-        command.CommandText = """
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from, image_width, image_height,
-                   (SELECT group_concat(t.name, char(31)) FROM tags t
-                      JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
-            FROM entries
-            WHERE id = $id;
-            """;
-        command.Parameters.AddWithValue("$id", id);
+        lock (_gate)
+        {
+            using var command = _connection.CreateCommand();
+            command.CommandText = """
+                SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from, image_width, image_height,
+                       (SELECT group_concat(t.name, char(31)) FROM tags t
+                          JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
+                FROM entries
+                WHERE id = $id;
+                """;
+            command.Parameters.AddWithValue("$id", id);
 
-        return ReadEntries(command).FirstOrDefault();
+            return ReadEntries(command).FirstOrDefault();
+        }
     }
 
     /// <summary>
@@ -25,19 +28,22 @@ public sealed partial class EntryStore
     /// </summary>
     public Entry AppendTranslation(string text, string? sourceApp, DateTimeOffset createdAt, long? translatedFrom)
     {
-        using var command = _connection.CreateCommand();
-        command.CommandText = """
-            INSERT INTO entries (text, source_app, created_at, kind, translated_from)
-            VALUES ($text, $sourceApp, $createdAt, 0, $from)
-            RETURNING id;
-            """;
-        command.Parameters.AddWithValue("$text", text);
-        command.Parameters.AddWithValue("$sourceApp", (object?)sourceApp ?? DBNull.Value);
-        command.Parameters.AddWithValue("$createdAt", createdAt.ToUnixTimeMilliseconds());
-        command.Parameters.AddWithValue("$from", (object?)translatedFrom ?? DBNull.Value);
+        lock (_gate)
+        {
+            using var command = _connection.CreateCommand();
+            command.CommandText = """
+                INSERT INTO entries (text, source_app, created_at, kind, translated_from)
+                VALUES ($text, $sourceApp, $createdAt, 0, $from)
+                RETURNING id;
+                """;
+            command.Parameters.AddWithValue("$text", text);
+            command.Parameters.AddWithValue("$sourceApp", (object?)sourceApp ?? DBNull.Value);
+            command.Parameters.AddWithValue("$createdAt", createdAt.ToUnixTimeMilliseconds());
+            command.Parameters.AddWithValue("$from", (object?)translatedFrom ?? DBNull.Value);
 
-        var id = (long)command.ExecuteScalar()!;
-        return new Entry(id, text, sourceApp, createdAt) { TranslatedFrom = translatedFrom };
+            var id = (long)command.ExecuteScalar()!;
+            return new Entry(id, text, sourceApp, createdAt) { TranslatedFrom = translatedFrom };
+        }
     }
 }
 

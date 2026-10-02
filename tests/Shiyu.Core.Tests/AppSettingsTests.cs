@@ -157,4 +157,63 @@ public class AppSettingsTests
             catch (IOException) { }
         }
     }
+
+    // --- TryParse: the gate a settings restore has to pass (O-02) -----------
+
+    [Fact]
+    public void TryParse_accepts_a_saved_settings_file_and_upgrades_former_defaults()
+    {
+        using var file = new TempFile();
+        var saved = new AppSettings { TargetLanguage = "Japanese", ImageRetentionDays = 14 };
+        saved.Save(file.Path_);
+
+        Assert.True(AppSettings.TryParse(File.ReadAllText(file.Path_), out var parsed));
+        Assert.Equal("Japanese", parsed.TargetLanguage);
+        Assert.Equal(14, parsed.ImageRetentionDays);
+
+        // The action-list upgrade Load does belongs to parsing, not to the
+        // file: a restore of an old default must not re-import the old list.
+        var old = new AppSettings { BarActions = ["copy", "paste", "plain", "open", "locate", "pin", "delete"] };
+        Assert.True(AppSettings.TryParse(
+            System.Text.Json.JsonSerializer.Serialize(old), out var upgraded));
+        Assert.Equal(HoverActions.All, upgraded.BarActions);
+    }
+
+    [Fact]
+    public void TryParse_refuses_malformed_json_rather_than_defaulting_silently()
+    {
+        Assert.False(AppSettings.TryParse("{ this is not json", out var fromJunk));
+        Assert.Null(fromJunk);
+
+        // The restore path hinges on this difference from Load: Load quietly
+        // falls back to defaults because startup must survive; TryParse says
+        // no so the restore can keep the current settings instead.
+        Assert.True(AppSettings.TryParse("{}", out var empty));
+        Assert.Equal("Chinese", empty.TargetLanguage);
+    }
+
+    [Fact]
+    public void TryParse_refuses_empty_and_null_input()
+    {
+        Assert.False(AppSettings.TryParse("", out var empty));
+        Assert.Null(empty);
+
+        Assert.False(AppSettings.TryParse("   ", out var blank));
+        Assert.Null(blank);
+
+        Assert.False(AppSettings.TryParse("null", out var explicitNull));
+        Assert.Null(explicitNull);
+    }
+
+    [Fact]
+    public void TryParse_fills_missing_fields_with_defaults()
+    {
+        Assert.True(AppSettings.TryParse("""{"TargetLanguage":"Japanese"}""", out var parsed));
+
+        Assert.Equal("Japanese", parsed.TargetLanguage);
+        Assert.True(parsed.StartWithWindows);
+        Assert.Equal(30, parsed.ImageRetentionDays);
+        Assert.Equal("Ctrl+Shift+Z", parsed.CaptureHotkey);
+        Assert.Empty(parsed.ExclusionRules);
+    }
 }
