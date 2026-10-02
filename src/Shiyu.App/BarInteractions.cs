@@ -309,7 +309,9 @@ internal partial class BarWindow
         // count on the press is the same information.
         if (e.ClickCount == 2)
         {
-            _clipboard.SetText(card.Text);
+            // 双击 = 粘贴（ADR-0012 #9）：窄条与快速条动词统一——两处都是
+            // "挑来用"的界面；复制交给托盘的 C 钮与 C 键。
+            PasteEntry(card);
         }
     }
 
