@@ -11,122 +11,128 @@ public sealed partial class EntryStore
     /// chronology stops helping with those.
     /// </summary>
     public void SetPinned(long id, bool pinned)
-    {
-        lock (_gate)
+        => Write(() =>
         {
-            using var command = _connection.CreateCommand();
-            command.CommandText = "UPDATE entries SET pinned = $pinned WHERE id = $id;";
-            command.Parameters.AddWithValue("$pinned", pinned ? 1 : 0);
-            command.Parameters.AddWithValue("$id", id);
-            command.ExecuteNonQuery();
-        }
-    }
+            lock (_gate)
+            {
+                using var command = _connection.CreateCommand();
+                command.CommandText = "UPDATE entries SET pinned = $pinned WHERE id = $id;";
+                command.Parameters.AddWithValue("$pinned", pinned ? 1 : 0);
+                command.Parameters.AddWithValue("$id", id);
+                command.ExecuteNonQuery();
+            }
+        });
 
     /// <summary>
     /// Favourites or unfavourites an entry. A favourite never moves the entry:
     /// belonging to a collection is the pin's job, a favourite only joins one.
     /// </summary>
     public void SetFavorite(long id, bool favorite)
-    {
-        lock (_gate)
+        => Write(() =>
         {
-            using var command = _connection.CreateCommand();
-            command.CommandText = "UPDATE entries SET favorite = $favorite WHERE id = $id;";
-            command.Parameters.AddWithValue("$favorite", favorite ? 1 : 0);
-            command.Parameters.AddWithValue("$id", id);
-            command.ExecuteNonQuery();
-        }
-    }
+            lock (_gate)
+            {
+                using var command = _connection.CreateCommand();
+                command.CommandText = "UPDATE entries SET favorite = $favorite WHERE id = $id;";
+                command.Parameters.AddWithValue("$favorite", favorite ? 1 : 0);
+                command.Parameters.AddWithValue("$id", id);
+                command.ExecuteNonQuery();
+            }
+        });
 
     /// <summary>Sets, rewrites, or (with null) removes an entry's note.</summary>
     public void SetNote(long id, string? note)
-    {
-        lock (_gate)
+        => Write(() =>
         {
-            var trimmed = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
+            lock (_gate)
+            {
+                var trimmed = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
 
-            using var command = _connection.CreateCommand();
-            command.CommandText = "UPDATE entries SET note = $note WHERE id = $id;";
-            command.Parameters.AddWithValue("$note", (object?)trimmed ?? DBNull.Value);
-            command.Parameters.AddWithValue("$id", id);
-            command.ExecuteNonQuery();
-        }
-    }
+                using var command = _connection.CreateCommand();
+                command.CommandText = "UPDATE entries SET note = $note WHERE id = $id;";
+                command.Parameters.AddWithValue("$note", (object?)trimmed ?? DBNull.Value);
+                command.Parameters.AddWithValue("$id", id);
+                command.ExecuteNonQuery();
+            }
+        });
 
     /// <summary>
     /// Counts one more use — the entry was copied or pasted back into the
     /// world again.
     /// </summary>
     public void BumpUse(long id)
-    {
-        lock (_gate)
+        => Write(() =>
         {
-            using var command = _connection.CreateCommand();
-            command.CommandText = "UPDATE entries SET use_count = use_count + 1 WHERE id = $id;";
-            command.Parameters.AddWithValue("$id", id);
-            command.ExecuteNonQuery();
-        }
-    }
+            lock (_gate)
+            {
+                using var command = _connection.CreateCommand();
+                command.CommandText = "UPDATE entries SET use_count = use_count + 1 WHERE id = $id;";
+                command.Parameters.AddWithValue("$id", id);
+                command.ExecuteNonQuery();
+            }
+        });
 
     /// <summary>
     /// Attaches a tag, creating it if this is its first use. Comparison ignores
     /// case, so "Work" and "work" are one tag rather than two that look alike.
     /// </summary>
     public void AddTag(long entryId, string tag)
-    {
-        lock (_gate)
+        => Write(() =>
         {
-            var name = tag.Trim();
-            if (name.Length == 0)
+            lock (_gate)
             {
-                return;
+                var name = tag.Trim();
+                if (name.Length == 0)
+                {
+                    return;
+                }
+
+                using var write = BeginWrite();
+
+                using (var insertTag = _connection.CreateCommand())
+                {
+                    insertTag.Transaction = write.Transaction;
+                    insertTag.CommandText = "INSERT OR IGNORE INTO tags (name) VALUES ($name);";
+                    insertTag.Parameters.AddWithValue("$name", name);
+                    insertTag.ExecuteNonQuery();
+                }
+
+                using (var link = _connection.CreateCommand())
+                {
+                    link.Transaction = write.Transaction;
+                    link.CommandText = """
+                        INSERT OR IGNORE INTO entry_tags (entry_id, tag_id)
+                        SELECT $entryId, id FROM tags WHERE name = $name;
+                        """;
+                    link.Parameters.AddWithValue("$entryId", entryId);
+                    link.Parameters.AddWithValue("$name", name);
+                    link.ExecuteNonQuery();
+                }
+
+                write.Commit();
             }
-
-            using var write = BeginWrite();
-
-            using (var insertTag = _connection.CreateCommand())
-            {
-                insertTag.Transaction = write.Transaction;
-                insertTag.CommandText = "INSERT OR IGNORE INTO tags (name) VALUES ($name);";
-                insertTag.Parameters.AddWithValue("$name", name);
-                insertTag.ExecuteNonQuery();
-            }
-
-            using (var link = _connection.CreateCommand())
-            {
-                link.Transaction = write.Transaction;
-                link.CommandText = """
-                    INSERT OR IGNORE INTO entry_tags (entry_id, tag_id)
-                    SELECT $entryId, id FROM tags WHERE name = $name;
-                    """;
-                link.Parameters.AddWithValue("$entryId", entryId);
-                link.Parameters.AddWithValue("$name", name);
-                link.ExecuteNonQuery();
-            }
-
-            write.Commit();
-        }
-    }
+        });
 
     /// <summary>
     /// Detaches a tag from one entry. The tag itself survives — it is almost
     /// certainly on other entries, and removing it here should not disturb them.
     /// </summary>
     public void RemoveTag(long entryId, string tag)
-    {
-        lock (_gate)
+        => Write(() =>
         {
-            using var command = _connection.CreateCommand();
-            command.CommandText = """
-                DELETE FROM entry_tags
-                WHERE entry_id = $entryId
-                  AND tag_id IN (SELECT id FROM tags WHERE name = $name);
-                """;
-            command.Parameters.AddWithValue("$entryId", entryId);
-            command.Parameters.AddWithValue("$name", tag.Trim());
-            command.ExecuteNonQuery();
-        }
-    }
+            lock (_gate)
+            {
+                using var command = _connection.CreateCommand();
+                command.CommandText = """
+                    DELETE FROM entry_tags
+                    WHERE entry_id = $entryId
+                      AND tag_id IN (SELECT id FROM tags WHERE name = $name);
+                    """;
+                command.Parameters.AddWithValue("$entryId", entryId);
+                command.Parameters.AddWithValue("$name", tag.Trim());
+                command.ExecuteNonQuery();
+            }
+        });
 
     public IReadOnlyList<string> TagsOf(long entryId)
     {
@@ -169,15 +175,16 @@ public sealed partial class EntryStore
     /// unpleasant surprise.
     /// </summary>
     public void DeleteTag(string tag)
-    {
-        lock (_gate)
+        => Write(() =>
         {
-            using var command = _connection.CreateCommand();
-            command.CommandText = "DELETE FROM tags WHERE name = $name;";
-            command.Parameters.AddWithValue("$name", tag.Trim());
-            command.ExecuteNonQuery();
-        }
-    }
+            lock (_gate)
+            {
+                using var command = _connection.CreateCommand();
+                command.CommandText = "DELETE FROM tags WHERE name = $name;";
+                command.Parameters.AddWithValue("$name", tag.Trim());
+                command.ExecuteNonQuery();
+            }
+        });
 
     private static IReadOnlyList<string> ReadNames(SqliteCommand command)
     {

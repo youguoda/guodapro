@@ -99,14 +99,29 @@ public class EntryStoreQueryTests
     }
 
     [Fact]
-    public void Paging_walks_the_history_without_asking_for_all_of_it()
+    public void Paging_walks_the_history_by_cursor_without_asking_for_all_of_it()
     {
         using var database = new TempDatabase();
         using var store = Seed(database, "one", "two", "three", "four", "five");
 
-        Assert.Equal(new[] { "five", "four" }, store.Page(limit: 2, offset: 0).Select(e => e.Text));
-        Assert.Equal(new[] { "three", "two" }, store.Page(limit: 2, offset: 2).Select(e => e.Text));
-        Assert.Equal(new[] { "one" }, store.Page(limit: 2, offset: 4).Select(e => e.Text));
+        // Each page continues after the last row the previous one returned —
+        // OFFSET's window-shifting under concurrent copies is what the cursor
+        // exists to prevent (O-22).
+        var walked = new List<string>();
+        PageCursor? after = null;
+        while (true)
+        {
+            var page = store.Page(limit: 2, after);
+            if (page.Count == 0)
+            {
+                break;
+            }
+
+            walked.AddRange(page.Select(entry => entry.Text));
+            after = PageCursor.Of(page[^1]);
+        }
+
+        Assert.Equal(new[] { "five", "four", "three", "two", "one" }, walked);
     }
 
     [Fact]
@@ -146,7 +161,7 @@ public class EntryStoreQueryTests
         Assert.Equal(2, removed);
         Assert.Equal(
             new[] { "recent", "long ago" },
-            store.Page(limit: 10, offset: 0).Select(entry => entry.Text));
+            store.Page(limit: 10).Select(entry => entry.Text));
     }
 
     [Fact]
@@ -157,7 +172,7 @@ public class EntryStoreQueryTests
 
         Assert.Equal(3, store.DeleteAll());
         Assert.Equal(0, store.Count());
-        Assert.Empty(store.Page(limit: 10, offset: 0));
+        Assert.Empty(store.Page(limit: 10));
     }
 
     [Fact]
@@ -200,7 +215,7 @@ public class EntryStoreQueryTests
             .Select(index => new NewEntry($"entry {index}", "test", at.AddSeconds(index))));
 
         // The history is never read wholesale: every read path takes a limit.
-        Assert.Equal(25, store.Page(limit: 25, offset: 0).Count);
+        Assert.Equal(25, store.Page(limit: 25).Count);
         Assert.Equal(25, store.Recent(limit: 25).Count);
     }
 }

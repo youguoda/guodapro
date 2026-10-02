@@ -22,9 +22,16 @@ public partial class QuickBarWindow : Window
 {
     private const int PageSize = 60;
 
+    /// <summary>
+    /// The narrow bar's own keystroke budget: restart on every keystroke, so
+    /// only the pause at the end of typing pays for a query (O-22).
+    /// </summary>
+    private static readonly TimeSpan SearchDelay = TimeSpan.FromMilliseconds(220);
+
     private readonly EntryStore _store;
     private readonly SelectionCapture _capture;
     private readonly ObservableCollection<QuickItem> _items = [];
+    private readonly System.Windows.Threading.DispatcherTimer _searchDebounce;
 
     private ForegroundWindow _returnTo;
 
@@ -36,6 +43,13 @@ public partial class QuickBarWindow : Window
         _capture = capture;
         Items.ItemsSource = _items;
 
+        _searchDebounce = new System.Windows.Threading.DispatcherTimer { Interval = SearchDelay };
+        _searchDebounce.Tick += (_, _) =>
+        {
+            _searchDebounce.Stop();
+            Reload();
+        };
+
         Backdrop.Attach(this, () => BackdropKind.Acrylic);
     }
 
@@ -46,6 +60,10 @@ public partial class QuickBarWindow : Window
         _returnTo = ForegroundWindow.Current();
 
         FilterBox.Text = string.Empty;
+
+        // Clearing the box armed the debounce above; the summon reads now, so
+        // the pending tick has nothing left to do.
+        _searchDebounce.Stop();
         Reload();
 
         if (!IsVisible)
@@ -86,7 +104,7 @@ public partial class QuickBarWindow : Window
     {
         var query = FilterBox.Text;
         var entries = string.IsNullOrWhiteSpace(query)
-            ? _store.Page(PageSize, offset: 0)
+            ? _store.Page(PageSize)
             : _store.Search(query, PageSize);
 
         _items.Clear();
@@ -105,7 +123,13 @@ public partial class QuickBarWindow : Window
         }
     }
 
-    private void OnFilterChanged(object sender, TextChangedEventArgs e) => Reload();
+    private void OnFilterChanged(object sender, TextChangedEventArgs e)
+    {
+        // Debounced, not per keystroke: typing a word is one search, and the
+        // store's work stays inside what a keystroke can hide.
+        _searchDebounce.Stop();
+        _searchDebounce.Start();
+    }
 
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
@@ -176,6 +200,8 @@ public partial class QuickBarWindow : Window
 
     private void Dismiss()
     {
+        _searchDebounce.Stop();
+
         if (IsVisible)
         {
             Hide();

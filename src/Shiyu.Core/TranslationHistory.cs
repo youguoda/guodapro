@@ -2,22 +2,27 @@ namespace Shiyu.Core;
 
 public sealed partial class EntryStore
 {
-    /// <summary>One entry by id, or null — the batch translator's lookup.</summary>
+    /// <summary>
+    /// One entry by id, or null — the batch translator's lookup. The one read
+    /// that joins the payload table: the caller asked for a single entry, so
+    /// the thumbnails and formatted forms ride along.
+    /// </summary>
     public Entry? Get(long id)
     {
         lock (_gate)
         {
             using var command = _connection.CreateCommand();
-            command.CommandText = """
-                SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from, image_width, image_height,
-                       (SELECT group_concat(t.name, char(31)) FROM tags t
-                          JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
+            command.CommandText = $"""
+                SELECT {NarrowColumns},
+                       b.thumbnail, b.html, b.rtf,
+                       {TagsColumn}
                 FROM entries
-                WHERE id = $id;
+                LEFT JOIN entry_blobs b ON b.entry_id = entries.id
+                WHERE entries.id = $id;
                 """;
             command.Parameters.AddWithValue("$id", id);
 
-            return ReadEntries(command).FirstOrDefault();
+            return ReadEntriesWithBlobs(command).FirstOrDefault();
         }
     }
 
@@ -27,24 +32,32 @@ public sealed partial class EntryStore
     /// so through the link, and it deletes like anything else.
     /// </summary>
     public Entry AppendTranslation(string text, string? sourceApp, DateTimeOffset createdAt, long? translatedFrom)
-    {
-        lock (_gate)
+        => Write(() =>
         {
+            lock (_gate)
+            {
+            // Classified here rather than left NULL for a backfill: the
+            // startup backfill is gone (O-22), so every text row arrives with
+            // its subtype, 'None' included.
+            var subtype = SubtypeClassifier.Detect(text);
+
             using var command = _connection.CreateCommand();
             command.CommandText = """
-                INSERT INTO entries (text, source_app, created_at, kind, translated_from)
-                VALUES ($text, $sourceApp, $createdAt, 0, $from)
+                INSERT INTO entries (text, source_app, created_at, kind, sub_type, translated_from)
+                VALUES ($text, $sourceApp, $createdAt, 0, $subtype, $from)
                 RETURNING id;
                 """;
             command.Parameters.AddWithValue("$text", text);
             command.Parameters.AddWithValue("$sourceApp", (object?)sourceApp ?? DBNull.Value);
             command.Parameters.AddWithValue("$createdAt", createdAt.ToUnixTimeMilliseconds());
+            command.Parameters.AddWithValue("$subtype", subtype.ToString());
             command.Parameters.AddWithValue("$from", (object?)translatedFrom ?? DBNull.Value);
 
             var id = (long)command.ExecuteScalar()!;
-            return new Entry(id, text, sourceApp, createdAt) { TranslatedFrom = translatedFrom };
-        }
-    }
+            CountChanged();
+            return new Entry(id, text, sourceApp, createdAt) { Subtype = subtype, TranslatedFrom = translatedFrom };
+            }
+        });
 }
 
 public sealed partial class ClipboardPipeline

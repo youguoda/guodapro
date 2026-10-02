@@ -172,7 +172,7 @@ internal partial class BarWindow
         cancel.Margin = new Thickness(0);
         var confirm = GroupMenuAction("确认删除", () =>
         {
-            _store.DeleteGroup(group.Id);
+            SelfWrite(() => _store.DeleteGroup(group.Id));
             RefreshGroups();
             ApplyFilter();
             popup.IsOpen = false;
@@ -214,7 +214,7 @@ internal partial class BarWindow
             }
 
             var icon = text.FirstOrDefault(char.IsLetterOrDigit).ToString();
-            _store.CreateGroup(text, icon);
+            SelfWrite(() => _store.CreateGroup(text, icon));
             RefreshGroups();
             popup.IsOpen = false;
         });
@@ -307,7 +307,8 @@ internal partial class BarWindow
             }
 
             var icon = label.FirstOrDefault(char.IsLetterOrDigit).ToString();
-            var id = _store.CreateGroup(label, icon);
+            var id = 0L;
+            SelfWrite(() => id = _store.CreateGroup(label, icon));
             RefreshGroups();
             FileCardInto(card, id);
         };
@@ -331,7 +332,7 @@ internal partial class BarWindow
 
     private void FileCardInto(BarCard card, long? groupId)
     {
-        _store.SetEntryGroup(card.Id, groupId);
+        SelfWrite(() => _store.SetEntryGroup(card.Id, groupId));
         card.GroupBadge = groupId is { } id && _groupsById.TryGetValue(id, out var group)
             ? group.Name
             : null;

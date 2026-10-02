@@ -21,7 +21,8 @@ public class FormattedEntryTests
 
         clipboard.Emit("formatted text", html: "<p>formatted <b>text</b></p>", rtf: @"{\rtf1 hi}");
 
-        var entry = Assert.Single(store.Recent(limit: 10));
+        var listed = Assert.Single(store.Recent(limit: 10));
+        var entry = store.Get(listed.Id)!;
         Assert.Equal("<p>formatted <b>text</b></p>", entry.Html);
         Assert.Equal(@"{\rtf1 hi}", entry.Rtf);
     }
@@ -36,9 +37,9 @@ public class FormattedEntryTests
 
         clipboard.Emit("whole page", html: "<p>" + new string('x', 600_000) + "</p>");
 
-        var entry = Assert.Single(store.Recent(limit: 10));
-        Assert.Equal("whole page", entry.Text);
-        Assert.Null(entry.Html);
+        var listed = Assert.Single(store.Recent(limit: 10));
+        Assert.Equal("whole page", listed.Text);
+        Assert.Null(store.Get(listed.Id)!.Html);
     }
 
     [Fact]
