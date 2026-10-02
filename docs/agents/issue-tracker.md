@@ -10,6 +10,14 @@ Issues and specs (you may know a spec as a PRD) for this repo live as markdown f
 - Triage state is recorded as a `Status:` line near the top of each issue file (see `triage-labels.md` for the role strings)
 - Comments and conversation history append to the bottom of the file under a `## Comments` heading
 
+## WIP limit (verification debt)
+
+In this repo `ready-for-human` means "implemented by an agent, waiting for the human's
+real-machine acceptance". When more than **5** tickets sit in `ready-for-human`, do not
+open new **feature** tickets. Fix, verification and delivery-chain tickets are exempt —
+they are how the debt gets paid down. (Adopted 2026-10-01; see
+`docs/review/2026-10-01-optimization-plan.md` O-25.)
+
 ## When a skill says "publish to the issue tracker"
 
 Create a new file under `.scratch/<feature-slug>/` (creating the directory if needed).
