@@ -27,6 +27,7 @@ public partial class App : Application
     private ImageArchive? _images;
     private System.Windows.Threading.DispatcherTimer? _retention;
     private SettingsWindow? _settingsWindow;
+    private UpdateWindow? _updateWindow;
     private ThemeManager? _theme;
     private BarWindow? _bar;
     private AppIconCache? _icons;
@@ -209,11 +210,21 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// The manual entrance to the updater: one window, from the tray menu.
+    /// The manual entrance to the updater: one window at a time, from the tray
+    /// menu or the startup probe — a second click activates the first one
+    /// instead of stacking a racing download beside it.
     /// </summary>
     private void ShowUpdateWindow()
     {
-        new UpdateWindow(new UpdateService(AppPaths.DataDirectory)) { Owner = null }.Show();
+        if (_updateWindow is not null)
+        {
+            _updateWindow.Activate();
+            return;
+        }
+
+        _updateWindow = new UpdateWindow(new UpdateService(AppPaths.DataDirectory));
+        _updateWindow.Closed += (_, _) => _updateWindow = null;
+        _updateWindow.Show();
     }
 
     /// <summary>
@@ -678,6 +689,7 @@ public partial class App : Application
         _retention?.Stop();
         _theme?.Dispose();
         _settingsWindow?.Close();
+        _updateWindow?.Close();
         SaveBarGeometry(this, EventArgs.Empty);
         _bar?.Close();
         _quickBar?.CloseForGood();
