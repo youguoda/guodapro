@@ -29,6 +29,15 @@ internal partial class BarWindow : Window
     private readonly WindowsClipboardWriter _clipboard;
     private readonly SelectionCapture _capture;
     private readonly FileTypeIcons _fileIcons;
+
+    /// <summary>
+    /// The shared file-existence verdicts (O-36): every renderer — cards,
+    /// the preview panel — reads this instead of the disk, and background
+    /// probes fill it. Shared with the preview window on purpose: a path
+    /// probed for a card is a path the preview never has to wait for.
+    /// </summary>
+    private readonly FileExistenceCache _fileProbe;
+
     private readonly HistoryBrowser _browser;
     private readonly ObservableCollection<BarCard> _pinned = [];
     private readonly ObservableCollection<BarCard> _cards = [];
@@ -36,14 +45,15 @@ internal partial class BarWindow : Window
 
     // --- preview panel (ticket 17) ------------------------------------------------
     // The policy decides when the preview opens, follows, and closes; this
-    // window supplies the events and owns the timers. One repeating tick
-    // drives every time-based decision, so there are no drifting timers.
+    // window supplies the events and owns the timers. Time-based decisions
+    // each arm one single-shot timer for exactly the pending deadline (O-37),
+    // so a bar that is merely visible asks the scheduler for nothing.
 
     private PreviewWindow? _preview;
 
     private PreviewPolicy _previewPolicy = new(500, () => Environment.TickCount64);
 
-    private readonly System.Windows.Threading.DispatcherTimer _previewTick;
+    private System.Windows.Threading.DispatcherTimer? _previewTick;
 
     private BarCard? _selected;
     private AppSettings _settings;
@@ -66,7 +76,8 @@ internal partial class BarWindow : Window
         WindowsClipboardWriter clipboard,
         SelectionCapture capture,
         AppSettings settings,
-        FileTypeIcons fileIcons)
+        FileTypeIcons fileIcons,
+        FileExistenceCache? fileProbe = null)
     {
         InitializeComponent();
 
@@ -76,6 +87,7 @@ internal partial class BarWindow : Window
         _capture = capture;
         _settings = settings;
         _fileIcons = fileIcons;
+        _fileProbe = fileProbe ?? new FileExistenceCache();
         _browser = new HistoryBrowser(store);
 
         _searchDebounce = new System.Windows.Threading.DispatcherTimer { Interval = SearchDelay };
@@ -92,8 +104,6 @@ internal partial class BarWindow : Window
         _store.Changed += OnStoreChanged;
 
         _previewPolicy = new PreviewPolicy(settings.PreviewHoverDelayMs, () => Environment.TickCount64);
-        _previewTick = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
-        _previewTick.Tick += (_, _) => RunPreviewCommand(_previewPolicy.Tick());
 
         // Win11 material behind the sheet (ticket 30): the window went layered
         // in XAML, which is the only surface the backdrop renders on.
@@ -134,6 +144,7 @@ internal partial class BarWindow : Window
         // A changed dwell or a disabled hover takes effect on the next event;
         // a preview already up keeps its own rules until it closes.
         _previewPolicy = new PreviewPolicy(settings.PreviewHoverDelayMs, () => Environment.TickCount64);
+        ArmPreviewTick();
         ApplyTopmost(settings.BarAlwaysOnTop);
         if (affectsLayout)
         {
@@ -243,7 +254,6 @@ internal partial class BarWindow : Window
         // Whatever changed while hidden was ignored for a reason: showing
         // again reads the world as it is now, in one go.
         ReloadData();
-        _previewTick.Start();
         MoveBesideCursorIfWanted();
         Show();
         Activate();
@@ -307,7 +317,6 @@ internal partial class BarWindow : Window
     /// <summary>Hides with the standard fade, from a painted surface, and gives focus back.</summary>
     public void Dismiss()
     {
-        _previewTick.Stop();
         RunPreviewCommand(_previewPolicy.BarHidden());
 
         // Instant hide, matching the instant summon. Fading a layered window
@@ -318,6 +327,46 @@ internal partial class BarWindow : Window
         Hide();
         _returnTo.Restore();
         EnterLightweightIfEnabled();
+    }
+
+    /// <summary>
+    /// Arms the single-shot preview timer for the policy's next deadline, or
+    /// stands it down when nothing is pending (O-37). Called after every
+    /// policy decision: the deadline that mattered a moment ago may be gone,
+    /// and a new state may have just started one.
+    ///
+    /// The old arrangement — a 50 ms repeating tick for as long as the bar
+    /// was visible — kept the process waking twenty times a second to
+    /// discover nothing had happened; the acceptance bar for O-37 is a hidden
+    /// bar that wakes close to never, and a visible idle one is held to the
+    /// same standard.
+    /// </summary>
+    private void ArmPreviewTick()
+    {
+        if (_previewPolicy.TimeUntilDecision() is not { } wait)
+        {
+            _previewTick?.Stop();
+            return;
+        }
+
+        if (_previewTick is null)
+        {
+            _previewTick = new System.Windows.Threading.DispatcherTimer();
+            _previewTick.Tick += (_, _) =>
+            {
+                // One-shot by design: if the decision it fired left another
+                // deadline pending, RunPreviewCommand re-arms it on the way
+                // out.
+                _previewTick.Stop();
+                RunPreviewCommand(_previewPolicy.Tick());
+            };
+        }
+
+        // Zero means the deadline has already passed; a DispatcherTimer with
+        // a zero interval fires at the next dispatch, which is exactly that.
+        _previewTick.Interval = wait;
+        _previewTick.Stop();
+        _previewTick.Start();
     }
 
     /// <summary>
@@ -333,6 +382,11 @@ internal partial class BarWindow : Window
         {
             return;
         }
+
+        // The cards being dropped are also the destination of every decode
+        // and probe still in flight; their generation ends here.
+        _cardBackfills.Invalidate();
+        _pendingBackfills.Clear();
 
         _pinned.Clear();
         _cards.Clear();

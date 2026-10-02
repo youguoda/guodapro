@@ -30,6 +30,12 @@ internal static class NativeMethods
     internal const uint WmNull = 0x0000;
 
     /// <summary>
+    /// "A system setting changed" — the broadcast the theme swap rides on
+    /// (O-37), with the setting group's name in lParam.
+    /// </summary>
+    internal const uint WmSettingChange = 0x001A;
+
+    /// <summary>
     /// The only way out of a GetMessage loop — and how the hook thread is told
     /// its services are no longer needed (LowLevelHookThread, O-16).
     /// </summary>

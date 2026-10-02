@@ -43,7 +43,8 @@ internal partial class BarWindow
     /// Executes one policy decision. Open and Retarget carry the panel to the
     /// card it belongs beside; Close takes it away. Everything time-based
     /// flows through the tick into here, so there is exactly one code path
-    /// that shows and moves the panel.
+    /// that shows and moves the panel — and one place to re-arm the timer
+    /// after whatever the decision changed (O-37).
     /// </summary>
     private void RunPreviewCommand(PreviewCommand command)
     {
@@ -72,6 +73,11 @@ internal partial class BarWindow
                 _connector?.HideCurve();
                 break;
         }
+
+        // Whatever the event was, the set of pending deadlines may have
+        // changed; the timer follows the policy's answer, arming for the next
+        // one or standing down.
+        ArmPreviewTick();
     }
 
     private ConnectorWindow? _connector;
@@ -83,7 +89,7 @@ internal partial class BarWindow
     {
         if (_preview is null)
         {
-            _preview = new PreviewWindow(_fileIcons);
+            _preview = new PreviewWindow(_fileIcons, _fileProbe);
             _preview.PointerRestingOnPanel += () => RunPreviewCommand(_previewPolicy.PreviewEntered());
             _preview.PointerLeftPanel += () => RunPreviewCommand(_previewPolicy.PreviewLeft());
             _preview.PanelMoved += OnPreviewPanelMoved;

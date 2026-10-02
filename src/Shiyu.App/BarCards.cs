@@ -12,6 +12,19 @@ internal partial class BarWindow
 {
     // --- cards ----------------------------------------------------------------
 
+    /// <summary>
+    /// Work a freshly built card is waiting on: its thumbnail bytes, and the
+    /// file preview's path. Drained into one background batch per append;
+    /// results land only while the generation they were captured in still
+    /// describes the list on screen.
+    /// </summary>
+    private readonly record struct CardBackfill(BarCard Card, byte[]? ThumbnailPng, string? PreviewPath);
+
+    private readonly List<CardBackfill> _pendingBackfills = [];
+
+    /// <summary>Drops every in-flight card backfill: the list they described is gone.</summary>
+    private readonly BackfillGate _cardBackfills = new();
+
     private BarCard CardFor(Entry entry, IReadOnlyDictionary<long, EntryBlobs>? blobs = null)
     {
         var collapsed = string.Join(' ', entry.Text.Split(
@@ -19,20 +32,38 @@ internal partial class BarWindow
             StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
 
         var shown = Math.Max(1, _settings.BarFileCount);
+
+        // Existence and directory-ness come from the cache, never the disk
+        // (O-36): an offline UNC path costs an SMB timeout per raw probe, and
+        // the bar used to pay it on this thread for every card, every summon.
+        // An unknown path renders as alive; the background probe corrects the
+        // row in place when it answers.
+        bool Exists(string path) => _fileProbe.Lookup(path)?.Exists ?? true;
+
         var fileRows = entry.Kind == EntryKind.Files
             ? entry.Files.Take(shown)
                 .Select(path => new FileRow(
                     Path.GetFileName(path) is { Length: > 0 } name ? name : path,
                     path,
-                    _fileIcons.For(path),
-                    !File.Exists(path)))
+                    _fileIcons.For(path, _fileProbe.Lookup(path)?.IsDirectory ?? false),
+                    !Exists(path)))
                 .ToList()
             : [];
 
-        // List rows are narrow by design (O-22); the thumbnail a card shows
-        // comes from the page's one BlobsOf batch, and the formatted forms are
-        // fetched at the moment an action needs them.
-        var payload = blobs?.GetValueOrDefault(entry.Id);
+        // The thumbnail and the file preview backfill from background decodes
+        // (O-36): the row is laid out with the template's colour-block
+        // placeholder the moment the data is read, and the pixels arrive when
+        // they arrive — the placeholder is the same element at the same size,
+        // so nothing shifts when the image lands.
+        var thumbnailPng = entry.Kind == EntryKind.Image
+            ? blobs?.GetValueOrDefault(entry.Id)?.ThumbnailPng
+            : null;
+
+        var previewPath = entry.Kind == EntryKind.Files
+            && FileEntries.PreviewImagePath(entry.Files) is { } candidate
+            && Exists(candidate)
+                ? candidate
+                : null;
 
         var card = new BarCard
         {
@@ -61,9 +92,7 @@ internal partial class BarWindow
             WhenText = RelativeTime.For(entry.CreatedAt, DateTimeOffset.Now),
             WhenToolTip = $"{entry.CreatedAt.ToLocalTime():yyyy-MM-dd HH:mm}",
             Icon = _icons.For(entry.SourceApp),
-            Thumbnail = entry.Kind == EntryKind.Image
-                ? AppIconCache.Decode(payload?.ThumbnailPng, 320)
-                : null,
+            Thumbnail = null,
             OriginalPath = entry.OriginalPath,
             HasOriginal = entry.HasOriginal,
             Subtype = entry.Subtype,
@@ -75,8 +104,9 @@ internal partial class BarWindow
                 : null,
             IsTranslation = entry.TranslatedFrom is not null,
             FileRows = fileRows,
-            FilePreviewSource = PreviewFileImage(entry),
-            AllPathsDead = entry.Kind == EntryKind.Files && entry.Files.All(path => !File.Exists(path)),
+            FilePreviewSource = null,
+            AllPathsDead = entry.Kind == EntryKind.Files
+                && entry.Files.All(path => _fileProbe.Lookup(path) is { Exists: false }),
             FileCount = entry.Files.Count,
             SwatchBrush = entry.Subtype == EntrySubtype.Color
                 && SubtypeColor.TryParse(entry.Text, out var colour)
@@ -95,29 +125,30 @@ internal partial class BarWindow
 
         // The note is the public face; the original waits behind a hover.
         card.Face = entry.Note is { Length: > 0 } ? entry.Note : card.Preview;
+
+        if (thumbnailPng is { Length: > 0 } || previewPath is not null)
+        {
+            _pendingBackfills.Add(new CardBackfill(card, thumbnailPng, previewPath));
+        }
+
         return card;
     }
 
     /// <summary>
     /// A file copy made entirely of images previews as pictures: names alone
-    /// answer "which file", not "what was in it". A missing or unreadable file
-    /// falls back to the rows — a struck-through name says more than nothing.
+    /// answer "which file", not "what was in it". Runs on the thread pool
+    /// (O-36) — the file read is disk latency, and this used to happen on the
+    /// thread that draws. A missing or unreadable file falls back to the
+    /// rows — a struck-through name says more than nothing.
     /// </summary>
-    private static ImageSource? PreviewFileImage(Entry entry)
+    private static ImageSource? DecodeFileImage(string path, int pixelWidth)
     {
-        if (entry.Kind != EntryKind.Files
-            || FileEntries.PreviewImagePath(entry.Files) is not { } path
-            || !File.Exists(path))
-        {
-            return null;
-        }
-
         try
         {
             var image = new BitmapImage();
             image.BeginInit();
             image.CacheOption = BitmapCacheOption.OnLoad;
-            image.DecodePixelWidth = 320;
+            image.DecodePixelWidth = Math.Max(1, pixelWidth);
             image.UriSource = new Uri(path);
             image.EndInit();
             image.Freeze();
@@ -131,8 +162,15 @@ internal partial class BarWindow
             return null;
         }
     }
+
     private void Rebuild()
     {
+        // First: anything still decoding describes a list that is about to be
+        // replaced. The gate drops its results; the placeholder state is built
+        // into every fresh card anyway.
+        _cardBackfills.Invalidate();
+        _pendingBackfills.Clear();
+
         _pinned.Clear();
         _cards.Clear();
         _selected = null;
@@ -207,6 +245,140 @@ internal partial class BarWindow
             var card = CardFor(entry, blobs);
             card.RowKeyText = BarKeys.RowKey(_pinned.Count + _cards.Count + 1);
             (pastPinned ? _cards : _pinned).Add(card);
+        }
+
+        // Pixels and probe verdicts are the slow half of the page; they run
+        // behind the paint that already happened, not ahead of it (O-36).
+        RunBackfills(batch);
+    }
+
+    /// <summary>
+    /// Two background batches behind one paint: the decodes (thumbnails and
+    /// file previews, frozen on the pool thread and delivered through the
+    /// dispatcher) and the existence probes (paths the cache has no fresh
+    /// verdict for, recorded back into the cache and patched into the rows).
+    ///
+    /// Both carry the generation they were born in; a rebuild anywhere in
+    /// between drops everything still in flight, so a recycled row can never
+    /// receive a stranger's pixels or a verdict for a list that is gone.
+    /// </summary>
+    private void RunBackfills(List<Entry> batch)
+    {
+        if (_pendingBackfills.Count > 0)
+        {
+            var work = _pendingBackfills.ToArray();
+            _pendingBackfills.Clear();
+            var generation = _cardBackfills.Epoch;
+
+            Task.Run(() =>
+            {
+                foreach (var item in work)
+                {
+                    var thumbnail = AppIconCache.Decode(item.ThumbnailPng, 320);
+                    var preview = item.PreviewPath is null ? null : DecodeFileImage(item.PreviewPath, 320);
+
+                    Dispatcher.BeginInvoke(() =>
+                    {
+                        if (!_cardBackfills.IsCurrent(generation))
+                        {
+                            return;
+                        }
+
+                        if (thumbnail is not null)
+                        {
+                            item.Card.Thumbnail = thumbnail;
+                        }
+
+                        if (preview is not null)
+                        {
+                            item.Card.FilePreviewSource = preview;
+                        }
+                    });
+                }
+            });
+        }
+
+        var stale = new HashSet<string>(
+            batch.Where(entry => entry.Kind == EntryKind.Files)
+                .SelectMany(entry => entry.Files)
+                .Where(_fileProbe.WantsProbe),
+            StringComparer.OrdinalIgnoreCase);
+
+        foreach (var entry in batch)
+        {
+            if (entry.Kind == EntryKind.Files
+                && FileEntries.PreviewImagePath(entry.Files) is { } preview
+                && _fileProbe.WantsProbe(preview))
+            {
+                stale.Add(preview);
+            }
+        }
+
+        if (stale.Count == 0)
+        {
+            return;
+        }
+
+        {
+            var generation = _cardBackfills.Epoch;
+            var paths = stale.ToArray();
+
+            Task.Run(() =>
+            {
+                var verdicts = new Dictionary<string, FileVerdict>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var path in paths)
+                {
+                    // A directory is "there" too — File.Exists alone would
+                    // strike a folder copy through as dead.
+                    var file = File.Exists(path);
+                    var directory = !file && Directory.Exists(path);
+
+                    _fileProbe.Record(path, file || directory, directory);
+                    verdicts[path] = new FileVerdict(file || directory, directory);
+                }
+
+                Dispatcher.BeginInvoke(() =>
+                {
+                    if (!_cardBackfills.IsCurrent(generation))
+                    {
+                        return;
+                    }
+
+                    PatchExistence(verdicts);
+                });
+            });
+        }
+    }
+
+    /// <summary>
+    /// Lands probe verdicts in the rows already on screen: each row's dead
+    /// flag follows its path's verdict, and the card-level "everything is
+    /// gone" flag re-reads the cache the probes just filled.
+    /// </summary>
+    private void PatchExistence(IReadOnlyDictionary<string, FileVerdict> verdicts)
+    {
+        if (verdicts.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var card in _pinned.Concat(_cards))
+        {
+            if (card.Kind != EntryKind.Files)
+            {
+                continue;
+            }
+
+            foreach (var row in card.FileRows)
+            {
+                if (verdicts.TryGetValue(row.FullPath, out var verdict))
+                {
+                    row.Dead = !verdict.Exists;
+                }
+            }
+
+            card.AllPathsDead = card.Files.All(path => _fileProbe.Lookup(path) is { Exists: false });
         }
     }
 

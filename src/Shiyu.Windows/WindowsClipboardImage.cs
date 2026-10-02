@@ -1,4 +1,5 @@
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Shiyu.Core;
@@ -6,12 +7,19 @@ using Shiyu.Core;
 namespace Shiyu.Windows;
 
 /// <summary>
-/// A bitmap taken off the clipboard, encoded on demand.
+/// A copied image as raw bytes, decoded and encoded on demand.
 ///
-/// The bitmap is captured and frozen the moment the copy happens — the
-/// clipboard is about to change again and there is no second chance at it —
-/// but encoding, which for a full screenshot is long enough to be felt as a
-/// stutter, is deferred to a background thread.
+/// O-36's split: the clipboard can only be read on the message thread, and
+/// the clipboard is about to change again — so that thread takes nothing but
+/// the bytes, while the whole pixel pipeline (decode, thumbnail, encode,
+/// fingerprint) runs in <see cref="RenderAsync"/> on the thread pool.
+///
+/// Applications that draw with alpha — WeChat, browsers, the snipping tool —
+/// publish a PNG stream alongside the DIB, and WPF's DIB reading has
+/// historically rendered those as solid black; the PNG bytes are therefore
+/// taken first, and the DIB — wrapped with a bitmap file header, exactly the
+/// transform WPF's own clipboard reader performs internally — is the
+/// fallback.
 /// </summary>
 public sealed class WindowsClipboardImage : IClipboardImage
 {
@@ -21,95 +29,154 @@ public sealed class WindowsClipboardImage : IClipboardImage
     /// </summary>
     private const int ThumbnailWidth = 240;
 
-    private readonly BitmapSource _bitmap;
+    private const uint CfDib = 8;
+    private const uint CfDibV5 = 17;
 
-    private WindowsClipboardImage(BitmapSource bitmap) => _bitmap = bitmap;
+    private static readonly uint PngFormat =
+        NativeMethods.RegisterClipboardFormatW("PNG");
+
+    private readonly byte[] _raw;
+
+    /// <summary>True when <see cref="_raw"/> is a PNG stream; false when it is a bare DIB.</summary>
+    private readonly bool _isPng;
+
+    private WindowsClipboardImage(byte[] raw, bool isPng)
+    {
+        _raw = raw;
+        _isPng = isPng;
+    }
 
     /// <summary>
-    /// Takes the current clipboard image, or null if there is not one. Must be
-    /// called on a single-threaded-apartment thread, which the message loop is.
+    /// Takes the current clipboard image's bytes, or null if there is not
+    /// one. Requires the clipboard to be already open — the caller holds it
+    /// for every other format in the same open, so no second contention
+    /// window is opened.
     /// </summary>
-    public static WindowsClipboardImage? FromClipboard()
+    public static WindowsClipboardImage? FromOpenClipboard()
     {
+        // The PNG is the exact image and needs no interpretation; a real PNG
+        // carries at least its eight-byte signature and header chunk.
+        if (ReadBytes(PngFormat) is { Length: > 12 } png)
+        {
+            return new WindowsClipboardImage(png, isPng: true);
+        }
+
+        // V5 carries the alpha masks in the header; the legacy DIB follows.
+        var dib = ReadBytes(CfDibV5) ?? ReadBytes(CfDib);
+        return dib is { Length: > 40 } ? new WindowsClipboardImage(dib, isPng: false) : null;
+    }
+
+    /// <summary>Requires the clipboard to already be open.</summary>
+    private static byte[]? ReadBytes(uint format)
+    {
+        var handle = NativeMethods.GetClipboardData(format);
+        if (handle == IntPtr.Zero)
+        {
+            return null;
+        }
+
+        var pointer = NativeMethods.GlobalLock(handle);
+        if (pointer == IntPtr.Zero)
+        {
+            return null;
+        }
+
         try
         {
-            // Applications that draw with alpha — WeChat, browsers, the
-            // snipping tool — publish a PNG stream alongside the DIB, and
-            // WPF's GetImage reads their DIB as solid black. The PNG is read
-            // first: it is the exact image and needs no interpretation.
-            if (PngFromClipboard() is { } exact)
-            {
-                return new WindowsClipboardImage(exact);
-            }
-
-            var bitmap = System.Windows.Clipboard.GetImage();
-            if (bitmap is null)
-            {
-                return null;
-            }
-
-            // Frozen so it can cross to a background thread to be encoded.
-            bitmap.Freeze();
-            return new WindowsClipboardImage(bitmap);
+            var size = (int)NativeMethods.GlobalSize(handle);
+            var bytes = new byte[size];
+            Marshal.Copy(pointer, bytes, 0, size);
+            return bytes;
         }
-        catch (System.Runtime.InteropServices.ExternalException)
+        finally
         {
-            // Another process held the clipboard. Ordinary contention.
-            return null;
-        }
-        catch (IOException)
-        {
-            // A PNG stream that does not decode is not worth keeping either.
-            return null;
+            NativeMethods.GlobalUnlock(handle);
         }
     }
 
-    private static BitmapSource? PngFromClipboard()
+    public Task<RenderedImage> RenderAsync(CancellationToken cancellation = default)
+        => Task.Run(() =>
+        {
+            cancellation.ThrowIfCancellationRequested();
+
+            // Decode and encode live on this one thread, so nothing frozen
+            // ever crosses a thread boundary.
+            var bitmap = Decode(_raw, _isPng);
+            cancellation.ThrowIfCancellationRequested();
+
+            return new RenderedImage(
+                Encode(bitmap),
+                Encode(Shrink(bitmap, ThumbnailWidth)),
+                bitmap.PixelWidth,
+                bitmap.PixelHeight,
+                Fingerprint(bitmap));
+        }, cancellation);
+
+    private static BitmapSource Decode(byte[] raw, bool isPng)
     {
-        if (System.Windows.Clipboard.GetData("PNG") is not { } raw)
+        using var stream = new MemoryStream(isPng ? raw : WrapDibWithFileHeader(raw));
+        var decoded = BitmapFrame.Create(stream, BitmapCreateOptions.None, BitmapCacheOption.OnLoad);
+
+        if (decoded.PixelWidth == 0 || decoded.PixelHeight == 0)
         {
-            return null;
+            throw new InvalidDataException("clipboard bitmap decodes to nothing");
         }
 
-        Stream? stream = raw as Stream;
-        if (raw is byte[] bytes)
-        {
-            stream = new MemoryStream(bytes);
-        }
-
-        if (stream is null || stream.Length == 0)
-        {
-            return null;
-        }
-
-        using (stream)
-        {
-            var decoded = BitmapFrame.Create(
-                stream, BitmapCreateOptions.None, BitmapCacheOption.OnLoad);
-
-            if (decoded.PixelWidth == 0 || decoded.PixelHeight == 0)
-            {
-                return null;
-            }
-
-            // A frame decoded from a stream keeps a live decoder that its own
-            // Freeze does not cover, so encoding on the background thread
-            // trips over thread affinity. Copying the bits into a
-            // WriteableBitmap detaches them from the decoder entirely.
-            var copy = new WriteableBitmap(decoded);
-            copy.Freeze();
-            return copy;
-        }
+        return decoded;
     }
-
-    public int PixelWidth => _bitmap.PixelWidth;
-
-    public int PixelHeight => _bitmap.PixelHeight;
 
     /// <summary>
-    /// A fingerprint of the image, used to recognise the same copy arriving
-    /// twice — which it reliably does, because applications publish a bitmap in
-    /// several clipboard formats in turn and each one raises a notification.
+    /// A DIB is a bitmap file without its fourteen-byte file header; putting
+    /// the header back is the whole transform. The offset of the bits — the
+    /// one number the header adds — is read out of the DIB's own header:
+    /// header size, then the palette, then (for the legacy BITMAPINFOHEADER
+    /// form of BI_BITFIELDS) the three channel masks that header has no room
+    /// for.
+    /// </summary>
+    private static byte[] WrapDibWithFileHeader(byte[] dib)
+    {
+        var headerSize = BitConverter.ToInt32(dib, 0);
+        if (headerSize < 40 || headerSize > dib.Length)
+        {
+            throw new InvalidDataException("unrecognised clipboard bitmap header");
+        }
+
+        var bitCount = BitConverter.ToUInt16(dib, 14);
+        var compression = BitConverter.ToInt32(dib, 16);
+        var coloursUsed = BitConverter.ToInt32(dib, 32);
+
+        var palette = coloursUsed > 0
+            ? coloursUsed * 4
+            : bitCount <= 8 ? (1 << bitCount) * 4 : 0;
+
+        // BITMAPV4/V5 headers carry their masks inside; only the 40-byte
+        // BITMAPINFOHEADER with BI_BITFIELDS parks them just after itself.
+        var masks = headerSize == 40 && compression == 3 ? 12 : 0;
+
+        var offset = 14 + headerSize + palette + masks;
+
+        var bitmap = new byte[14 + dib.Length];
+        bitmap[0] = (byte)'B';
+        bitmap[1] = (byte)'M';
+        WriteUInt32(bitmap, 2, (uint)bitmap.Length);
+        WriteUInt32(bitmap, 10, (uint)offset);
+        dib.CopyTo(bitmap, 14);
+        return bitmap;
+
+        static void WriteUInt32(byte[] at, int position, uint value)
+        {
+            at[position] = (byte)value;
+            at[position + 1] = (byte)(value >> 8);
+            at[position + 2] = (byte)(value >> 16);
+            at[position + 3] = (byte)(value >> 24);
+        }
+    }
+
+    /// <summary>
+    /// A fingerprint of the decoded pixels, used to recognise the same copy
+    /// arriving twice — which it reliably does, because applications publish
+    /// a bitmap in several clipboard formats in turn and each one raises a
+    /// notification.
     ///
     /// Sampled rows rather than the whole bitmap: a full-screen screenshot is
     /// tens of megabytes, and allocating that on every copy to answer a
@@ -117,14 +184,10 @@ public sealed class WindowsClipboardImage : IClipboardImage
     /// the image make two genuinely different screenshots colliding far less
     /// likely than the duplicate this exists to catch.
     /// </summary>
-    public long ContentFingerprint => _fingerprint ??= Fingerprint();
-
-    private long? _fingerprint;
-
-    private long Fingerprint()
+    private static long Fingerprint(BitmapSource bitmap)
     {
         const int sampleRows = 16;
-        var stride = (_bitmap.PixelWidth * _bitmap.Format.BitsPerPixel + 7) / 8;
+        var stride = (bitmap.PixelWidth * bitmap.Format.BitsPerPixel + 7) / 8;
         var row = new byte[stride];
 
         // FNV-1a: not cryptographic, and does not need to be.
@@ -140,13 +203,13 @@ public sealed class WindowsClipboardImage : IClipboardImage
                 }
             }
 
-            Mix(_bitmap.PixelWidth);
-            Mix(_bitmap.PixelHeight);
+            Mix(bitmap.PixelWidth);
+            Mix(bitmap.PixelHeight);
 
-            var step = Math.Max(1, _bitmap.PixelHeight / sampleRows);
-            for (var y = 0; y < _bitmap.PixelHeight; y += step)
+            var step = Math.Max(1, bitmap.PixelHeight / sampleRows);
+            for (var y = 0; y < bitmap.PixelHeight; y += step)
             {
-                _bitmap.CopyPixels(new System.Windows.Int32Rect(0, y, _bitmap.PixelWidth, 1), row, stride, 0);
+                bitmap.CopyPixels(new System.Windows.Int32Rect(0, y, bitmap.PixelWidth, 1), row, stride, 0);
                 foreach (var value in row)
                 {
                     hash = (hash ^ value) * 1099511628211UL;
@@ -156,17 +219,6 @@ public sealed class WindowsClipboardImage : IClipboardImage
             return (long)hash;
         }
     }
-
-    public Task<RenderedImage> RenderAsync(CancellationToken cancellation = default)
-        => Task.Run(() =>
-        {
-            cancellation.ThrowIfCancellationRequested();
-
-            var full = Encode(_bitmap);
-            var thumbnail = Encode(Shrink(_bitmap, ThumbnailWidth));
-
-            return new RenderedImage(full, thumbnail, _bitmap.PixelWidth, _bitmap.PixelHeight);
-        }, cancellation);
 
     private static BitmapSource Shrink(BitmapSource source, int targetWidth)
     {

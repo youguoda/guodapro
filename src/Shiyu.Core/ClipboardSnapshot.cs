@@ -1,18 +1,32 @@
 namespace Shiyu.Core;
 
-/// <summary>A copied image, ready to be encoded away from the user interface thread.</summary>
+/// <summary>A copied image, ready to be decoded and encoded away from the user interface thread.</summary>
 public interface IClipboardImage
 {
     /// <summary>
-    /// Encodes the image. Awaited off the thread that draws, because encoding a
-    /// screenshot takes long enough to be felt as a stutter if it is not.
+    /// Decodes the captured bytes and encodes the stored forms. Awaited off
+    /// the thread that draws, because decoding and encoding a screenshot take
+    /// long enough to be felt as a stutter if they are not — the interface
+    /// thread only ever takes the raw bytes.
     /// </summary>
     Task<RenderedImage> RenderAsync(CancellationToken cancellation = default);
 }
 
 /// <param name="FullPng">The original, destined for disk and for retention.</param>
 /// <param name="ThumbnailPng">Small, kept in the database, kept forever.</param>
-public sealed record RenderedImage(byte[] FullPng, byte[] ThumbnailPng, int Width, int Height);
+/// <param name="Fingerprint">
+/// A content hash of the decoded pixels, for recognising the same copy
+/// arriving twice — applications publish one image in several clipboard
+/// formats in turn, and each publication raises its own notification. Zero
+/// means "no fingerprint"; such images are never collapsed, so an
+/// implementation that cannot hash simply omits it.
+/// </param>
+public sealed record RenderedImage(
+    byte[] FullPng,
+    byte[] ThumbnailPng,
+    int Width,
+    int Height,
+    long Fingerprint = 0);
 
 /// <summary>
 /// What the operating system reported when the clipboard changed.

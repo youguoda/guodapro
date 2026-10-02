@@ -39,7 +39,6 @@ public sealed class WindowsClipboardMonitor : IClipboardMonitor, IDisposable
     private readonly MessageWindow _window;
     private bool _listening;
     private bool _disposed;
-    private long? _lastImageFingerprint;
 
     private static readonly uint HtmlFormat =
         NativeMethods.RegisterClipboardFormatW("HTML Format");
@@ -90,9 +89,6 @@ public sealed class WindowsClipboardMonitor : IClipboardMonitor, IDisposable
 
         if (reading is { Text.Length: > 0 })
         {
-            // Text supersedes whatever image came before it, so the next image
-            // is judged fresh rather than against something long gone.
-            _lastImageFingerprint = null;
             Changed?.Invoke(new ClipboardSnapshot(reading.Value.Text, sourceApp, reading.Value.Excluded)
             {
                 SourceExePath = sourceExe,
@@ -108,7 +104,6 @@ public sealed class WindowsClipboardMonitor : IClipboardMonitor, IDisposable
         // on a clipboard that is already closed again.
         if (reading.Value.Files is { Count: > 0 } files)
         {
-            _lastImageFingerprint = null;
             Changed?.Invoke(new ClipboardSnapshot(string.Empty, sourceApp, reading.Value.Excluded)
             {
                 Files = files,
@@ -119,30 +114,18 @@ public sealed class WindowsClipboardMonitor : IClipboardMonitor, IDisposable
 
         // No usable text. An image is the other thing worth keeping, and is
         // grabbed now rather than later: the clipboard is about to change again
-        // and there is no second chance at it.
-        if (WindowsClipboardImage.FromClipboard() is not { } image)
+        // and there is no second chance at it. Only the raw bytes were taken,
+        // inside the same open — decoding and the repeat-collapsing fingerprint
+        // happen on the pipeline's thread (O-36); the duplicate publications
+        // of one copy are collapsed there.
+        if (reading.Value.Image is { } image)
         {
-            return;
+            Changed?.Invoke(new ClipboardSnapshot(string.Empty, sourceApp, IsExcluded(reading))
+            {
+                Image = image,
+                SourceExePath = sourceExe,
+            });
         }
-
-        // The same copy arrives more than once: an application publishes its
-        // bitmap in several clipboard formats in turn, and each publication
-        // raises its own notification with its own sequence number. Collapsing
-        // a repeat of the previous image mirrors what the text path already
-        // does; without it every copied image is recorded twice and written to
-        // disk twice.
-        var fingerprint = image.ContentFingerprint;
-        if (fingerprint == _lastImageFingerprint)
-        {
-            return;
-        }
-
-        _lastImageFingerprint = fingerprint;
-        Changed?.Invoke(new ClipboardSnapshot(string.Empty, sourceApp, IsExcluded(reading))
-        {
-            Image = image,
-            SourceExePath = sourceExe,
-        });
     }
 
     private readonly record struct Reading(
@@ -150,7 +133,8 @@ public sealed class WindowsClipboardMonitor : IClipboardMonitor, IDisposable
         bool Excluded,
         string? Html,
         string? Rtf,
-        IReadOnlyList<string> Files);
+        IReadOnlyList<string> Files,
+        WindowsClipboardImage? Image);
 
     /// <summary>
     /// The CF_HDROP file list, when the clipboard carries one. Requires the
@@ -232,19 +216,30 @@ public sealed class WindowsClipboardMonitor : IClipboardMonitor, IDisposable
                 var excluded = IsExcludedByMarker();
 
                 // Everything is read inside this one open — text, formats,
-                // files. GetClipboardData answers null once the clipboard is
-                // closed, and the file branch used to learn that the hard way.
+                // files, and (when neither text nor files are there) the
+                // image's bytes. GetClipboardData answers null once the
+                // clipboard is closed, and the file branch used to learn that
+                // the hard way; the image branch, moved in here by O-36,
+                // avoids learning it twice.
 
                 // Returned even when there is no text, so the marker survives
                 // for an image-only clipboard. Dropping the reading here would
                 // quietly reopen the hole exclusion exists to close: an image
                 // copied from a password manager would be recorded.
+                var text = ReadUnicodeText() ?? string.Empty;
+                var files = text.Length == 0 ? ReadFileDrop() : [];
+
+                var image = text.Length == 0 && files.Count == 0
+                    ? WindowsClipboardImage.FromOpenClipboard()
+                    : null;
+
                 return new Reading(
-                    ReadUnicodeText() ?? string.Empty,
+                    text,
                     excluded,
                     ReadFormatted(),
                     ReadString(RtfFormat),
-                    ReadFileDrop());
+                    files,
+                    image);
             }
             finally
             {

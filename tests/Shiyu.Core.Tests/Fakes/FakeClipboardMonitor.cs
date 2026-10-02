@@ -47,7 +47,14 @@ public sealed class FakeClipboardMonitor : IClipboardMonitor
     {
         public static readonly BlankImage Instance = new();
 
+        private static long _next;
+
         public Task<RenderedImage> RenderAsync(CancellationToken cancellation = default)
-            => Task.FromResult(new RenderedImage([1], [1], 1, 1));
+            => Task.FromResult(new RenderedImage(
+                [1], [1], 1, 1,
+                // A fresh fingerprint per render: every call is a distinct
+                // copy as far as the dedup knows, matching what a fake that
+                // cannot hash content would honestly report (zero).
+                System.Threading.Interlocked.Increment(ref _next)));
     }
 }

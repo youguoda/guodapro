@@ -66,6 +66,30 @@ public sealed partial class ClipboardPipeline : IDisposable
     /// <summary>Whether copied images are recorded. Text is always recorded.</summary>
     public bool RecordImages { get; set; } = true;
 
+    /// <summary>
+    /// The fingerprint of the last recorded image, with the clipboard arrival
+    /// it was taken at. The same copy arrives more than once — an application
+    /// publishes its bitmap in several clipboard formats in turn, and each
+    /// publication raises its own notification — and collapsing the repeat
+    /// mirrors what the text path does.
+    ///
+    /// This lives here rather than in the monitor because the fingerprint
+    /// only exists after the decode, and the decode happens off the message
+    /// thread (O-36). That asynchrony is why the reset is expressed through
+    /// arrival numbers rather than nulling a field: the text that supersedes
+    /// an image may record while that image's decode is still running, and a
+    /// late write must not resurrect an image the user already moved past.
+    /// </summary>
+    private readonly object _imageStateGuard = new();
+
+    private (long Arrival, long Fingerprint) _lastImage;
+
+    /// <summary>The arrival every non-image copy last superseded.</summary>
+    private long _lastNonImageArrival;
+
+    /// <summary>Every snapshot's arrival number, in clipboard order.</summary>
+    private long _arrivals;
+
     private void OnClipboardChanged(ClipboardSnapshot snapshot)
     {
         // Checked first, and before anything is written or even read back:
@@ -75,6 +99,8 @@ public sealed partial class ClipboardPipeline : IDisposable
         {
             return;
         }
+
+        var arrival = System.Threading.Interlocked.Increment(ref _arrivals);
 
         // The copy is now definitely going to be an entry, so this is the
         // moment to make sure its source application has a cached icon — the
@@ -91,6 +117,10 @@ public sealed partial class ClipboardPipeline : IDisposable
             {
                 return;
             }
+
+            // Files supersede whatever image came before them, so the next
+            // image is judged fresh rather than against something long gone.
+            SupersedeImage(arrival);
 
             var newest = _store.MostRecent();
             if (newest is { Kind: EntryKind.Files } && newest.Files.SequenceEqual(files))
@@ -115,17 +145,28 @@ public sealed partial class ClipboardPipeline : IDisposable
             // recorded in the order they happened rather than whichever
             // encodes faster.
             Idle = Idle.ContinueWith(
-                _ => RecordImage(image, snapshot.SourceApp),
+                _ => RecordImage(image, snapshot.SourceApp, arrival),
                 TaskScheduler.Default).Unwrap();
             return;
         }
 
-        RecordText(snapshot);
+        RecordText(snapshot, arrival);
     }
 
-    private void RecordText(ClipboardSnapshot snapshot)
+    /// <summary>
+    /// Notes that a non-image copy arrived: later images are judged against
+    /// nothing, no matter when the previous image's decode finishes.
+    /// </summary>
+    private void SupersedeImage(long arrival)
+        => System.Threading.Volatile.Write(ref _lastNonImageArrival, arrival);
+
+    private void RecordText(ClipboardSnapshot snapshot, long arrival)
     {
         var now = _clock.GetUtcNow();
+
+        // Text supersedes whatever image came before it, so the next image is
+        // judged fresh rather than against something long gone.
+        SupersedeImage(arrival);
 
         // A single user copy can raise more than one clipboard notification,
         // because applications publish several formats in turn. Collapsing a
@@ -150,11 +191,32 @@ public sealed partial class ClipboardPipeline : IDisposable
         Offer(snapshot.Text);
     }
 
-    private async Task RecordImage(IClipboardImage image, string? sourceApp)
+    private async Task RecordImage(IClipboardImage image, string? sourceApp, long arrival)
     {
         try
         {
             var rendered = await image.RenderAsync();
+
+            // The same copy arriving twice — several formats published in
+            // turn, one notification each — collapses here, on the same
+            // thread the decode already paid for. Chaining (Idle) keeps the
+            // collapse honest: two quick copies judge in the order they
+            // happened. The previous image only counts while nothing else
+            // arrived after it: text or files between the two copies mean
+            // the repeat is a fresh decision, not a phantom republication.
+            lock (_imageStateGuard)
+            {
+                if (rendered.Fingerprint != 0
+                    && _lastImage is { } previous
+                    && previous.Arrival > System.Threading.Volatile.Read(ref _lastNonImageArrival)
+                    && previous.Fingerprint == rendered.Fingerprint)
+                {
+                    return;
+                }
+
+                _lastImage = (arrival, rendered.Fingerprint);
+            }
+
             var now = _clock.GetUtcNow();
             var path = _images!.Save(rendered.FullPng, now);
 
