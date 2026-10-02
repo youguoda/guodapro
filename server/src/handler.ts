@@ -3,7 +3,7 @@ import { readLimits } from "./limits.js";
 import { saltedHash } from "./hash.js";
 import { normalizeIp } from "./ip.js";
 import { normalizeLanguage } from "./langs.js";
-import { KvStore, Quota, type Identity } from "./quota.js";
+import { DurableCounter, type Identity } from "./quota.js";
 import { ZhipuUpstream } from "./upstream.js";
 
 const ClientIdPattern = /^[A-Za-z0-9-]{8,64}$/;
@@ -31,7 +31,12 @@ export async function handleTranslate(
 
   const limits = injected.limits ?? readLimits(env);
   const now = injected.now ?? (() => new Date());
-  const quota = injected.quota ?? new Quota(new KvStore(env.QUOTA), limits, now);
+  // 绑定缺失同样 fail closed（/health 也会把它亮出来）。
+  const quota = injected.quota
+    ?? (env.QUOTA_COUNTER ? new DurableCounter(env.QUOTA_COUNTER, limits) : null);
+  if (!quota) {
+    return jsonError(503, "SERVICE_MISCONFIGURED", "服务未正确配置，请稍后再试。");
+  }
   const upstream = injected.upstream
     ?? new ZhipuUpstream({
       apiKey: env.ZHIPU_API_KEY,
@@ -80,7 +85,9 @@ export async function handleTranslate(
   const ip = normalizeIp(request.headers.get("CF-Connecting-IP") ?? "unknown");
   const identity: Identity = { clientId, ipHash: await saltedHash(salt, ip) };
 
-  const denial = await quota.reserve(identity, chars);
+  // 三层原子预留：任一层超限则三层都不扣（退款也按同一天的桶退）。
+  const at = now();
+  const denial = await quota.admit(identity, chars, at);
   if (denial) {
     return jsonError(429, denial.code, denial.message, {
       remaining: denial.remaining,
@@ -93,7 +100,7 @@ export async function handleTranslate(
     return json(200, { translation });
   } catch (error) {
     // 上游没给译文：已计字符如数退还，用户不替我们的故障买单。
-    await quota.refund(identity, chars);
+    await quota.refund(identity, chars, at);
     return jsonError(502, "UPSTREAM_ERROR", "翻译服务暂时不可用，请稍后再试。");
   }
 }

@@ -1,4 +1,5 @@
-import type { KVNamespace } from "@cloudflare/workers-types";
+import type { DurableObjectNamespace } from "@cloudflare/workers-types";
+import { DurableObject } from "cloudflare:workers";
 import type { Limits } from "./limits.js";
 
 /** 配额身份：设备匿名 ID + IP 加盐哈希。 */
@@ -16,26 +17,14 @@ export interface QuotaDenial {
 }
 
 /**
- * 计数存储的最小接口：真实 KV 与测试内存实现都长这样。
- * KV 的最终一致性意味着并发下计数可能偏松——这是明知的取舍
- * （见 README"已知限制"），免费通道要的是便宜与简单，不是精确到字。
+ * 原子配额计数端口（O-19）：admit 在一次调用里对设备/IP/全局三层做
+ * "检查并预留"——全部满足才扣减，任一层超限则三层都不扣。处理器只依赖
+ * 这个接口：真实部署走 DurableCounter（Durable Object RPC），单测走
+ * 同一个 DailyCounter 类 + 假 state 的内存实现。
  */
-export interface QuotaStore {
-  get(key: string): Promise<string | null>;
-  put(key: string, value: string, ttlSeconds: number): Promise<void>;
-}
-
-/** 真实 KV 的适配器。 */
-export class KvStore implements QuotaStore {
-  constructor(private readonly kv: KVNamespace) {}
-
-  get(key: string): Promise<string | null> {
-    return this.kv.get(key);
-  }
-
-  put(key: string, value: string, ttlSeconds: number): Promise<void> {
-    return this.kv.put(key, value, { expirationTtl: ttlSeconds });
-  }
+export interface QuotaCounter {
+  admit(identity: Identity, chars: number, now: Date): Promise<QuotaDenial | null>;
+  refund(identity: Identity, chars: number, now: Date): Promise<void>;
 }
 
 const Messages: Record<QuotaDenial["code"], string> = {
@@ -45,86 +34,108 @@ const Messages: Record<QuotaDenial["code"], string> = {
 };
 
 /**
- * 三层日配额：设备 2 万、IP 3 万、全局封顶，00:00 UTC 重置。
- * 桶键带 UTC 日期，过期由 KV 的 TTL 收尾；预留失败不记账，上游失败
- * 由调用方按已计字符退款——用户不替我们的上游故障买单。
+ * 按日期分片的计数器 Durable Object（O-19）：一天一个对象
+ * （`getByName(<UTC 日期>)`），三层检查与扣减在同一次同步事务里完成。
+ * Durable Object 的事件模型保证同一对象上的调用串行、无 await 的读写
+ * 合并为一个原子事务——KV 读-改-写的竞态面就此消失。存储里只有计数，
+ * 绝无正文或译文。
  */
-export class Quota {
-  constructor(
-    private readonly store: QuotaStore,
-    private readonly limits: Limits,
-    private readonly now: () => Date,
-  ) {}
+export class DailyCounter extends DurableObject {
+  /** 三层"检查并预留"；任一层超限则什么都不写。 */
+  async admit(
+    identity: Identity,
+    chars: number,
+    limits: Limits,
+    now: Date,
+  ): Promise<QuotaDenial | null> {
+    const kv = this.ctx.storage.kv;
+    const denial = this.ctx.storage.transactionSync((): QuotaDenial | null => {
+      const keys = [`d:${identity.clientId}`, `i:${identity.ipHash}`, "g"];
+      const used = keys.map((key) => kv.get<number>(key) ?? 0);
 
-  /** 记下 chars 字的消耗；放行返回 null，拒绝返回该层的事实。 */
-  async reserve(identity: Identity, chars: number): Promise<QuotaDenial | null> {
-    const keys = this.keys(identity);
-    const used = await this.readAll(keys);
+      const layers: Array<{ layer: QuotaDenial["code"]; limit: number; index: number }> = [
+        { layer: "QUOTA_DEVICE", limit: limits.deviceDaily, index: 0 },
+        { layer: "QUOTA_IP", limit: limits.ipDaily, index: 1 },
+        { layer: "QUOTA_GLOBAL", limit: limits.globalDaily, index: 2 },
+      ];
 
-    const layers: Array<{ layer: QuotaDenial["code"]; limit: number; index: number }> = [
-      { layer: "QUOTA_DEVICE", limit: this.limits.deviceDaily, index: 0 },
-      { layer: "QUOTA_IP", limit: this.limits.ipDaily, index: 1 },
-      { layer: "QUOTA_GLOBAL", limit: this.limits.globalDaily, index: 2 },
-    ];
-
-    for (const { layer, limit, index } of layers) {
-      if (used[index] + chars > limit) {
-        return {
-          code: layer,
-          message: Messages[layer],
-          remaining: Math.max(0, limit - used[index]),
-          resetAt: this.resetAt(),
-        };
+      for (const { layer, limit, index } of layers) {
+        if (used[index] + chars > limit) {
+          return {
+            code: layer,
+            message: Messages[layer],
+            remaining: Math.max(0, limit - used[index]),
+            resetAt: resetAt(now),
+          };
+        }
       }
-    }
 
-    for (const [index, key] of keys.entries()) {
-      await this.store.put(key, String(used[index] + chars), BucketTtlSeconds);
-    }
+      for (const [index, key] of keys.entries()) {
+        kv.put(key, used[index] + chars);
+      }
 
-    return null;
+      return null;
+    });
+
+    if (denial === null) {
+      await this.ensureSweeper(now);
+    }
+    return denial;
   }
 
   /** 上游失败时退还已计字符；退到零为止，不产生负数。 */
-  async refund(identity: Identity, chars: number): Promise<void> {
-    const keys = this.keys(identity);
-    const used = await this.readAll(keys);
+  async refund(identity: Identity, chars: number, now: Date): Promise<void> {
+    const kv = this.ctx.storage.kv;
+    this.ctx.storage.transactionSync(() => {
+      const keys = [`d:${identity.clientId}`, `i:${identity.ipHash}`, "g"];
+      const used = keys.map((key) => kv.get<number>(key) ?? 0);
+      for (const [index, key] of keys.entries()) {
+        kv.put(key, Math.max(0, used[index] - chars));
+      }
+    });
+    await this.ensureSweeper(now);
+  }
 
-    for (const [index, key] of keys.entries()) {
-      await this.store.put(key, String(Math.max(0, used[index] - chars)), BucketTtlSeconds);
+  /** 跨日分片对象的善后：首个写入口设一次闹钟，次日 +2 天自清空。 */
+  private async ensureSweeper(now: Date): Promise<void> {
+    if ((await this.ctx.storage.getAlarm()) === null) {
+      const sweepAt = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 2);
+      await this.ctx.storage.setAlarm(sweepAt);
     }
   }
 
-  /** 三个桶键：d=设备、i=IP 哈希、g=全局，后缀都是 UTC 日期。 */
-  private keys(identity: Identity): [string, string, string] {
-    const day = dayKey(this.now());
-    return [
-      `d:${identity.clientId}:${day}`,
-      `i:${identity.ipHash}:${day}`,
-      `g:${day}`,
-    ];
-  }
-
-  private async readAll(keys: readonly string[]): Promise<[number, number, number]> {
-    const values = await Promise.all(keys.map((key) => this.store.get(key)));
-    return values.map((value) => Math.max(0, Number.parseInt(value ?? "0", 10) || 0)) as [
-      number,
-      number,
-      number,
-    ];
-  }
-
-  /** 下一个 UTC 零点——所有桶的重置时刻。 */
-  private resetAt(): string {
-    const now = this.now();
-    const next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
-    return new Date(next).toISOString();
+  /** 日期分片过期后永远不会再被引用，留下的只有计数垃圾——清掉。 */
+  async alarm(): Promise<void> {
+    await this.ctx.storage.deleteAll();
   }
 }
 
-/** 桶活两天：隔天即无用，让 KV 自己回收。 */
-const BucketTtlSeconds = 2 * 24 * 60 * 60;
+/** 下一个 UTC 零点——所有层的重置时刻。 */
+function resetAt(now: Date): string {
+  const next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
+  return new Date(next).toISOString();
+}
 
-function dayKey(now: Date): string {
+/** 对象名即分片键：UTC 日期。 */
+export function dayKey(now: Date): string {
   return now.toISOString().slice(0, 10);
+}
+
+/**
+ * 真实部署的适配器：把端口调用转发到当日分片的 Durable Object。
+ * 限额在 Worker 侧读取（vars 可热调），随每次调用下发——DO 保持无配置。
+ */
+export class DurableCounter implements QuotaCounter {
+  constructor(
+    private readonly namespace: DurableObjectNamespace<DailyCounter>,
+    private readonly limits: Limits,
+  ) {}
+
+  admit(identity: Identity, chars: number, now: Date): Promise<QuotaDenial | null> {
+    return this.namespace.getByName(dayKey(now)).admit(identity, chars, this.limits, now);
+  }
+
+  refund(identity: Identity, chars: number, now: Date): Promise<void> {
+    return this.namespace.getByName(dayKey(now)).refund(identity, chars, now);
+  }
 }
