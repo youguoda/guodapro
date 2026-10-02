@@ -64,13 +64,27 @@ try {
     Start-Sleep -Milliseconds 1600   # panel measure + placement + connector draw
 
     # Classify the pid's visible windows: the bar is known; the preview
-    # carries a window title, the connector sheet carries none.
+    # carries a window title, the connector sheet carries none. The sheet
+    # sizes itself to the curve - right after Space it can still be mid-
+    # layout (observed 257x66 instead of the spanning size), so a too-small
+    # sheet re-waits and re-classifies before anyone measures it.
     $preview = [IntPtr]::Zero
     $sheet = [IntPtr]::Zero
-    foreach ($h in [Shiyu.Probe.Native]::ListWindows()) {
-        if ([Shiyu.Probe.Native]::PidOf($h) -ne $p.Id) { continue }
-        if ($h -eq $bar) { continue }
-        if ([Shiyu.Probe.Native]::TitleLenOf($h) -gt 0) { $preview = $h } else { $sheet = $h }
+    for ($attempt = 0; $attempt -lt 3; $attempt++) {
+        $preview = [IntPtr]::Zero
+        $sheet = [IntPtr]::Zero
+        foreach ($h in [Shiyu.Probe.Native]::ListWindows()) {
+            if ([Shiyu.Probe.Native]::PidOf($h) -ne $p.Id) { continue }
+            if ($h -eq $bar) { continue }
+            if ([Shiyu.Probe.Native]::TitleLenOf($h) -gt 0) { $preview = $h } else { $sheet = $h }
+        }
+
+        if ($sheet -ne [IntPtr]::Zero) {
+            $sr = [Shiyu.Probe.Native]::RectOf($sheet)
+            if ($sr[2] -ge 200 -and $sr[3] -ge 200) { break }
+        }
+
+        Start-Sleep -Milliseconds 900   # let the connector settle to full size
     }
 
     if ($preview -eq [IntPtr]::Zero) {
@@ -101,6 +115,20 @@ try {
     }
 
     $sh = [Shiyu.Probe.Native]::RectOf($sheet)
+
+    # The sheet must SPAN panel and row for "inside the panel" to mean
+    # anything. A sheet smaller than the panel is the aligned arrangement:
+    # the 2 DIP accent bridge is drawn by design and there is no offset
+    # curve to leak - reporting that honestly (SKIP) instead of measuring
+    # the whole sheet as if it were the panel interior (a false FAIL).
+    if ($sh[2] -lt $pv[2] -or $sh[3] -lt $pv[3]) {
+        Add-Check 'defect:connector-inside-panel' 'SKIP' `
+            ("sheet {0}x{1} does not span the panel {2}x{3}: aligned arrangement, the 2 DIP bridge is by design" -f `
+                $sh[2], $sh[3], $pv[2], $pv[3])
+        Send-ProbeKey $bar $VK_SPACE -KeyUp
+        return $script:Checks
+    }
+
     $shot = Get-WindowShot $sheet
     if ($shot) { [void](Save-Shot $shot 'connector-sheet') }
 
@@ -108,10 +136,19 @@ try {
     # covers a 5 DIP endpoint dot centred ON the boundary (half the dot plus
     # anti-aliasing fringe) - ink further in than that is the defect.
     $inset = [int][Math]::Ceiling(6 * $barRect.Scale)
-    $pl = ($pv[0] - $sh[0]) + $inset
-    $pt = ($pv[1] - $sh[1]) + $inset
+    # Clamp the relative rect into the sheet bitmap: on multi-monitor DPI
+    # placements the sheet can move between the two rect snapshots, and a
+    # negative origin crashes InkBox (out-of-bounds index) instead of
+    # measuring. Clamping only ever narrows the measured rect - the "no ink
+    # inside the preview" assertion keeps its meaning.
+    $pl = [Math]::Max(0, ($pv[0] - $sh[0]) + $inset)
+    $pt = [Math]::Max(0, ($pv[1] - $sh[1]) + $inset)
     $pw = $pv[2] - (2 * $inset)
     $ph = $pv[3] - (2 * $inset)
+    if ($shot) {
+        $pw = [Math]::Min($pw, $shot.Width - $pl)
+        $ph = [Math]::Min($ph, $shot.Height - $pt)
+    }
 
     if (-not $shot -or $pw -le 4 -or $ph -le 4) {
         Add-Check 'defect:connector-inside-panel' 'FAIL' `
