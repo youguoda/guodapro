@@ -45,12 +45,12 @@ public sealed partial class EntryStore
                 command.Transaction = transaction;
                 command.CommandText = """
                     INSERT INTO entries (
-                        text, source_app, created_at, kind, thumbnail, original_path,
-                        pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id,
+                        text, source_app, created_at, kind, original_path,
+                        pinned, sub_type, files, favorite, note, use_count, group_id,
                         image_width, image_height)
                     VALUES (
-                        $text, $sourceApp, $createdAt, $kind, $thumbnail, $originalPath,
-                        $pinned, $subType, $html, $rtf, $files, $favorite, $note, $useCount, $groupId,
+                        $text, $sourceApp, $createdAt, $kind, $originalPath,
+                        $pinned, $subType, $files, $favorite, $note, $useCount, $groupId,
                         $w, $h)
                     RETURNING id;
                     """;
@@ -59,12 +59,9 @@ public sealed partial class EntryStore
                 command.Parameters.AddWithValue("$sourceApp", (object?)entry.SourceApp ?? DBNull.Value);
                 command.Parameters.AddWithValue("$createdAt", entry.CreatedAt.ToUnixTimeMilliseconds());
                 command.Parameters.AddWithValue("$kind", (int)entry.Kind);
-                command.Parameters.AddWithValue("$thumbnail", (object?)entry.ThumbnailPng ?? DBNull.Value);
                 command.Parameters.AddWithValue("$originalPath", (object?)entry.OriginalPath ?? DBNull.Value);
                 command.Parameters.AddWithValue("$pinned", entry.IsPinned ? 1 : 0);
-                command.Parameters.AddWithValue("$subType", (object?)SubtypeOf(entry) ?? DBNull.Value);
-                command.Parameters.AddWithValue("$html", (object?)entry.Html ?? DBNull.Value);
-                command.Parameters.AddWithValue("$rtf", (object?)entry.Rtf ?? DBNull.Value);
+                command.Parameters.AddWithValue("$subType", SubtypeOf(entry));
                 command.Parameters.AddWithValue("$files", (object?)(entry.Files.Count > 0 ? string.Join("\n", entry.Files) : null) ?? DBNull.Value);
                 command.Parameters.AddWithValue("$favorite", entry.Favorite ? 1 : 0);
                 command.Parameters.AddWithValue("$note", (object?)entry.Note ?? DBNull.Value);
@@ -72,7 +69,7 @@ public sealed partial class EntryStore
                 command.Parameters.AddWithValue("$groupId", (object?)groupId ?? DBNull.Value);
 
                 // A backup made before the size columns existed imports zeros;
-                // the thumbnail is right there in the row and knows the shape.
+                // the thumbnail is right there in the payload and knows the shape.
                 var (width, height) = (entry.ImageWidth, entry.ImageHeight);
                 if (width == 0 && entry.ThumbnailPng is { Length: > 0 } png && PngSize.Read(png) is { } size)
                 {
@@ -84,6 +81,10 @@ public sealed partial class EntryStore
 
                 var id = (long)command.ExecuteScalar()!;
                 CountChanged();
+
+                // The payloads take the side-table path, exactly as a live copy
+                // would — an imported library must not grow wide rows twice.
+                InsertBlobsIn(transaction, id, entry.ThumbnailPng, entry.Html, entry.Rtf);
 
                 foreach (var tag in entry.Tags)
                 {

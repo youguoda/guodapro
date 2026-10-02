@@ -2,22 +2,27 @@ namespace Shiyu.Core;
 
 public sealed partial class EntryStore
 {
-    /// <summary>One entry by id, or null — the batch translator's lookup.</summary>
+    /// <summary>
+    /// One entry by id, or null — the batch translator's lookup. The one read
+    /// that joins the payload table: the caller asked for a single entry, so
+    /// the thumbnails and formatted forms ride along.
+    /// </summary>
     public Entry? Get(long id)
     {
         lock (_gate)
         {
             using var command = _connection.CreateCommand();
-            command.CommandText = """
-                SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from, image_width, image_height,
-                       (SELECT group_concat(t.name, char(31)) FROM tags t
-                          JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
+            command.CommandText = $"""
+                SELECT {NarrowColumns},
+                       b.thumbnail, b.html, b.rtf,
+                       {TagsColumn}
                 FROM entries
-                WHERE id = $id;
+                LEFT JOIN entry_blobs b ON b.entry_id = entries.id
+                WHERE entries.id = $id;
                 """;
             command.Parameters.AddWithValue("$id", id);
 
-            return ReadEntries(command).FirstOrDefault();
+            return ReadEntriesWithBlobs(command).FirstOrDefault();
         }
     }
 

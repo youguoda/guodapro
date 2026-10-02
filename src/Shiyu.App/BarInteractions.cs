@@ -365,8 +365,10 @@ internal partial class BarWindow
 
                 // Rich destinations get the RTF form; plain ones quietly use
                 // the text above — one payload, both worlds. (HTML is left
-                // out: WPF writes it header-less and targets mangle it.)
-                if (card.Rtf is { Length: > 0 } rtf)
+                // out: WPF writes it header-less and targets mangle it.) The
+                // formats are fetched here, at the moment of the drag: listed
+                // cards are narrow by design (O-22).
+                if (_store.Get(card.Id) is { Rtf: { Length: > 0 } rtf })
                 {
                     data.SetText(rtf, TextDataFormat.Rtf);
                 }
@@ -615,13 +617,14 @@ internal partial class BarWindow
     /// <summary>
     /// Copies an entry as itself: plain text always, the HTML and RTF forms
     /// when the entry has them, so a rich destination receives the formatting
-    /// and a plain one receives readable text.
+    /// and a plain one receives readable text. The formats come from the
+    /// payload table on the spot — a listed card does not carry them (O-22).
     /// </summary>
     private bool CopyCard(BarCard card)
         => card.Files.Count > 0
             ? _clipboard.SetFiles(card.Files)
-            : card.Html is { Length: > 0 } || card.Rtf is { Length: > 0 }
-                ? _clipboard.SetRich(card.Text, card.Html, card.Rtf)
+            : _store.Get(card.Id) is { } full && (full.Html is { Length: > 0 } || full.Rtf is { Length: > 0 })
+                ? _clipboard.SetRich(card.Text, full.Html, full.Rtf)
                 : _clipboard.SetText(card.Text);
 
     /// <summary>
@@ -652,9 +655,12 @@ internal partial class BarWindow
                 _capture.PasteCurrentClipboard();
             }
         }
-        else if (card.Html is { Length: > 0 } || card.Rtf is { Length: > 0 })
+        else if (_store.Get(card.Id) is { } full
+            && (full.Html is { Length: > 0 } || full.Rtf is { Length: > 0 }))
         {
-            if (_clipboard.SetRich(card.Text, card.Html, card.Rtf))
+            // The formats join the paste at the moment it happens; the card
+            // itself never carried them (O-22).
+            if (_clipboard.SetRich(card.Text, full.Html, full.Rtf))
             {
                 _capture.PasteCurrentClipboard();
             }

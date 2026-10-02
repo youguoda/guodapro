@@ -58,10 +58,11 @@ public class RetentionTests
         new RetentionService(store, archive, new TestClock(Noon)).Sweep(TimeSpan.FromDays(30));
 
         // This is the whole reason thumbnails live in the database: the history
-        // stays complete and explicable after the originals are gone.
+        // stays complete and explicable after the originals are gone. The list
+        // row is narrow (O-22); the payload read goes through Get.
         var entry = Assert.Single(store.Page(limit: 10, offset: 0));
         Assert.Equal(EntryKind.Image, entry.Kind);
-        Assert.Equal(new byte[] { 9 }, entry.ThumbnailPng);
+        Assert.Equal(new byte[] { 9 }, store.Get(entry.Id)!.ThumbnailPng);
         Assert.False(entry.HasOriginal);
         Assert.Null(entry.OriginalPath);
     }

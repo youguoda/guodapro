@@ -111,9 +111,17 @@ public partial class LibraryWindow : Window
 
     private void Append(IEnumerable<Entry> entries)
     {
-        foreach (var entry in entries)
+        var batch = entries.ToList();
+
+        // One payload read per page, for the image rows alone — list rows are
+        // narrow by design and the thumbnail is the only payload a row shows
+        // (O-22).
+        var blobs = _store.BlobsOf(
+            [.. batch.Where(entry => entry.Kind == EntryKind.Image).Select(entry => entry.Id)]);
+
+        foreach (var entry in batch)
         {
-            _items.Add(EntryItem.From(entry, _icons.For));
+            _items.Add(EntryItem.From(entry, blobs.GetValueOrDefault(entry.Id), _icons.For));
         }
     }
 
@@ -895,7 +903,7 @@ public partial class LibraryWindow : Window
         /// <summary>True while the full-size image is still on disk.</summary>
         public bool CanDrag => OriginalPath is { Length: > 0 } path && File.Exists(path);
 
-        public static EntryItem From(Entry entry, Func<string?, ImageSource?> iconOf)
+        public static EntryItem From(Entry entry, EntryBlobs? payload, Func<string?, ImageSource?> iconOf)
         {
             var collapsed = string.Join(' ', entry.Text.Split(
                 ['\r', '\n', '\t'],
@@ -915,7 +923,7 @@ public partial class LibraryWindow : Window
                 entry.Text,
                 preview,
                 $"{entry.CreatedAt.ToLocalTime():yyyy-MM-dd HH:mm}  ·  {source}  ·  {tail}{tags}",
-                Decode(entry.ThumbnailPng, pixelWidth: 240),
+                Decode(payload?.ThumbnailPng, pixelWidth: 240),
                 iconOf(entry.SourceApp),
                 entry.OriginalPath,
                 entry.IsPinned,

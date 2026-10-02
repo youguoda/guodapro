@@ -60,6 +60,7 @@ public class StorageScaleTests
     public void Rows_left_null_by_an_older_build_are_backfilled_once()
     {
         using var database = new TempDatabase();
+        var afterUpgrade = (object?)null;
 
         using (var store = EntryStore.Open(database.FilePath))
         {
@@ -90,7 +91,7 @@ public class StorageScaleTests
             Assert.Equal(0L, command.ExecuteScalar());
 
             command.CommandText = "PRAGMA user_version;";
-            Assert.Equal(12L, command.ExecuteScalar());
+            afterUpgrade = command.ExecuteScalar();
         }
 
         // And never again: the second open has nothing to migrate and the
@@ -99,7 +100,7 @@ public class StorageScaleTests
         {
             using var command = reopened.Connection.CreateCommand();
             command.CommandText = "PRAGMA user_version;";
-            Assert.Equal(12L, command.ExecuteScalar());
+            Assert.Equal(afterUpgrade, command.ExecuteScalar());
         }
     }
 
@@ -130,5 +131,187 @@ public class StorageScaleTests
 
         store.ImportEntry(new Entry(0, "restored", "test", Noon.AddSeconds(6)), groupName: null);
         Assert.Equal(1, store.Count());
+    }
+
+    // --- the payload side table (O-22, ticket 12 M) ---------------------------
+
+    /// <summary>
+    /// A hand-built version-12 library: the old layout with thumbnail/html/rtf
+    /// inline in the entries table. The shape an upgrade actually meets.
+    /// </summary>
+    private static void CreateVersion12Library(string path, byte[] thumbnail, string html)
+    {
+        using var old = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={path}");
+        old.Open();
+        using var create = old.CreateCommand();
+        create.CommandText = """
+            CREATE TABLE entries (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                text        TEXT    NOT NULL,
+                source_app  TEXT    NULL,
+                created_at  INTEGER NOT NULL,
+                kind        INTEGER NOT NULL DEFAULT 0,
+                thumbnail   BLOB    NULL,
+                original_path TEXT  NULL,
+                pinned      INTEGER NOT NULL DEFAULT 0,
+                sub_type    TEXT    NULL,
+                html        TEXT    NULL,
+                rtf         TEXT    NULL,
+                files       TEXT    NULL,
+                favorite    INTEGER NOT NULL DEFAULT 0,
+                note        TEXT    NULL,
+                use_count   INTEGER NOT NULL DEFAULT 0,
+                group_id    INTEGER NULL,
+                translated_from INTEGER NULL,
+                image_width INTEGER NOT NULL DEFAULT 0,
+                image_height INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE TABLE tags (
+                id   INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL COLLATE NOCASE UNIQUE
+            );
+            CREATE TABLE entry_tags (
+                entry_id INTEGER NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+                tag_id   INTEGER NOT NULL REFERENCES tags(id)    ON DELETE CASCADE,
+                PRIMARY KEY (entry_id, tag_id)
+            );
+            CREATE INDEX idx_entry_tags_tag ON entry_tags (tag_id);
+            CREATE TABLE groups (
+                id       INTEGER PRIMARY KEY AUTOINCREMENT,
+                name     TEXT    NOT NULL,
+                icon     TEXT    NULL,
+                position INTEGER NOT NULL DEFAULT 0,
+                hidden   INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE INDEX idx_entries_created_at ON entries (created_at DESC);
+            PRAGMA user_version = 12;
+
+            INSERT INTO entries (text, source_app, created_at, kind, thumbnail, original_path, sub_type, html, image_width, image_height)
+            VALUES ('图片 32×32', 'brush', 1758542400000, 1, $png, 'C:\\gone.png', 'None', NULL, 32, 32);
+            INSERT INTO entries (text, source_app, created_at, sub_type, html)
+            VALUES ('富文本', 'word', 1758542400001, 'None', $html);
+            INSERT INTO entries (text, source_app, created_at, sub_type)
+            VALUES ('普通文本', 'notepad', 1758542400002, 'None');
+            """;
+        create.Parameters.AddWithValue("$png", thumbnail);
+        create.Parameters.AddWithValue("$html", html);
+        create.ExecuteNonQuery();
+    }
+
+    [Fact]
+    public void An_inline_payload_library_upgrades_without_losing_a_byte()
+    {
+        using var database = new TempDatabase();
+        var thumbnail = new byte[] { 1, 2, 3, 4, 5, 6, 7, 8 };
+        var html = "<p>带格式的<b>旧库</b>内容</p>";
+        CreateVersion12Library(database.FilePath, thumbnail, html);
+
+        using var store = EntryStore.Open(database.FilePath);
+
+        var rows = store.Page(10, 0).ToDictionary(entry => entry.Text);
+
+        // Payloads travel to the side table and come back through the reads
+        // that ask for them; every marker column survives the rewrite.
+        Assert.Equal(thumbnail, store.Get(rows["图片 32×32"].Id)!.ThumbnailPng);
+        Assert.Equal(html, store.Get(rows["富文本"].Id)!.Html);
+        Assert.Null(store.Get(rows["普通文本"].Id)!.Html);
+        Assert.Equal(EntryKind.Image, rows["图片 32×32"].Kind);
+        Assert.Equal(32, rows["图片 32×32"].ImageWidth);
+
+        // The old columns are gone from the schema, not merely ignored.
+        using var columns = store.Connection.CreateCommand();
+        columns.CommandText = "SELECT COUNT(*) FROM pragma_table_info('entries') WHERE name IN ('thumbnail', 'html', 'rtf');";
+        Assert.Equal(0L, columns.ExecuteScalar());
+
+        using var sideRows = store.Connection.CreateCommand();
+        sideRows.CommandText = "SELECT COUNT(*) FROM entry_blobs;";
+        Assert.Equal(2L, sideRows.ExecuteScalar());
+
+        // And the upgrade is durable: the second open is an ordinary one.
+        using (var reopened = EntryStore.Open(database.FilePath))
+        {
+            Assert.Equal(3, reopened.Count());
+            Assert.Equal(html, reopened.Get(rows["富文本"].Id)!.Html);
+        }
+    }
+
+    [Fact]
+    public void A_payload_migration_interrupted_midway_finishes_on_the_next_open()
+    {
+        using var database = new TempDatabase();
+        var thumbnail = new byte[] { 9, 9, 9, 9 };
+        CreateVersion12Library(database.FilePath, thumbnail, "<p>half moved</p>");
+
+        // What a killed upgrade leaves behind: the side table exists, the
+        // first row's payload has moved and its source columns are clear, the
+        // rest still carry theirs inline — and the version says 12.
+        using (var interrupted = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={database.FilePath}"))
+        {
+            interrupted.Open();
+            using var partial = interrupted.CreateCommand();
+            partial.CommandText = """
+                CREATE TABLE entry_blobs (
+                    entry_id  INTEGER PRIMARY KEY REFERENCES entries(id) ON DELETE CASCADE,
+                    thumbnail BLOB NULL,
+                    html      TEXT NULL,
+                    rtf       TEXT NULL
+                );
+                INSERT INTO entry_blobs (entry_id, thumbnail, html, rtf)
+                SELECT id, thumbnail, html, rtf FROM entries WHERE id = 1;
+                UPDATE entries SET thumbnail = NULL, html = NULL, rtf = NULL WHERE id = 1;
+                """;
+            partial.ExecuteNonQuery();
+        }
+
+        using var store = EntryStore.Open(database.FilePath);
+
+        var rows = store.Page(10, 0).ToDictionary(entry => entry.Text);
+
+        // The already-moved row kept its payload, the interrupted ones arrived
+        // with theirs — nothing was copied twice and nothing was dropped.
+        Assert.Equal(thumbnail, store.Get(rows["图片 32×32"].Id)!.ThumbnailPng);
+        Assert.Equal("<p>half moved</p>", store.Get(rows["富文本"].Id)!.Html);
+        Assert.Equal(3, store.Count());
+
+        using var version = store.Connection.CreateCommand();
+        version.CommandText = "PRAGMA user_version;";
+        Assert.Equal(13L, version.ExecuteScalar());
+    }
+
+    [Fact]
+    public void Payloads_are_fetched_for_a_page_by_id_and_by_cursor_for_whole_history_walks()
+    {
+        using var database = new TempDatabase();
+        using var store = EntryStore.Open(database.FilePath);
+
+        var image = store.AppendImage("图片 4×4", [7, 7, 7], "C:\\x.png", "test", Noon);
+        var rich = store.Append("富文本", "test", Noon.AddSeconds(1), html: "<p>x</p>");
+        store.Append("普通", "test", Noon.AddSeconds(2));
+
+        // The page read: only the ids a page actually shows.
+        var blobs = store.BlobsOf([image.Id, rich.Id]);
+        Assert.Equal([7, 7, 7], blobs[image.Id].ThumbnailPng);
+        Assert.Equal("<p>x</p>", blobs[rich.Id].Html);
+        Assert.Null(blobs[rich.Id].ThumbnailPng);
+
+        // The whole-history walk, by id cursor — the export and merge shape.
+        var walked = new List<Entry>();
+        long after = 0;
+        while (true)
+        {
+            var page = store.EntriesWithBlobsAfter(after, 2);
+            if (page.Count == 0)
+            {
+                break;
+            }
+
+            walked.AddRange(page);
+            after = page[^1].Id;
+        }
+
+        Assert.Equal(3, walked.Count);
+        Assert.Equal([7, 7, 7], walked.Single(entry => entry.Kind == EntryKind.Image).ThumbnailPng);
+        Assert.Equal("<p>x</p>", walked.Single(entry => entry.Text == "富文本").Html);
+        Assert.Equal(image.Id, walked[0].Id);
     }
 }

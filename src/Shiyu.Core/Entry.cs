@@ -31,10 +31,16 @@ public sealed record Entry(
     /// <summary>What a text entry is — a link, an email, a colour, a path — so the list can show it as itself.</summary>
     public EntrySubtype Subtype { get; init; } = EntrySubtype.None;
 
-    /// <summary>The copy's HTML form, kept for pasting back with formatting. The Text stays the searchable plain form.</summary>
+    /// <summary>
+    /// The copy's HTML form, kept for pasting back with formatting. The Text stays the searchable plain form.
+    /// </summary>
+    /// <remarks>Side-table payload: null on entries returned by list queries — see <see cref="ThumbnailPng"/>.</remarks>
     public string? Html { get; init; }
 
-    /// <summary>The copy's RTF form, when the source published one instead of HTML.</summary>
+    /// <summary>
+    /// The copy's RTF form, when the source published one instead of HTML.
+    /// </summary>
+    /// <remarks>Side-table payload: null on entries returned by list queries — see <see cref="ThumbnailPng"/>.</remarks>
     public string? Rtf { get; init; }
 
     /// <summary>The paths of a file copy, capped at <see cref="FileEntries.Cap"/>. Empty for other kinds.</summary>
@@ -43,6 +49,15 @@ public sealed record Entry(
     /// <summary>The file paths that still exist, checked lazily for display.</summary>
     public IReadOnlyList<string> AliveFiles => Files.Where(File.Exists).ToList();
 
+    /// <summary>
+    /// The image's thumbnail PNG — see the record's param doc for what it is
+    /// for. A payload column in the entry_blobs side table: list queries
+    /// (Recent, Page, Find, Search, MostRecent) never read it, so an entry
+    /// they return carries null. <see cref="EntryStore.Get(long)"/> attaches
+    /// it, <see cref="EntryStore.BlobsOf"/> fetches it for a page of cards,
+    /// and <see cref="EntryStore.EntriesWithBlobsAfter(long, int)"/> walks the
+    /// whole library with payloads for export.
+    /// </summary>
     public byte[]? ThumbnailPng { get; init; }
 
     public string? OriginalPath { get; init; }
@@ -95,3 +110,10 @@ public sealed record Entry(
 
 /// <summary>An entry not yet written down, used for bulk writes.</summary>
 public sealed record NewEntry(string Text, string? SourceApp, DateTimeOffset CreatedAt);
+
+/// <summary>
+/// One entry's payload row from the entry_blobs side table: the columns that
+/// left the entries table so lists could read a narrow row. Fetched by
+/// <see cref="EntryStore.BlobsOf"/> for the cards a page is about to show.
+/// </summary>
+public sealed record EntryBlobs(long EntryId, byte[]? ThumbnailPng, string? Html, string? Rtf);

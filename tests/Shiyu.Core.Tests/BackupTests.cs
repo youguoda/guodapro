@@ -90,7 +90,7 @@ public class BackupTests : IDisposable
 
         var imageBack = restored.Single(entry => entry.Kind == EntryKind.Image);
         Assert.True(imageBack.Favorite);
-        Assert.NotNull(imageBack.ThumbnailPng);
+        Assert.NotNull(store.Get(imageBack.Id)!.ThumbnailPng);
         Assert.True(File.Exists(imageBack.OriginalPath));
 
         var group = Assert.Single(store.Groups());

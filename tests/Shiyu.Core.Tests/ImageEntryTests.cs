@@ -55,7 +55,11 @@ public class ImageEntryTests
 
         var entry = Assert.Single(store.Recent(limit: 10));
         Assert.Equal(EntryKind.Image, entry.Kind);
-        Assert.Equal(new byte[] { 9, 9, 9 }, entry.ThumbnailPng);
+
+        // The thumbnail is a payload: lists are narrow by design (O-22), so
+        // the assertion asks the store for the entry the way a reader of the
+        // full row would.
+        Assert.Equal(new byte[] { 9, 9, 9 }, store.Get(entry.Id)!.ThumbnailPng);
         Assert.Contains("1920×1080", entry.Text);
         Assert.True(entry.HasOriginal);
         Assert.Equal(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8 }, File.ReadAllBytes(entry.OriginalPath!));
@@ -140,7 +144,7 @@ public class ImageEntryTests
         // This is what stops the history developing holes the user cannot
         // explain once retention starts removing old originals.
         Assert.Equal(EntryKind.Image, entry.Kind);
-        Assert.Equal(new byte[] { 7, 7 }, entry.ThumbnailPng);
+        Assert.Equal(new byte[] { 7, 7 }, store.Get(entry.Id)!.ThumbnailPng);
         Assert.False(entry.HasOriginal);
     }
 
