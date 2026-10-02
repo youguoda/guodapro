@@ -53,7 +53,8 @@ public sealed class BackupUi(
                 dialog.FileName, store, imagesDirectory, settings, password.Bytes, report);
             return $"已导出 {counts.Entries} 条、{counts.Images} 张原图，共 {counts.Bytes / 1024} KB。";
         },
-        summary => MessageBox.Show(owner, summary, "备份", MessageBoxButton.OK, MessageBoxImage.Information));
+        summary => ContentDialog.Show(
+            owner, "导出完成", summary, new ContentDialogButton("知道了")));
     }
 
     public void Import(Window owner)
@@ -80,6 +81,7 @@ public sealed class BackupUi(
         {
             return;
         }
+
 
         RunWithProgress(owner, "正在导入…", report =>
         {
@@ -118,64 +120,31 @@ public sealed class BackupUi(
                 }
             }
 
-            MessageBox.Show(owner, summary, "备份", MessageBoxButton.OK, MessageBoxImage.Information);
+            ContentDialog.Show(owner, "导入完成", summary, new ContentDialogButton("知道了"));
         });
     }
 
-    /// <summary>True = overwrite, false = merge, null = walked away.</summary>
+    /// <summary>
+    /// True = overwrite, false = merge, null = walked away.
+    /// 覆盖导入按 §6.5 走 ContentDialog：不可撤销的动作说清后果，危险钮
+    /// Danger 实底，默认焦点在取消上。
+    /// </summary>
     private static bool? AskImportMode(Window owner)
     {
-        bool? answer = null;
-        var done = false;
+        var answer = ContentDialog.Show(
+            owner,
+            "导入方式",
+            "合并：保留现有内容，只补进不重复的（按内容判断，不看时间）。\n覆盖：清空当前历史，换成备份里的内容（设置一并恢复）。",
+            new ContentDialogButton("取消", ContentDialogButtonStyle.Standard, IsCancelFocus: true),
+            new ContentDialogButton("合并导入"),
+            new ContentDialogButton("覆盖导入", ContentDialogButtonStyle.Danger));
 
-        var window = new Window
+        return answer switch
         {
-            Title = "导入方式",
-            Width = 360,
-            SizeToContent = SizeToContent.Height,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Owner = owner,
-            ResizeMode = ResizeMode.NoResize,
-            ShowInTaskbar = false,
-            Background = (Brush)Application.Current.FindResource("Brush.Background"),
-            FontFamily = (FontFamily)Application.Current.FindResource("Font.Ui"),
-            FontSize = (double)Application.Current.FindResource("Type.Body"),
+            1 => false,
+            2 => true,
+            _ => null,
         };
-        window.SetResourceReference(TextElement.ForegroundProperty, "Brush.Text");
-
-        var root = new StackPanel { Margin = new Thickness(14) };
-
-        var explain = new TextBlock
-        {
-            Text = "合并：保留现有内容，只补进不重复的（按内容判断，不看时间）。\n覆盖：清空当前历史，换成备份里的内容（设置一并恢复）。",
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 10),
-        };
-        explain.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
-        root.Children.Add(explain);
-
-        var row = new StackPanel { Orientation = Orientation.Horizontal };
-
-        var merge = new Button { Content = "合并导入", Padding = new Thickness(14, 5, 14, 5), Cursor = Cursors.Hand };
-        merge.Click += (_, _) => { answer = false; done = true; window.Close(); };
-
-        var replace = new Button
-        {
-            Content = "覆盖导入",
-            Padding = new Thickness(14, 5, 14, 5),
-            Margin = new Thickness(8, 0, 0, 0),
-            Cursor = Cursors.Hand,
-        };
-        replace.SetResourceReference(Control.ForegroundProperty, "Brush.Danger");
-        replace.Click += (_, _) => { answer = true; done = true; window.Close(); };
-
-        row.Children.Add(merge);
-        row.Children.Add(replace);
-        root.Children.Add(row);
-        window.Content = root;
-        window.ShowDialog();
-
-        return done ? answer : null;
     }
 
     private sealed record PasswordAnswer(bool Cancelled, byte[]? Bytes, bool IncludeKey = false);
@@ -366,7 +335,7 @@ public sealed class BackupUi(
             catch (BackupException failure)
             {
                 window.Close();
-                MessageBox.Show(owner, failure.Message, "备份", MessageBoxButton.OK, MessageBoxImage.Warning);
+                ContentDialog.Show(owner, "备份没有完成", failure.Message, new ContentDialogButton("知道了"));
             }
             catch (Exception failure)
             {
@@ -375,7 +344,8 @@ public sealed class BackupUi(
                 // so "nothing was touched" is the truth it says it is.
                 Log.Event(LogEvent.BackupOperationFailed, failure);
                 window.Close();
-                MessageBox.Show(owner, "备份操作失败了，现有数据没有被动过。", "备份", MessageBoxButton.OK, MessageBoxImage.Warning);
+                ContentDialog.Show(
+                    owner, "备份没有完成", "备份操作失败了，现有数据没有被动过。", new ContentDialogButton("知道了"));
             }
         };
 
