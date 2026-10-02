@@ -1,0 +1,129 @@
+name: release
+
+# 发布流水线（票 09 / O-09，ADR-0010）。推 v* tag 触发：测试不过不发布；
+# 产物三件套 = shiyu-win-x64.zip + .sha256 + .sig（ECDSA P-256，私钥只存在
+# 仓库 secret SHIYU_UPDATE_SIGNING_KEY 里）；发布前用与客户端内置公钥
+# （Shiyu.Core UpdateSignature.BuiltInPublicKey）同一把的 pub.pem 在 runner
+# 上复验一次——两处钥匙不一致时这一步红掉，而不是把没验过的包发出去。
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 发布说明要写"上个 tag 以来合了什么"，浅克隆看不到。
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: 从 tag 取版本
+        id: version
+        shell: bash
+        run: |
+          tag="$GITHUB_REF_NAME"
+          version="${tag#v}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          # tag 带 -（如 v0.9.0-rc1）按预发布处理。releases/latest 不返回
+          # 预发布版本，所以 rc 不会出现在老客户端的自动更新里——想尝鲜的
+          # 用户只能来 Release 页手动下载，这正是 rc 想要的受众。
+          if [[ "$tag" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 测试（不过不发布）
+        run: dotnet test tests/Shiyu.Core.Tests -c Release
+
+      - name: 发布 self-contained win-x64
+        run: dotnet publish src/Shiyu.App/Shiyu.App.csproj -c Release -r win-x64 --self-contained true -p:Version=${{ steps.version.outputs.version }} -o publish
+
+      - name: 打 zip 与校验和
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          # zip 内部布局必须与 UpdateStaging.VerifyInstaller/Extract 的期望
+          # 一致：publish 的内容（含 Shiyu.App.exe）全在 zip 根目录、不带
+          # 外层文件夹——解压到 staged\ 后，ApplyAndRestart 要在
+          # staged\Shiyu.App.exe 找到新程序。本仓库的发布包演练测试
+          # （ReleasePackagingDrillTests）按同样布局验收。
+          [System.IO.Compression.ZipFile]::CreateFromDirectory(
+            (Join-Path $PWD 'publish'), (Join-Path $PWD 'shiyu-win-x64.zip'),
+            [System.IO.Compression.CompressionLevel]::Optimal, $false)
+          $hash = (Get-FileHash shiyu-win-x64.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          # 格式与 UpdateStaging.VerifyInstaller 的解析一致：首个空白分隔字段是十六进制哈希。
+          "$hash  shiyu-win-x64.zip" | Set-Content -NoNewline shiyu-win-x64.zip.sha256
+
+      - name: 签名（私钥只在临时文件里存在片刻）
+        shell: pwsh
+        env:
+          SHIYU_UPDATE_SIGNING_KEY: ${{ secrets.SHIYU_UPDATE_SIGNING_KEY }}
+        run: |
+          # 私钥是 PKCS#8 PEM（仓库 secret）：绝不 echo、绝不进日志、绝不进产物。
+          $openssl = (Get-Command openssl -ErrorAction SilentlyContinue).Source
+          if (-not $openssl) { $openssl = 'C:\Program Files\Git\usr\bin\openssl.exe' }
+          $key = New-TemporaryFile
+          try {
+            [System.IO.File]::WriteAllText($key, $env:SHIYU_UPDATE_SIGNING_KEY)
+            & $openssl dgst -sha256 -sign $key -out shiyu-win-x64.zip.sig shiyu-win-x64.zip
+          }
+          finally {
+            Remove-Item $key -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: 发布前用公钥复验一次
+        shell: pwsh
+        run: |
+          # 与客户端内置公钥（Shiyu.Core UpdateSignature.BuiltInPublicKey）
+          # 同一把：私钥配错了钥匙，这里就红，绝不让没验过的包出仓。
+          @'
+          -----BEGIN PUBLIC KEY-----
+          MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEJ12pHGKuZN4YEGgNi8ij3M8W3FPf
+          DvnRF5rToPQDvLPloNU3CrpiVuc7zoN97BeWFiOvaowf8J9p1jBU8VD6uw==
+          -----END PUBLIC KEY-----
+          '@ | Set-Content -NoNewline pub.pem
+          $openssl = (Get-Command openssl -ErrorAction SilentlyContinue).Source
+          if (-not $openssl) { $openssl = 'C:\Program Files\Git\usr\bin\openssl.exe' }
+          try {
+            & $openssl dgst -sha256 -verify pub.pem -signature shiyu-win-x64.zip.sig shiyu-win-x64.zip
+          }
+          finally {
+            Remove-Item pub.pem -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: 生成发布说明
+        shell: bash
+        run: |
+          prev=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)
+          if [ -n "$prev" ]; then range="$prev..HEAD"; else range="HEAD"; fi
+          {
+            echo "拾语 ${{ steps.version.outputs.version }}"
+            echo
+            git log "$range" --pretty=format:"- %s"
+            echo
+          } > release-notes.md
+
+      - name: 创建 GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          args=(release create "$GITHUB_REF_NAME"
+                shiyu-win-x64.zip shiyu-win-x64.zip.sha256 shiyu-win-x64.zip.sig
+                --title "拾语 ${{ steps.version.outputs.version }}"
+                --notes-file release-notes.md)
+          # rc 之类预发布：加 --prerelease，理由见"从 tag 取版本"步骤里的注释。
+          if [ "${{ steps.version.outputs.prerelease }}" = "true" ]; then
+            args+=(--prerelease)
+          fi
+          gh "${args[@]}"
