@@ -241,13 +241,12 @@ internal sealed class ServicePresetRow
         ShowResult("正在测试……", "Brush.TextSecondary");
 
         // 与真翻译同一条路：预设的附加字段与温度规则一并生效（票 08）。
-        // 密钥只进 Authorization 头，不进结果文案。
+        // 密钥只进 Authorization 头，不进结果文案。默认首字节 15 秒恰好是
+        // 测试连接想要的等待上限（O-23 之后不再有总时长语义）。
         var outcome = await ConnectionProbe.TestAsync(
-            new TranslationBackendOptions(baseUrl.Trim(), model.Trim(), apiKey)
-            {
-                Timeout = TimeSpan.FromSeconds(15),
-            },
-            ProviderPresets.Find(_state.Text));
+            new TranslationBackendOptions(baseUrl.Trim(), model.Trim(), apiKey),
+            ProviderPresets.Find(_state.Text),
+            httpClient: HttpClients.Shared);
 
         _test.IsEnabled = true;
         ShowResult(

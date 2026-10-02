@@ -10,8 +10,6 @@ namespace Shiyu.Core;
 /// <param name="ApiKey">Never logged, never shown in the interface.</param>
 public sealed record TranslationBackendOptions(string BaseUrl, string Model, string ApiKey)
 {
-    public TimeSpan Timeout { get; init; } = TimeSpan.FromSeconds(30);
-
     public bool IsConfigured =>
         !string.IsNullOrWhiteSpace(BaseUrl)
         && !string.IsNullOrWhiteSpace(Model)
@@ -32,20 +30,29 @@ public sealed record TranslationBackendOptions(string BaseUrl, string Model, str
 /// <param name="extraBody">附加到请求体顶层的字段（如 DeepSeek 的 thinking.type=disabled）。</param>
 /// <param name="maxTemperature">温度上限：实际发送 Min(请求值, 该值)。</param>
 /// <param name="sendTemperature">false 时整个 temperature 字段不发（Kimi 的温度是固定值，传错报错）。</param>
+/// <param name="firstByteTimeout">从发请求到第一个字节的最长等待（含瞬态重试的退避）。</param>
+/// <param name="idleTimeout">流式响应相邻两块之间的最长间隔——限"卡住"，不限"长"（O-23）。</param>
 public sealed class OpenAiCompatibleBackend(
     TranslationBackendOptions options,
     HttpClient? httpClient = null,
     Func<TimeSpan>? transientBackoff = null,
     JsonObject? extraBody = null,
     double? maxTemperature = null,
-    bool sendTemperature = true) : ITranslationBackend, IStreamingModel, IDisposable
+    bool sendTemperature = true,
+    TimeSpan? firstByteTimeout = null,
+    TimeSpan? idleTimeout = null) : ITranslationBackend, IStreamingModel, IDisposable
 {
     /// <summary>瞬态失败最多退避重试两次（即整发三次）。</summary>
     private const int MaxAttempts = 3;
 
+    private static readonly TimeSpan DefaultFirstByte = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan DefaultIdle = TimeSpan.FromSeconds(20);
+
     private readonly HttpClient _http = httpClient ?? new HttpClient();
     private readonly bool _ownsClient = httpClient is null;
     private readonly Func<TimeSpan> _transientBackoff = transientBackoff ?? NextTransientBackoff;
+    private readonly TimeSpan _firstByteTimeout = firstByteTimeout ?? DefaultFirstByte;
+    private readonly TimeSpan _idleTimeout = idleTimeout ?? DefaultIdle;
 
     /// <summary>
     /// 抽样一次默认退避时长。窗口 [600,1400]ms 取自 Glossy 对上游瞬态
@@ -77,21 +84,24 @@ public sealed class OpenAiCompatibleBackend(
             throw new TranslationFailedException("还没有配置翻译后端：请先在设置中填写接口地址、模型与凭据。");
         }
 
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
-        timeout.CancelAfter(options.Timeout);
-
-        var response = await SendWithRetryAsync(request, timeout, cancellation);
+        // 超时拆成两半（O-23）：首字节与"块间停顿"各限各的，总时长不再设
+        // 上限——此前 30 秒一刀切会把长译文的尾巴截掉。调用方（预算外壳、
+        // 用户取消）的 token 仍然管全程。
+        var response = await SendWithRetryAsync(request, cancellation);
 
         using (response)
         {
             if (!response.IsSuccessStatusCode)
             {
-                throw new TranslationFailedException(await DescribeFailure(response, timeout.Token));
+                throw new TranslationFailedException(await DescribeFailure(response, cancellation));
             }
 
-            await using var stream = await response.Content.ReadAsStreamAsync(timeout.Token);
+            await using var stream = new ChunkTimeoutStream(
+                await response.Content.ReadAsStreamAsync(cancellation),
+                _firstByteTimeout,
+                _idleTimeout);
 
-            await foreach (var payload in ServerSentEvents.ReadDataAsync(stream, timeout.Token))
+            await foreach (var payload in ServerSentEvents.ReadDataAsync(stream, cancellation))
             {
                 if (ExtractContent(payload) is { Length: > 0 } piece)
                 {
@@ -102,15 +112,71 @@ public sealed class OpenAiCompatibleBackend(
     }
 
     /// <summary>
+    /// A stream that bounds waiting, not length: the first read must start
+    /// within <paramref name="firstByteTimeout"/>, every later read within
+    /// <paramref name="idleTimeout"/> of the previous chunk. A translation
+    /// may take as long as it keeps making progress.
+    /// </summary>
+    private sealed class ChunkTimeoutStream(
+        Stream inner, TimeSpan firstByteTimeout, TimeSpan idleTimeout) : Stream
+    {
+        private bool _firstRead = true;
+
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer, CancellationToken cancellation)
+        {
+            var budget = _firstRead ? firstByteTimeout : idleTimeout;
+            _firstRead = false;
+
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+            timeout.CancelAfter(budget);
+            try
+            {
+                return await inner.ReadAsync(buffer, timeout.Token);
+            }
+            catch (OperationCanceledException) when (!cancellation.IsCancellationRequested)
+            {
+                // Cancelling mid-read poisons the stream — and we are about to
+                // throw our way out of it anyway.
+                throw new TranslationFailedException("翻译服务响应超时。");
+            }
+            catch (IOException failure) when (timeout.IsCancellationRequested)
+            {
+                // Some stacks surface the abort as an IO error instead.
+                throw new TranslationFailedException("翻译服务响应超时。", failure);
+            }
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            // The async path is the only one translation ever takes; the
+            // sync override exists to satisfy Stream and stays unguarded.
+            return inner.Read(buffer, offset, count);
+        }
+
+        public override void Flush() => inner.Flush();
+        public override long Seek(long offset, SeekOrigin origin) => inner.Seek(offset, origin);
+        public override void SetLength(long value) => inner.SetLength(value);
+        public override void Write(byte[] buffer, int offset, int count) => inner.Write(buffer, offset, count);
+        public override bool CanRead => inner.CanRead;
+        public override bool CanSeek => inner.CanSeek;
+        public override bool CanWrite => inner.CanWrite;
+        public override long Length => inner.Length;
+        public override long Position { get => inner.Position; set => inner.Position = value; }
+    }
+
+    /// <summary>
     /// 发送并对瞬态状态码整发重试。请求消息逐次重建——HttpClient 不允许
-    /// 同一条消息发两次；退避等待挂在整个超时预算上，三次尝试合计仍受
-    /// 单个 Timeout 约束，面板的等待时间因此有上界。
+    /// 同一条消息发两次；首字节预算覆盖三次尝试与退避（瞬态失败叠加慢首
+    /// 字节，用户等的还是同一个"服务响应超时"，不必区分是哪一层慢的）。
     /// </summary>
     private async Task<HttpResponseMessage> SendWithRetryAsync(
         ModelRequest request,
-        CancellationTokenSource timeout,
         CancellationToken cancellation)
     {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+        timeout.CancelAfter(_firstByteTimeout);
+
         HttpResponseMessage response;
         for (var attempt = 1; ; attempt++)
         {

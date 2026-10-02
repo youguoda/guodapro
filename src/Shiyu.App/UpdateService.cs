@@ -21,16 +21,10 @@ internal sealed class UpdateService
     {
         _dataDirectory = dataDirectory;
         _orchestrator = new UpdateOrchestrator(
-            http ?? new HttpClient
-            {
-                // GitHub refuses anonymous API calls without one.
-                DefaultRequestHeaders =
-                {
-                    UserAgent = { new System.Net.Http.Headers.ProductInfoHeaderValue("Shiyu", Current.Text) },
-                },
-            },
+            http ?? HttpClients.Shared,
             dataDirectory,
-            channel);
+            channel,
+            userAgent: $"Shiyu/{Current.Text}");
     }
 
     /// <summary>

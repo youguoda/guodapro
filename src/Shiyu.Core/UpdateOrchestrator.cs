@@ -17,7 +17,8 @@ public sealed class UpdateOrchestrator(
     HttpClient http,
     string dataDirectory,
     UpdateChannel? channel = null,
-    string? publicKeyPem = null)
+    string? publicKeyPem = null,
+    string? userAgent = null)
 {
     /// <summary>调试构建专用的发布源覆盖：SHIYU_UPDATE_API。发布构建不认它（O-06）。</summary>
     private const string ApiOverrideVariable = "SHIYU_UPDATE_API";
@@ -26,6 +27,21 @@ public sealed class UpdateOrchestrator(
     private readonly string _dataDirectory = dataDirectory;
     private readonly UpdateChannel _channel = channel ?? UpdateChannel.Default;
     private readonly string? _publicKeyPem = publicKeyPem;
+    private readonly string _userAgent = userAgent ?? "Shiyu";
+
+    /// <summary>
+    /// GitHub refuses anonymous API calls without a User-Agent. On the shared
+    /// process client the header cannot live on the client itself — it would
+    /// claim every request Shiyu makes is an update check — so it rides on
+    /// each message.
+    /// </summary>
+    private async Task<HttpResponseMessage> GetAsync(
+        string url, HttpCompletionOption completion, CancellationToken cancel)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.UserAgent.ParseAdd(_userAgent);
+        return await _http.SendAsync(request, completion, cancel);
+    }
 
     /// <summary>The latest release, or null when the channel said nothing usable.</summary>
     public async Task<ReleaseManifest?> CheckAsync(CancellationToken cancel = default)
@@ -40,7 +56,7 @@ public sealed class UpdateOrchestrator(
         }
 #endif
 
-        using var response = await _http.GetAsync(url, cancel);
+        using var response = await GetAsync(url, HttpCompletionOption.ResponseContentRead, cancel);
         if (!response.IsSuccessStatusCode)
         {
             return null;
@@ -131,15 +147,18 @@ public sealed class UpdateOrchestrator(
             return null;
         }
 
-        // 带了却下不来 → GetStringAsync 抛 HttpRequestException，由调用方
-        // 拒绝并清空。从前的"下不来就当作没有"正是被删掉的 fail-open。
-        return await _http.GetStringAsync(checksumAsset.Url, cancel);
+        // 带了却下不来 → 请求抛 HttpRequestException，由调用方拒绝并清空。
+        // 从前的"下不来就当作没有"正是被删掉的 fail-open。
+        using var checksum = await GetAsync(
+            checksumAsset.Url, HttpCompletionOption.ResponseContentRead, cancel);
+        checksum.EnsureSuccessStatusCode();
+        return await checksum.Content.ReadAsStringAsync(cancel);
     }
 
     private async Task DownloadFileAsync(
         string url, string path, long expectedSize, IProgress<double>? progress, CancellationToken cancel)
     {
-        using var response = await _http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancel);
+        using var response = await GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancel);
         response.EnsureSuccessStatusCode();
 
         await using var source = await response.Content.ReadAsStreamAsync(cancel);

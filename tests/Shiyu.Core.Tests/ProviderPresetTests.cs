@@ -401,15 +401,12 @@ public class ConnectionProbeTests
 {
     private const string Key = "sk-test-12345";
 
-    private static TranslationBackendOptions Options(TimeSpan? timeout = null)
-        => new("https://api.example.com/v1", "some-model", Key)
-        {
-            Timeout = timeout ?? TimeSpan.FromSeconds(10),
-        };
+    private static TranslationBackendOptions Options()
+        => new("https://api.example.com/v1", "some-model", Key);
 
     private static Task<ConnectionTestOutcome> Probe(
         ScriptedHandler handler, ProviderPreset? preset = null, TimeSpan? timeout = null)
-        => ConnectionProbe.TestAsync(Options(timeout), preset, new HttpClient(handler));
+        => ConnectionProbe.TestAsync(Options(), preset, new HttpClient(handler));
 
     [Fact]
     public async Task A_live_endpoint_answers_success_with_the_round_trip_time()
@@ -498,7 +495,7 @@ public class ConnectionProbeTests
         using var slow = new SlowHandler(TimeSpan.FromSeconds(5));
 
         var outcome = await ConnectionProbe.TestAsync(
-            Options(TimeSpan.FromMilliseconds(50)), null, new HttpClient(slow));
+            Options(), null, new HttpClient(slow), probeTimeout: TimeSpan.FromMilliseconds(50));
 
         Assert.Equal(ConnectionTestVerdict.Unreachable, outcome.Verdict);
         Assert.Contains("超时", outcome.Message);

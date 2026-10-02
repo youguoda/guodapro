@@ -2,6 +2,10 @@ using Shiyu.Core;
 
 namespace Shiyu.Core.Tests;
 
+// AppSettings.SecretProtector is ambient state: these classes must not run
+// in parallel with anything that swaps the protector mid-save (a save under
+// the fake followed by a load under null drops the key — a race, not a bug).
+[Collection("settings-io")]
 public class AppSettingsTests
 {
     private sealed class TempFile : IDisposable

@@ -28,6 +28,7 @@ internal sealed class FakeProtector : ISecretProtector
     }
 }
 
+[Collection("settings-io")]
 public class SecretProtectionTests : IDisposable
 {
     private readonly string _path = Path.Combine(Path.GetTempPath(), "shiyu-secret-tests-" + Guid.NewGuid().ToString("N") + ".json");

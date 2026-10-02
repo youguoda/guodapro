@@ -254,12 +254,15 @@ public sealed record AppSettings
     {
         if (TranslationBackend == TranslationBackendKind.Relay && RelayChannel.Available)
         {
-            return new RelayBackend(new RelayBackendOptions(RelayEndpoint, RelayClientId));
+            return new RelayBackend(
+                new RelayBackendOptions(RelayEndpoint, RelayClientId),
+                httpClient: HttpClients.Shared);
         }
 
         var preset = ProviderPresets.ResolveFor(this);
         return new OpenAiCompatibleBackend(
             Backend,
+            httpClient: HttpClients.Shared,
             extraBody: preset?.ExtraBody,
             maxTemperature: preset?.MaxTemperature,
             sendTemperature: preset?.SendTemperature ?? true);

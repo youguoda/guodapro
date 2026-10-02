@@ -975,7 +975,7 @@ public partial class App : Application
     private IDictionaryApi? BuildDictionary(string word)
         => DictionaryWord.IsEnglishWord(word)
             ? new FallbackDictionary(
-                new BudgetedDictionary(new FreeDictionaryApi()),
+                new BudgetedDictionary(new FreeDictionaryApi(HttpClients.Shared)),
                 OwnKeyDictionary())
             : DictionaryWord.IsChineseWord(word)
                 ? OwnKeyDictionary()
@@ -991,6 +991,7 @@ public partial class App : Application
         var preset = ProviderPresets.ResolveFor(Settings);
         return new OpenAiCompatibleBackend(
             Settings.Backend,
+            httpClient: HttpClients.Shared,
             extraBody: preset?.ExtraBody,
             maxTemperature: preset?.MaxTemperature,
             sendTemperature: preset?.SendTemperature ?? true);

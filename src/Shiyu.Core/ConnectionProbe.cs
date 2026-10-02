@@ -38,10 +38,14 @@ public static class ConnectionProbe
 {
     private const int ProbeMaxTokens = 16;
 
+    /// <summary>一次极小非流式请求的等待上限；测试注入毫秒级。</summary>
+    private static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(15);
+
     public static async Task<ConnectionTestOutcome> TestAsync(
         TranslationBackendOptions options,
         ProviderPreset? preset = null,
         HttpClient? httpClient = null,
+        TimeSpan? probeTimeout = null,
         CancellationToken cancellation = default)
     {
         if (!options.IsConfigured)
@@ -54,7 +58,11 @@ public static class ConnectionProbe
         using var owned = httpClient is null ? new HttpClient() : null;
         var http = httpClient ?? owned!;
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
-        timeout.CancelAfter(options.Timeout);
+
+        // 一次极小的非流式请求：唯一的预算就是"多久算连不上"。15 秒取自
+        // 此前翻译后端的默认值——测试连接要的就是它，不是流式语义（O-23
+        // 之后总时长超时不再是后端的形状，这里自带）。
+        timeout.CancelAfter(probeTimeout ?? DefaultTimeout);
 
         using var message = BuildRequest(options, preset);
         var watch = Stopwatch.StartNew();
