@@ -110,3 +110,51 @@ public class PreviewConnectorTests
         Assert.NotNull(curve);
     }
 }
+
+public class PreviewConnectorVisibilityTests
+{
+    private static readonly ScreenRect Card = new(100, 200, 500, 300);
+
+    [Fact]
+    public void A_panel_squarely_beside_the_row_gets_no_curve()
+    {
+        // The everyday placement (ticket 20): panel anchored at the bar's
+        // outer edge + 8 DIP, top-aligned with the row. At 150% that is a
+        // 12-px gap and zero misalignment.
+        var panel = new ScreenRect(512, 200, 1200, 700);
+
+        Assert.False(PreviewConnector.ShouldDrawCurve(Card, panel, 1.5, 1.5));
+    }
+
+    [Fact]
+    public void A_clamped_panel_lifted_off_the_row_earns_the_curve()
+    {
+        // The panel hit the work-area bottom and was clamped up: the offset
+        // past 24 DIP is the curve's one job.
+        var panel = new ScreenRect(512, 100, 1200, 600);
+
+        Assert.True(PreviewConnector.ShouldDrawCurve(Card, panel, 1.0, 1.0));
+    }
+
+    [Fact]
+    public void A_squeezed_gap_beyond_the_threshold_earns_the_curve()
+    {
+        // Narrow work area: the panel was pushed further out than 16 DIP -
+        // in DIP terms, which is what the caller's monitor scale divides by
+        // (30 px is beyond the threshold at 100%, inside it at 200%).
+        var panel = new ScreenRect(530, 200, 1600, 700);
+
+        Assert.True(PreviewConnector.ShouldDrawCurve(Card, panel, 1.0, 1.0));
+        Assert.False(PreviewConnector.ShouldDrawCurve(Card, panel, 2.0, 2.0));
+    }
+
+    [Fact]
+    public void A_panel_on_the_left_side_is_measured_the_same_way()
+    {
+        var near = new ScreenRect(-612, 200, 88, 700);
+        Assert.False(PreviewConnector.ShouldDrawCurve(Card, near, 1.0, 1.0));
+
+        var far = new ScreenRect(-660, 200, 40, 700);
+        Assert.True(PreviewConnector.ShouldDrawCurve(Card, far, 1.0, 1.0));
+    }
+}

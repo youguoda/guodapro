@@ -9,8 +9,14 @@ namespace Shiyu.Core;
 /// </summary>
 public static class PreviewPlacement
 {
-    /// <summary>The breathing room between a card and its preview.</summary>
-    public const int Gap = 10;
+    /// <summary>
+    /// The breathing room between the bar's outer edge and the preview, in
+    /// DIPs (§4.7: 两扇浮层永不重叠，间隔 8；U-03 前是 10 且锚在卡上，预览
+    /// 曾压进窄条约 8 DIP)。<see cref="Place"/> speaks physical pixels, so
+    /// callers convert (ShowFor hands in 8 × its monitor scale). Callers
+    /// anchor to the BAR's outer edge, not the card.
+    /// </summary>
+    public const int Gap = 8;
 
     /// <summary>
     /// Places the panel beside <paramref name="anchor"/> — to its right when

@@ -84,7 +84,10 @@ internal partial class ConnectorWindow : Window
     /// <summary>
     /// Positions the sheet over the region the curve spans and redraws it.
     /// The card and panel rectangles arrive in physical pixels; the sheet
-    /// converts to its own DIPs, which is correct wherever it sits.
+    /// converts to DIPs through the scale of the MONITOR THAT REGION SITS ON
+    /// (U-03) — never its own <c>PresentationSource</c>, which still answers
+    /// for the previous monitor for a beat after every cross-DPI move and
+    /// lands the curve inside the panel.
     /// </summary>
     /// <param name="band">
     /// The bar's band (验收缺陷 B): the curve's sheet once carried its own
@@ -105,20 +108,26 @@ internal partial class ConnectorWindow : Window
 
         var helper = new WindowInteropHelper(this);
         _ = helper.EnsureHandle();
+
+        // Visible first, pressed under the panel second (U-03): a Show() that
+        // lands after the z-order write re-raises the sheet above the panel,
+        // and the curve then explains itself over the thing it points at.
+        // The flash costs nothing — the sheet is transparent until the new
+        // curve is drawn below, and it never takes activation.
+        if (!IsVisible)
+        {
+            Show();
+        }
+
         SetWindowPos(helper.Handle, below, left, top, right - left, bottom - top,
             SwpNoActivate | SwpShowWindow);
-        UpdateLayout();
 
-        var scale = PresentationSource.FromVisual(this)?.CompositionTarget?.TransformToDevice.M11 ?? 1.0;
-        if (scale <= 0)
-        {
-            scale = 1.0;
-        }
+        var (scaleX, scaleY) = ScreenGeometry.ScaleForRect(new ScreenRect(left, top, right, bottom));
 
         var curve = PreviewConnector.Between(card, panel);
 
-        double LocalX(int x) => (x - left) / scale;
-        double LocalY(int y) => (y - top) / scale;
+        double LocalX(int x) => (x - left) / scaleX;
+        double LocalY(int y) => (y - top) / scaleY;
 
         var figure = new PathFigure(
             new Point(LocalX(curve.From.X), LocalY(curve.From.Y)),
@@ -133,10 +142,7 @@ internal partial class ConnectorWindow : Window
         Center(_fromDot, LocalX(curve.From.X), LocalY(curve.From.Y));
         Center(_toDot, LocalX(curve.To.X), LocalY(curve.To.Y));
 
-        if (!IsVisible)
-        {
-            Show();
-        }
+        UpdateLayout();
     }
 
     private static void Center(System.Windows.Shapes.Ellipse dot, double x, double y)

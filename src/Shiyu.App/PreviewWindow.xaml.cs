@@ -69,27 +69,6 @@ internal partial class PreviewWindow : Window
         InitializeComponent();
         _fileIcons = fileIcons;
         _fileProbe = fileProbe;
-        ApplyThemedSurface();
-    }
-
-    /// <summary>
-    /// The panel's translucent skin over the theme's own surface colour. The
-    /// translucency is the ticket's ask; the colour must follow the theme or
-    /// a light theme puts its dark text on this panel's dark paint.
-    /// </summary>
-    private void ApplyThemedSurface()
-    {
-        if (FindResource("Brush.Surface") is SolidColorBrush surface)
-        {
-            var colour = surface.Color;
-            Root.Background = new SolidColorBrush(Color.FromArgb(0xF2, colour.R, colour.G, colour.B));
-        }
-
-        if (FindResource("Brush.Border") is SolidColorBrush border)
-        {
-            var colour = border.Color;
-            Root.BorderBrush = new SolidColorBrush(Color.FromArgb(0x99, colour.R, colour.G, colour.B));
-        }
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -103,7 +82,14 @@ internal partial class PreviewWindow : Window
         // under. _band defaults to Topmost — ShowFor sets it before the first
         // handle exists, so this reads the right value at birth.
         TransientWindow.MakeNonActivating(helper.Handle, _band);
-        DwmEffects.TryApplyPanel(helper.Handle);
+
+        // The shell contract (§4.7, ticket 20): DWM paints the contour, the
+        // XAML paints surface only. A system that refuses the attributes gets
+        // the self-drawn stroke and shadow instead.
+        if (!DwmEffects.TryApplyPanel(helper.Handle))
+        {
+            Backdrop.DegradeShell(Root);
+        }
 
         // WS_EX_NOACTIVATE alone is not enough: a click that lands on
         // focusable content inside (a scrollable body, say) makes WPF raise
@@ -175,7 +161,12 @@ internal partial class PreviewWindow : Window
             (int)Math.Ceiling(height * scaleY),
             ScreenGeometry.WorkAreaAt(new ScreenPoint(
                 (anchor.Left + anchor.Right) / 2,
-                (anchor.Top + anchor.Bottom) / 2)));
+                (anchor.Top + anchor.Bottom) / 2)),
+            gap: (int)Math.Round(PreviewPlacement.Gap * scaleX));
+
+        // Which edge faces the bar decides where the bridge line lives; the
+        // anchor's horizontal extent is the BAR's outer edge (U-03).
+        _bridgeOnLeft = placed.X >= anchor.Right;
 
         if (!wasVisible)
         {
@@ -218,6 +209,27 @@ internal partial class PreviewWindow : Window
     }
 
     private System.Windows.Threading.DispatcherTimer? _slide;
+
+    /// <summary>
+    /// 同色桥（§3.3 P2 / §4.7，票 20）：与卡片对齐时的连接表达——面向窄
+    /// 条那条边上一条 2 DIP accent 边线，代替多余的解释曲线。显示哪条
+    /// 边由最近一次落点决定（ShowFor），显隐由窄条按对齐条件决定。
+    /// </summary>
+    private bool _bridgeOnLeft = true;
+
+    /// <summary>Shows the bridge on the bar-facing edge (the aligned case — no curve).</summary>
+    public void ShowBridge()
+    {
+        BridgeLeft.Visibility = _bridgeOnLeft ? Visibility.Visible : Visibility.Collapsed;
+        BridgeRight.Visibility = _bridgeOnLeft ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    /// <summary>Hides the bridge (the offset case draws the connector curve instead).</summary>
+    public void HideBridge()
+    {
+        BridgeLeft.Visibility = Visibility.Collapsed;
+        BridgeRight.Visibility = Visibility.Collapsed;
+    }
 
     /// <summary>
     /// Lerps the window to its new spot with SetWindowPos over the standard

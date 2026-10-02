@@ -362,6 +362,14 @@ internal static class NativeMethods
     [DllImport("user32.dll", SetLastError = true)]
     internal static extern IntPtr MonitorFromPoint(Point point, uint flags);
 
+    /// <summary>
+    /// The monitor with the largest intersection with the rect (nearest on a
+    /// tie or a miss) — the right anchor for a DPI question about a REGION,
+    /// where the point form would answer for whichever corner was handed in.
+    /// </summary>
+    [DllImport("user32.dll", SetLastError = true)]
+    internal static extern IntPtr MonitorFromRect(ref Rect rect, uint flags);
+
     [DllImport("user32.dll", SetLastError = true)]
     internal static extern bool GetMonitorInfoW(IntPtr monitor, ref MonitorInfo info);
 
