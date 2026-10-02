@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -5,6 +6,7 @@ using System.Windows.Media.Effects;
 using System.Windows.Media.Imaging;
 using Microsoft.Win32;
 using Shiyu.Core;
+using Shiyu.Windows;
 
 namespace Shiyu.App;
 
@@ -26,12 +28,8 @@ namespace Shiyu.App;
 internal sealed class ThemeManager : IDisposable
 {
     private const string ControlsSource = "/Themes/Controls.xaml";
-    private static readonly TimeSpan SystemWatchInterval = TimeSpan.FromSeconds(5);
 
-    private readonly System.Windows.Threading.DispatcherTimer _systemWatch = new()
-    {
-        Interval = SystemWatchInterval,
-    };
+    private readonly MessageWindow _messages;
 
     private AppTheme _mode;
     private string _applied;
@@ -39,15 +37,44 @@ internal sealed class ThemeManager : IDisposable
     /// <summary>Whether the palette currently applied is Dark — Backdrop reads it.</summary>
     public static bool CurrentIsDark { get; private set; }
 
-    public ThemeManager()
+    /// <summary>
+    /// While the mode is System, Windows itself is watched — through the
+    /// <c>WM_SETTINGCHANGE</c> broadcasts the hidden window already receives
+    /// (O-37), the same channel the clipboard notifications ride on. The old
+    /// five-second registry poll kept the process waking at two ticks a
+    /// minute to learn, almost always, that nothing had changed; the
+    /// broadcast arrives only when there is news, and it is delivered on
+    /// this dispatcher's own thread, which is where a palette swap must
+    /// happen anyway.
+    /// </summary>
+    public ThemeManager(MessageWindow messages)
     {
+        _messages = messages;
         _applied = string.Empty;
 
         Application.Current.Resources.MergedDictionaries.Add(BuildValues(DesignTokens.Light));
         Application.Current.Resources.MergedDictionaries.Add(
             new ResourceDictionary { Source = new Uri(ControlsSource, UriKind.Relative) });
 
-        _systemWatch.Tick += (_, _) => FollowSystemIfItMoved();
+        _messages.MessageReceived += OnSystemMessage;
+    }
+
+    private void OnSystemMessage(WindowMessage message)
+    {
+        if (message.Id != MessageWindow.SettingChangeMessage
+            || !ThemeFollowPolicy.ShouldRecheck(_mode, Area(message.LParam)))
+        {
+            return;
+        }
+
+        // Reading the registry once per broadcast is cheap; swapping only on
+        // a real change keeps an idle theme alone. Some broadcasts name no
+        // area at all — the policy treats those as possibly ours rather than
+        // ignoring a theme flip the sender forgot to label.
+        FollowSystemIfItMoved();
+
+        static string? Area(IntPtr lParam)
+            => lParam == IntPtr.Zero ? null : Marshal.PtrToStringUni(lParam);
     }
 
     /// <summary>Applies the mode now; while it is System, keeps following Windows live.</summary>
@@ -55,7 +82,6 @@ internal sealed class ThemeManager : IDisposable
     {
         _mode = mode;
         SwapTo(Resolve(mode));
-        _systemWatch.IsEnabled = mode == AppTheme.System;
     }
 
     private void FollowSystemIfItMoved()
@@ -217,5 +243,5 @@ internal sealed class ThemeManager : IDisposable
         }
     }
 
-    public void Dispose() => _systemWatch.Stop();
+    public void Dispose() => _messages.MessageReceived -= OnSystemMessage;
 }

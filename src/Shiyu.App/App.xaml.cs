@@ -28,6 +28,9 @@ public partial class App : Application
     private BarWindow? _bar;
     private AppIconCache? _icons;
     private FileTypeIcons? _fileIcons;
+
+    /// <summary>Shared file-existence verdicts for every renderer (O-36).</summary>
+    private FileExistenceCache? _fileProbe;
     private System.Windows.Threading.DispatcherTimer? _barGeometrySave;
     private WinVHook? _winV;
     private SpeechSynthesis? _speech;
@@ -288,16 +291,24 @@ public partial class App : Application
         _icons = new AppIconCache(_store);
         _fileIcons = new FileTypeIcons();
 
-        // Before any window exists: the first frame a window ever shows must
-        // already be in the right theme.
-        _theme = new ThemeManager();
+        // One hidden window serves the clipboard notifications, the tray
+        // icon's callbacks, and the global hotkeys — and carries the
+        // WM_SETTINGCHANGE broadcasts the theme follows (O-37). Built before
+        // the theme manager so the watcher can ride it from birth: the
+        // first frame a window ever shows must already be in the right
+        // theme, and a theme flip in that first instant is news all the
+        // same.
+        _messageWindow = new MessageWindow();
+        _theme = new ThemeManager(_messageWindow);
         _theme.Apply(Settings.Theme);
 
-        // One hidden window serves both the clipboard notifications and the
-        // tray icon's callbacks — and, later, the global hotkeys.
-        _messageWindow = new MessageWindow();
         _exclusions = Settings.BuildExclusionPolicy();
         _images = new ImageArchive(AppPaths.ImageDirectory);
+
+        // Every renderer reads its verdicts from this one cache (O-36):
+        // the bar's cards, the preview panel — a path probed for one is a
+        // path the other never waits for.
+        _fileProbe = new FileExistenceCache();
 
         // A probe instance watches no clipboard: the user's copies must not
         // land in the probe's database (synthetic data only, ever — that is
@@ -797,7 +808,7 @@ public partial class App : Application
 
         if (_bar is null)
         {
-            _bar = new BarWindow(_store, _icons, _writer, _capture, Settings, _fileIcons!);
+            _bar = new BarWindow(_store, _icons, _writer, _capture, Settings, _fileIcons!, _fileProbe);
             _bar.GeometryChanged += OnBarGeometryChanged;
             _bar.DataSettingsRequested += OpenSettingsAt;
             _bar.DeadDragNotice += notice => _tray?.ShowNotification("拾语", notice);
