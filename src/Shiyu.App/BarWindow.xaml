@@ -375,19 +375,18 @@
     </Window.Resources>
 
     <!--
-      The floating Win11 shell: a translucent brand tint over the DWM Acrylic
-      backdrop (ticket 03's recipe — the material renders only on a layered
-      window, which this now is), rounded at the Overlay tier (8, 与 DWM
-      同心，ADR-0012 §5), one soft shadow. The header and footer draw
-      nothing themselves so the material reads as one continuous sheet
-      behind everything.
+      The floating Win11 shell (§4.7, ticket 20): a translucent brand tint
+      over the DWM Acrylic backdrop (ticket 03's recipe — the material renders
+      only on a layered window, which this now is). The shell itself paints
+      surface only — no border, no shadow — because DWM owns the rounding
+      (Overlay 8, 与 DWM 同心，ADR-0012 §5) and the drop shadow. A system that
+      refuses those gets the self-drawn chrome from Backdrop.AttachShell.
+      The header and footer draw nothing themselves so the material reads as
+      one continuous sheet behind everything.
     -->
     <Border x:Name="Shell" CornerRadius="{DynamicResource Radius.Overlay}"
             Background="{DynamicResource Brush.SurfaceMaterial}"
-            BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1">
-        <Border.Effect>
-            <StaticResource ResourceKey="Shadow.Floating"/>
-        </Border.Effect>
+            BorderThickness="0">
     <DockPanel>
         <!--
           Background dragging hangs off the window alone: a bubbling press

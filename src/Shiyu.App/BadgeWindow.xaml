@@ -7,7 +7,12 @@
         Focusable="False" Opacity="0"
         TextElement.FontFamily="{DynamicResource Font.Ui}"
         TextElement.Foreground="{DynamicResource Brush.Text}">
+    <!-- 胶囊（§4.7，票 20）：高 32（Control.Height）、圆角 Radius.Pill=16。
+         12 DIP 透明边距让 Shadow.Badge 完整——胶囊非矩形，DWM 阴影贴不住，
+         徽标是浮层家族里唯一由 WPF 画阴影的窗。窗口按含边距的尺寸定位，
+         光标旁的落点不受影响。 -->
     <Border x:Name="Pill" CornerRadius="{DynamicResource Radius.Pill}" Padding="12,6" Cursor="Hand"
+            MinHeight="{DynamicResource Control.Height}" Margin="12"
             Background="{DynamicResource Brush.AccentFloating}" MouseLeftButtonUp="OnClicked">
         <Border.Effect>
             <StaticResource ResourceKey="Shadow.Badge"/>
