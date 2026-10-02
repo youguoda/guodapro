@@ -269,4 +269,22 @@ internal static class LanguageOptions
             ? known.Display
             : LanguageDisplay.Name(value);
     }
+
+    /// <summary>
+    /// 系统显示语言对应的译文语言存储值（§5.3：引导的译文语言默认取系统）。
+    /// 不在支持列表里的语言给 null——保持现值，绝不硬换。
+    /// </summary>
+    public static string? FromSystemUi()
+        => System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName switch
+        {
+            "zh" => "Chinese",
+            "en" => "English",
+            "ja" => "Japanese",
+            "ko" => "Korean",
+            "ru" => "Russian",
+            "fr" => "French",
+            "de" => "German",
+            "es" => "Spanish",
+            _ => null,
+        };
 }

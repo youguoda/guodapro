@@ -83,6 +83,17 @@ internal sealed class AppShell
     public Action? ShowUpdateWindow { get; set; }
     public Func<IStreamingModel>? BuildStreamingModel { get; set; }
 
+    /// <summary>窄条被呼出/收起（热键或托盘菜单）。引导「试一试」靠它打勾（§5.3）。</summary>
+    public event Action? BarSummoned;
+
+    /// <summary>从窄条粘贴了一条（Enter 或编号键）。引导「试一试」靠它打勾。</summary>
+    public event Action? BarPasted;
+
+    /// <summary>窄条模块回放上面的两个信号（模块间经壳中转，互不认识）。</summary>
+    public void NoteBarSummoned() => BarSummoned?.Invoke();
+
+    public void NoteBarPasted() => BarPasted?.Invoke();
+
     /// <summary>当前热键注册表的取用口（O-43）：注册表随设置保存整体重建，面板持它而非一次性捕获。</summary>
     public Func<HotkeyRegistry>? Hotkeys { get; set; }
 

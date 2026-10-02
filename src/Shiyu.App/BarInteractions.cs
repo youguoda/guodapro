@@ -745,6 +745,7 @@ internal partial class BarWindow
         }
 
         Dismiss(BarHideReason.Pasted);
+        Pasted?.Invoke();
 
         if (card.Files.Count > 0)
         {

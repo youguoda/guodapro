@@ -43,6 +43,10 @@ internal sealed class BarModule
                 shell.FileIcons, shell.FileProbe);
             _bar.GeometryChanged += OnBarGeometryChanged;
 
+            // 引导「试一试」的两个信号（票 25/§5.3）：呼出与粘贴都经壳中转，
+            // 窄条不知道引导，引导不知道窄条。
+            _bar.Pasted += shell.NoteBarPasted;
+
             // 深链进设置的数据页：条不知道设置的内部，只知道条目 Id。
             _bar.DataSettingsRequested += itemId => shell.OpenSettingsAt?.Invoke(itemId);
             _bar.DeadDragNotice += notice => shell.TellUser(notice);
@@ -61,6 +65,9 @@ internal sealed class BarModule
         }
 
         _bar.Toggle();
+
+        // 呼出与收起都算「用过这个键」：试一试的清单只问用户会不会唤起窄条。
+        shell.NoteBarSummoned();
     }
 
     /// <summary>Summons the quick bar. One instance, reused: it appears dozens of times

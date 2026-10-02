@@ -69,6 +69,9 @@ internal partial class BarWindow : Window
     /// <summary>Raised when the window is moved or resized; the owner persists geometry, throttled its own way.</summary>
     public event Action? GeometryChanged;
 
+    /// <summary>一条从窄条粘贴出去了（Enter 或编号键）。引导「试一试」靠它打勾（票 25）。</summary>
+    public event Action? Pasted;
+
     /// <summary>
     /// 窄条头部的图钉想要的置顶状态（票 39 / O-20）：只上报一个布尔值，
     /// 由拥有者经 SettingsStore 落一个字段。窗口自己不再写设置——它手里

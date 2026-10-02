@@ -34,6 +34,12 @@ public partial class SettingsWindow : Window
     private readonly BackupUi? _backup;
     private readonly Action<Window>? _checkForUpdate;
 
+    /// <summary>
+    /// 「重新运行引导」要用它接试一试的信号；没有就退化为自查（票 25）。
+    /// 构造后的内部注入——构造器是 public 的，而壳是 internal 的。
+    /// </summary>
+    internal AppShell? Shell { private get; set; }
+
     /// <summary>开窗（或上次跟随）时的设置基线：跟随与"改没改"的对照（O-20）。</summary>
     private AppSettings _baseline;
 
@@ -1204,7 +1210,9 @@ public partial class SettingsWindow : Window
         };
         run.Click += (_, _) =>
         {
-            var wizard = new OnboardingWindow(_store.Current, _store)
+            // 重跑引导（§5.3）：不是首启——译文语言尊重已存值，试一试的
+            // 实时检测经壳接上（shell 为空时引导自己说明退化）。
+            var wizard = new OnboardingWindow(_store, firstRun: false, Shell)
             {
                 Owner = this,
             };

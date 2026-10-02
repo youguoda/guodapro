@@ -166,17 +166,18 @@ public partial class App : Application
         OpenDebugStartupWindows();
 #endif
 
-        // The first-run guide asks the few things only the user knows. A
-        // history that already exists says this is not a first run — the
-        // guide stays away and never nags an upgrading user. A probe skips it
-        // on principle: the whole point is a deterministic, empty surface.
-        // The wizard writes through the store like everyone else, so what it
-        // collects — hotkeys, theme, backend, rules — applies live via the
-        // same SettingsChanged path a settings save takes, and a bar summoned
-        // mid-guide can no longer erase it (S2).
+        // The first-run guide (§5.3 five screens, ticket 25) asks the few
+        // things only the user knows, then walks them through really using
+        // the bar once. A history that already exists says this is not a
+        // first run — the guide stays away and never nags an upgrading user.
+        // A probe skips it on principle: the whole point is a deterministic,
+        // empty surface. Every step commits on leave through the store, so
+        // what it collects applies live via the same SettingsChanged path a
+        // settings save takes, and a bar summoned mid-guide can no longer
+        // erase it (S2).
         if (!shell.IsProbe && !shell.Settings.OnboardingCompleted && store.Count() == 0)
         {
-            new OnboardingWindow(shell.Settings, settingsStore).Show();
+            new OnboardingWindow(settingsStore, firstRun: true, shell).Show();
         }
 
 #if DEBUG

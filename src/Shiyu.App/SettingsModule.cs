@@ -36,8 +36,12 @@ internal sealed class SettingsModule
                 includeKey => shell.Settings.ToBackupJson(includeKey),
                 RestoreSettingsFromBackup),
 
-            // 关于页的「检查更新」（§5.1）：与托盘菜单同一个手动入口。
-            _ => shell.ShowUpdateWindow?.Invoke());
+            // 关于页的「检查更新」（§5.1）：与托盘菜单同一个手动入口；
+            // 「重新运行引导」的试一试信号经壳进来（票 25）。
+            _ => shell.ShowUpdateWindow?.Invoke())
+        {
+            Shell = shell,
+        };
         _window.Closed += (_, _) => _window = null;
         _window.Show();
 
