@@ -42,9 +42,15 @@ public sealed class HotkeyRegistry(MessageWindow window) : IDisposable
     /// A conflict is reported rather than thrown: losing one hotkey to another
     /// application is a normal thing to have happen, and it must not stop the
     /// rest of Shiyu from starting.
+    ///
+    /// After <see cref="Dispose"/> the call throws: the registry is rebuilt on
+    /// every settings save (O-20), and a window still holding the retired one
+    /// must find out loudly instead of silently re-arming a hotkey whose owner
+    /// is gone (O-43).
     /// </summary>
     public HotkeyConflict? Register(Hotkey hotkey, Action onPressed)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         EnsureListening();
 
         var id = _nextId++;
@@ -67,10 +73,12 @@ public sealed class HotkeyRegistry(MessageWindow window) : IDisposable
     ///
     /// Exists for keys Shiyu has no business owning all the time — Escape,
     /// while a panel is on screen. Disposing must be reliable: an Escape key
-    /// left registered would be swallowed system-wide.
+    /// left registered would be swallowed system-wide. Like
+    /// <see cref="Register"/>, retired registries refuse loudly (O-43).
     /// </summary>
     public IDisposable? TryRegisterScoped(Hotkey hotkey, Action onPressed)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         EnsureListening();
 
         var id = _nextId++;

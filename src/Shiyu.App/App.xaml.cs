@@ -952,7 +952,9 @@ public partial class App : Application
             _speech ??= new SpeechSynthesis();
 
             _panel ??= new PanelWindow(
-                _hotkeys, _writer, () => Settings.BuildTranslationBackend(), Settings,
+                // O-43：面板持注册表取用口而非一次性捕获——注册表随设置
+                // 保存整体重建，退役实例现在会大声拒绝而不是悄悄失灵。
+                () => _hotkeys!, _writer, () => Settings.BuildTranslationBackend(), Settings,
                 SaveTranslationToHistory,
                 dictionary: BuildDictionary,
                 speech: _speech,

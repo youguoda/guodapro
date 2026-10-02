@@ -29,7 +29,11 @@ public sealed record SenseView(
 /// </summary>
 public partial class PanelWindow : Window
 {
-    private readonly HotkeyRegistry _hotkeys;
+    /// <summary>
+    /// 当前热键注册表的取用口，而非一次性捕获（O-43）：注册表随每次设置
+    /// 保存整体重建（O-20），攥着退役实例的窗口再按 Esc 只会悄悄失灵。
+    /// </summary>
+    private readonly Func<HotkeyRegistry> _hotkeys;
     private readonly WindowsClipboardWriter _clipboard;
     private readonly Func<ITranslationBackend> _backend;
     private readonly Action<string, string>? _saveTranslation;
@@ -59,7 +63,7 @@ public partial class PanelWindow : Window
     private int _cardRun;
 
     public PanelWindow(
-        HotkeyRegistry hotkeys,
+        Func<HotkeyRegistry> hotkeys,
         WindowsClipboardWriter clipboard,
         Func<ITranslationBackend> backend,
         AppSettings settings,
@@ -434,7 +438,7 @@ public partial class PanelWindow : Window
     /// </summary>
     private void HoldEscape()
     {
-        _escape ??= _hotkeys.TryRegisterScoped(
+        _escape ??= _hotkeys().TryRegisterScoped(
             new Hotkey(HotkeyModifiers.None, 0x1B, "关闭面板"),
             () => Dispatcher.Invoke(Dismiss));
 
