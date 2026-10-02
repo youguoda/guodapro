@@ -154,9 +154,13 @@ public static class SettingsSchema
             new SettingsSection("service.backend", "模型服务",
                 new SettingsItem(
                     "service.backend-kind", "翻译方式", SettingsControl.Segmented,
-                    Choices: ["公共通道（免费额度）", "自备密钥"],
-                    Hint: "公共通道：无需任何配置即可翻译，每天有免费字数额度（每台设备 2 万字）。被翻译的文本会经我们的中转发给模型服务；剪贴板历史本身仍不出机器。自备密钥：使用你自己的接口与凭据，走 OpenAI 兼容地址。",
-                    Keywords: ["公共", "免费", "通道", "中继", "翻译", "后端", "密钥", "零配置", "隐私"]),
+                    Choices: ["公共通道（即将推出）", "自备密钥"],
+                    Hint: "自备密钥：使用你自己的 OpenAI 兼容接口与凭据，从下面的服务商预设开始最快。公共通道零配置，但上线条件（自定义域名大陆可达、服务端加固、费用有人承担）尚未满足，暂不可选。",
+                    Keywords: ["公共", "免费", "通道", "中继", "翻译", "后端", "密钥", "零配置", "隐私", "即将推出", "自备"]),
+                new SettingsItem(
+                    "service.preset", "服务商预设", SettingsControl.Custom,
+                    Hint: "选中即填好服务地址与模型；手改地址或模型则视为自定义。预设附带「申请密钥」直达与「测试连接」。",
+                    Keywords: ["预设", "服务商", "百炼", "阿里云", "deepseek", "智谱", "glm", "硅基流动", "kimi", "测试连接", "申请密钥", "自定义"]),
                 new SettingsItem(
                     "service.base-url", "服务地址", SettingsControl.Text,
                     Hint: "自备密钥时使用：OpenAI 兼容接口地址。",

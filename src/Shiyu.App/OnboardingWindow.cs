@@ -12,7 +12,8 @@ namespace Shiyu.App;
 /// The first-run guide. Its value is not a feature tour — it asks the few
 /// things only the user knows: which app must never be recorded, what kinds
 /// of copies belong in the history, and how translation should travel (the
-/// free public relay by default, the user's own key as the advanced path).
+/// user's own key via a provider preset, ticket 08; the public relay stays
+/// "coming soon" until its launch conditions are met).
 /// Every step is skippable and the guide never returns on its own; skipping
 /// leaves a fully working tool with sane defaults.
 ///
@@ -311,8 +312,8 @@ internal sealed class OnboardingWindow : Window
 
         var note = new TextBlock
         {
-            Text = "翻译默认走公共通道：不填任何东西就能用，每天有免费字数额度。"
-                + "自备密钥是高级选项，想用自己的模型再切换。",
+            Text = "翻译用自己的密钥：选一家服务商预设，地址和模型就都填好了；"
+                + "点「申请密钥」去服务商拿一个 Key 粘进来，测试连接通过就能用。",
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 8),
         };
@@ -321,7 +322,7 @@ internal sealed class OnboardingWindow : Window
 
         var disclosure = new TextBlock
         {
-            Text = "隐私：被翻译的文本会经我们的中转发给模型服务；剪贴板历史本身仍不出机器。",
+            Text = "隐私：被翻译的那段文本会直接发给你选的服务商；剪贴板历史本身不出机器。",
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 10),
         };
@@ -329,43 +330,119 @@ internal sealed class OnboardingWindow : Window
         disclosure.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
         panel.Children.Add(disclosure);
 
-        // 公共通道是默认路径：还没配过自备密钥的人直接落在这里。已经配好
-        // 的（重跑引导的用户）保留他们的选择，不悄悄替他们改道。
-        var backendState = new ItemState();
-        var initialChoice = !_current.Backend.IsConfigured
-            ? (int?)TranslationBackendKind.Relay
-            : null;
-
-        var ownKeyRows = new List<FrameworkElement>();
-        panel.Children.Add(RowOf("service.backend-kind", item =>
+        // 自备密钥是默认与唯一可走的路（票 08/ADR-0009）：公共通道显示为
+        // 「即将推出」且点不动；重跑引导的存量用户也从自备密钥开始看。
+        var backendState = new ItemState
         {
-            var editor = ItemEditors.Segmented(
+            Choice = (int)TranslationBackendKind.OwnKey,
+        };
+
+        panel.Children.Add(RowOf("service.backend-kind", item =>
+            ItemEditors.Segmented(
                 item, _current, backendState,
-                changed: choice => ownKeyRows.ForEach(
-                    row => row.Visibility = choice == (int)TranslationBackendKind.OwnKey
-                        ? Visibility.Visible
-                        : Visibility.Collapsed),
-                initialChoice: initialChoice);
-            return editor;
-        }));
+                initialChoice: (int)TranslationBackendKind.OwnKey,
+                choiceEnabled: choice => choice != (int)TranslationBackendKind.Relay
+                    || RelayChannel.Available)));
 
         // RowOf 登记的是它自己新造的 state；完成时要读的是编辑器真正在写
         // 的这个——换回引用，别让选择在最后一步丢掉。
         _states["service.backend-kind"] = backendState;
 
+        // 服务商预设行：选中即代填地址与模型，手改即降级「自定义」。
+        TextBox? urlBox = null;
+        TextBox? modelBox = null;
+        PasswordBox? keyBox = null;
+
+        var presetState = new ItemState
+        {
+            Text = SettingsBindings.ReadText("service.preset", _current) ?? string.Empty,
+        };
+        var presetRow = new ServicePresetRow(
+            _current,
+            presetState,
+            readForm: () => (
+                urlBox?.Text ?? string.Empty,
+                modelBox?.Text ?? string.Empty,
+                keyBox?.Password is { Length: > 0 } typed ? typed : _current.BackendApiKey),
+            applyPreset: preset =>
+            {
+                if (urlBox is not null)
+                {
+                    urlBox.Text = preset.BaseUrl;
+                }
+
+                if (modelBox is not null)
+                {
+                    modelBox.Text = preset.DefaultModel;
+                }
+            });
+
+        panel.Children.Add(RowOf("service.preset", _ => presetRow.Element));
+        _states["service.preset"] = presetState;
+
         foreach (var id in new[] { "service.base-url", "service.model", "service.api-key" })
         {
-            var row = RowOf(id, item => item.Control == SettingsControl.Password
-                ? ItemEditors.Password(item, _current, _states[item.Id]).Editor
-                : ItemEditors.Text(item, _current, _states[item.Id]));
-            ownKeyRows.Add(row);
+            var row = RowOf(id, item =>
+            {
+                if (item.Control == SettingsControl.Password)
+                {
+                    var (secretEditor, secretBox) = ItemEditors.Password(item, _current, _states[item.Id]);
+                    keyBox = secretBox;
+                    return secretEditor;
+                }
+
+                var editor = ItemEditors.Text(item, _current, _states[item.Id]);
+                var box = editor is TextBox plain
+                    ? plain
+                    : ((StackPanel)editor).Children.OfType<TextBox>().First();
+                if (item.Id == "service.base-url")
+                {
+                    urlBox = box;
+                }
+                else
+                {
+                    modelBox = box;
+                }
+
+                return editor;
+            });
             panel.Children.Add(row);
         }
 
-        var initial = backendState.Choice == (int)TranslationBackendKind.OwnKey;
-        ownKeyRows.ForEach(row => row.Visibility = initial
-            ? Visibility.Visible
-            : Visibility.Collapsed);
+        // 手改地址或模型，预设行立刻降级为「自定义」——看得见的诚实。
+        foreach (var box in new[] { urlBox, modelBox })
+        {
+            if (box is not null)
+            {
+                box.TextChanged += (_, _) => presetRow.NoteAddressEdited();
+            }
+        }
+
+        var later = new Button
+        {
+            Content = "稍后配置",
+            Padding = new Thickness(10, 3, 10, 3),
+            Margin = new Thickness(0, 10, 0, 0),
+            Cursor = Cursors.Hand,
+            ToolTip = "现在不配也行：用到翻译时拾语会引导你完成配置",
+        };
+        later.Click += (_, _) =>
+        {
+            // 稍后 = 这一步什么都不写：服务各项回到开窗基线再收尾，
+            // 用户临时填了一半的东西不落盘。
+            foreach (var id in new[] { "service.preset", "service.base-url", "service.model", "service.api-key" })
+            {
+                if (_states.TryGetValue(id, out var state))
+                {
+                    state.Text = SettingsBindings.ReadText(id, _current) ?? string.Empty;
+                }
+            }
+
+            backendState.Choice = SettingsBindings.ReadChoice("service.backend-kind", _current);
+            Finish();
+        };
+        panel.Children.Add(later);
+
         return panel;
     }
 
