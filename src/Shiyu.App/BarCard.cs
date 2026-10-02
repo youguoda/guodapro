@@ -61,7 +61,24 @@ internal sealed class BarCard : INotifyPropertyChanged
 
     public ImageSource? Icon { get; init; }
 
-    public ImageSource? Thumbnail { get; init; }
+    private ImageSource? _thumbnail;
+
+    /// <summary>
+    /// The card's thumbnail. Arrives late by design (O-36): the row is built
+    /// with the placeholder colour block the template already paints, and the
+    /// decode lands here from a background thread when it is ready — the
+    /// property mutates in place so the row does not have to be rebuilt
+    /// around it.
+    /// </summary>
+    public ImageSource? Thumbnail
+    {
+        get => _thumbnail;
+        set
+        {
+            _thumbnail = value;
+            Changed(nameof(Thumbnail));
+        }
+    }
 
     public string? OriginalPath { get; init; }
 
@@ -80,8 +97,23 @@ internal sealed class BarCard : INotifyPropertyChanged
     /// <summary>The file rows a file card shows, already clamped to the density knob.</summary>
     public IReadOnlyList<FileRow> FileRows { get; init; } = [];
 
-    /// <summary>A file copy made entirely of images previews its first file.</summary>
-    public ImageSource? FilePreviewSource { get; init; }
+    private ImageSource? _filePreviewSource;
+
+    /// <summary>
+    /// A file copy made entirely of images previews its first file. Like
+    /// <see cref="Thumbnail"/>, it backfills from a background decode (O-36):
+    /// the border the image sits in is a colour block until then.
+    /// </summary>
+    public ImageSource? FilePreviewSource
+    {
+        get => _filePreviewSource;
+        set
+        {
+            _filePreviewSource = value;
+            Changed(nameof(FilePreviewSource));
+            Changed(nameof(FilePreviewVisibility));
+        }
+    }
 
     /// <summary>True when this entry is Shiyu's own kept translation of another.</summary>
     public bool IsTranslation { get; init; }
@@ -161,8 +193,23 @@ internal sealed class BarCard : INotifyPropertyChanged
         }
     }
 
-    /// <summary>True when every path of a file entry is gone — the card shows it struck through and faded.</summary>
-    public bool AllPathsDead { get; init; }
+    private bool _allPathsDead;
+
+    /// <summary>
+    /// True when every path of a file entry is gone — the card shows it struck
+    /// through and faded. Rendered from the existence cache's verdicts (O-36)
+    /// and corrected in place when a background probe lands: the first paint
+    /// trusts the cache, because the cache never waits on the disk.
+    /// </summary>
+    public bool AllPathsDead
+    {
+        get => _allPathsDead;
+        set
+        {
+            _allPathsDead = value;
+            Changed(nameof(AllPathsDead));
+        }
+    }
 
     public int FileCount { get; init; }
 
@@ -243,8 +290,45 @@ internal sealed class BarCard : INotifyPropertyChanged
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }
 
-/// <summary>One row of a file card: a name, its type icon, and whether the path still exists.</summary>
-internal sealed record FileRow(string Name, string FullPath, ImageSource? Icon, bool Dead)
+/// <summary>
+/// One row of a file card: a name, its type icon, and whether the path still
+/// exists. A class with a notifying <see cref="Dead"/> flag because the flag
+/// is rendered from the existence cache and corrected when the background
+/// probe answers (O-36).
+/// </summary>
+internal sealed class FileRow : INotifyPropertyChanged
 {
+    public FileRow(string name, string fullPath, ImageSource? icon, bool dead)
+    {
+        Name = name;
+        FullPath = fullPath;
+        Icon = icon;
+        _dead = dead;
+    }
+
+    public string Name { get; }
+
+    public string FullPath { get; }
+
+    public ImageSource? Icon { get; }
+
+    private bool _dead;
+
+    public bool Dead
+    {
+        get => _dead;
+        set
+        {
+            _dead = value;
+            Changed(nameof(Dead));
+            Changed(nameof(DeadVisibility));
+        }
+    }
+
     public Visibility DeadVisibility => Dead ? Visibility.Visible : Visibility.Collapsed;
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    private void Changed(string name)
+        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }

@@ -30,6 +30,24 @@ internal partial class PreviewWindow : Window
 {
     private readonly FileTypeIcons _fileIcons;
 
+    /// <summary>
+    /// The existence verdicts shared with the bar's cards (O-36): reading a
+    /// verdict is a dictionary lookup, never a disk round-trip — an offline
+    /// network original used to freeze this panel on the spot.
+    /// </summary>
+    private readonly FileExistenceCache _fileProbe;
+
+    /// <summary>
+    /// Drops every decode and probe this panel still has in flight. Invalidated
+    /// each time the panel moves to another card: a late original must never
+    /// overwrite the next card's picture, and late verdicts must not strike
+    /// through the wrong rows.
+    /// </summary>
+    private readonly BackfillGate _backfills = new();
+
+    /// <summary>The file-row views, for restyling when the probes answer.</summary>
+    private readonly List<(string Path, TextBlock Name)> _fileRows = [];
+
     /// <summary>The entry the panel is showing right now.</summary>
     public long CardId { get; private set; }
 
@@ -46,10 +64,11 @@ internal partial class PreviewWindow : Window
     /// </summary>
     public event Action<ScreenRect>? PanelMoved;
 
-    public PreviewWindow(FileTypeIcons fileIcons)
+    public PreviewWindow(FileTypeIcons fileIcons, FileExistenceCache fileProbe)
     {
         InitializeComponent();
         _fileIcons = fileIcons;
+        _fileProbe = fileProbe;
         ApplyThemedSurface();
     }
 
@@ -141,6 +160,10 @@ internal partial class PreviewWindow : Window
         var (width, height) = Measure(card);
         Width = width;
         Height = height;
+
+        // Everything this panel had in flight describes the previous card;
+        // its results are dropped the moment the panel moves on (O-36).
+        _backfills.Invalidate();
 
         var wasVisible = IsVisible;
         Fill(card);
@@ -359,24 +382,31 @@ internal partial class PreviewWindow : Window
 
         TextBody.Text = card.Text;
         FilesBody.Children.Clear();
+        _fileRows.Clear();
 
         if (card.Kind == EntryKind.Image)
         {
-            ImageHost.Source = LoadImage(card);
+            // The thumbnail first — it is already decoded, and it is the
+            // database's forever promise — with the original upgrading it
+            // from a background decode when it lands (O-36).
+            ImageHost.Source = card.Thumbnail;
+            LoadOriginalBehind(card);
         }
 
         if (card.Kind == EntryKind.Files)
         {
             // Every path, not the card's clamp: "which file was that" is
             // answered by the list, and a path that no longer exists says so
-            // here the same way the card does there.
+            // here the same way the card does there. Verdicts come from the
+            // cache; the probes for paths nobody has a fresh verdict on run
+            // behind the paint and restyle the rows they answer for.
             foreach (var path in card.Files)
             {
                 var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 1, 0, 0) };
 
                 var icon = new Image
                 {
-                    Source = _fileIcons.For(path),
+                    Source = _fileIcons.For(path, _fileProbe.Lookup(path)?.IsDirectory ?? false),
                     Width = 16,
                     Height = 16,
                     Margin = new Thickness(0, 0, 6, 0),
@@ -386,57 +416,127 @@ internal partial class PreviewWindow : Window
                 RenderOptions.SetBitmapScalingMode(icon, BitmapScalingMode.HighQuality);
                 row.Children.Add(icon);
 
-                var dead = !File.Exists(path);
                 var name = new TextBlock
                 {
                     Text = path,
                     FontSize = DesignTokens.FontSecondary,
                     VerticalAlignment = VerticalAlignment.Center,
                 };
-                name.SetResourceReference(TextBlock.ForegroundProperty,
-                    dead ? "Brush.TextTertiary" : "Brush.Text");
-
-                if (dead)
-                {
-                    name.TextDecorations = System.Windows.TextDecorations.Strikethrough;
-                    name.ToolTip = "路径不存在";
-                }
+                DressRow(name, dead: !(_fileProbe.Lookup(path)?.Exists ?? true));
 
                 row.Children.Add(name);
                 FilesBody.Children.Add(row);
+                _fileRows.Add((path, name));
             }
+
+            ProbeFileRows(card);
         }
     }
 
-    /// <summary>
-    /// The original at full fidelity when it still exists, decoded no larger
-    /// than the panel needs; the forever-kept thumbnail otherwise.
-    /// </summary>
-    private ImageSource? LoadImage(BarCard card)
+    private static void DressRow(TextBlock name, bool dead)
     {
-        var boxWidth = Math.Max(1, (int)(Width - PreviewSizing.ChromeHorizontal));
+        name.SetResourceReference(TextBlock.ForegroundProperty,
+            dead ? "Brush.TextTertiary" : "Brush.Text");
+        name.TextDecorations = dead ? System.Windows.TextDecorations.Strikethrough : null;
+        name.ToolTip = dead ? "路径不存在" : null;
+    }
 
-        if (card.OriginalPath is { Length: > 0 } path && File.Exists(path))
+    /// <summary>
+    /// Probes the paths this panel shows and no one has a fresh verdict for,
+    /// then restyles the rows with the answers. On the thread pool: an
+    /// offline network path costs its SMB timeout there, not on the panel.
+    /// </summary>
+    private void ProbeFileRows(BarCard card)
+    {
+        var stale = card.Files.Where(_fileProbe.WantsProbe).ToArray();
+        if (stale.Length == 0)
         {
+            return;
+        }
+
+        var generation = _backfills.Epoch;
+        var dispatcher = Dispatcher;
+
+        System.Threading.Tasks.Task.Run(() =>
+        {
+            foreach (var path in stale)
+            {
+                var file = File.Exists(path);
+                var directory = !file && Directory.Exists(path);
+                _fileProbe.Record(path, file || directory, directory);
+            }
+
+            dispatcher.BeginInvoke(() =>
+            {
+                if (!_backfills.IsCurrent(generation))
+                {
+                    return;
+                }
+
+                foreach (var (path, name) in _fileRows)
+                {
+                    DressRow(name, dead: !(_fileProbe.Lookup(path)?.Exists ?? true));
+                }
+            });
+        });
+    }
+
+    /// <summary>
+    /// The original at full fidelity, decoded no larger than the panel needs,
+    /// on the thread pool (O-36) — the file read is disk latency, an offline
+    /// network original is an SMB timeout, and neither belongs on the thread
+    /// that draws. The upgrade lands only if the panel still shows the card
+    /// it was decoded for; the thumbnail it would replace is the database's
+    /// forever promise either way.
+    /// </summary>
+    private void LoadOriginalBehind(BarCard card)
+    {
+        if (card.OriginalPath is not { Length: > 0 } path)
+        {
+            return;
+        }
+
+        var boxWidth = Math.Max(1, (int)(Width - PreviewSizing.ChromeHorizontal));
+        var wanted = card.Id;
+        var generation = _backfills.Epoch;
+        var dispatcher = Dispatcher;
+
+        System.Threading.Tasks.Task.Run(() =>
+        {
+            var file = File.Exists(path);
+            _fileProbe.Record(path, file, isDirectory: false);
+
+            if (!file)
+            {
+                return;
+            }
+
+            BitmapSource? original = null;
             try
             {
-                return Decode(new Uri(path), boxWidth);
+                original = Decode(new Uri(path), boxWidth);
             }
             catch (Exception failure) when (
                 failure is IOException or UnauthorizedAccessException
                 or NotSupportedException or System.IO.FileFormatException)
             {
-                // expected: 原图损坏或截断——落到下面去，缩略图是数据库
+                // expected: 原图损坏或截断——缩略图继续当值，它是数据库
                 // 永远守住的承诺。
             }
-        }
 
-        if (card.Thumbnail is { } thumbnail)
-        {
-            return thumbnail;
-        }
+            if (original is null)
+            {
+                return;
+            }
 
-        return null;
+            dispatcher.BeginInvoke(() =>
+            {
+                if (_backfills.IsCurrent(generation) && CardId == wanted)
+                {
+                    ImageHost.Source = original;
+                }
+            });
+        });
     }
 
     private static BitmapSource Decode(Uri source, int decodeWidth)

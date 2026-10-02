@@ -322,33 +322,8 @@ public partial class LibraryWindow : Window
 
         if (entry.Kind == EntryKind.Image)
         {
-            try
-            {
-                if (entry.HasOriginal)
-                {
-                    var full = new System.Windows.Media.Imaging.BitmapImage();
-                    full.BeginInit();
-                    full.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
-                    full.DecodePixelWidth = 640;
-                    full.UriSource = new Uri(entry.OriginalPath!);
-                    full.EndInit();
-                    full.Freeze();
-                    DetailImage.Source = full;
-                }
-                else
-                {
-                    DetailImage.Source = AppIconCache.Decode(entry.ThumbnailPng, 480);
-                }
-
-                DetailImage.Visibility = Visibility.Visible;
-            }
-            catch (Exception failure) when (
-                failure is IOException or UnauthorizedAccessException
-                or NotSupportedException or System.IO.FileFormatException)
-            {
-                // expected: 原图损坏或已被清理——收起图片区，条目本身照常。
-                DetailImage.Visibility = Visibility.Collapsed;
-            }
+            DetailImage.Visibility = Visibility.Visible;
+            FillDetailImage(entry);
         }
         else
         {
@@ -364,6 +339,76 @@ public partial class LibraryWindow : Window
         {
             DetailFiles.ItemsSource = null;
             DetailFiles.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    /// <summary>
+    /// How many detail-picture requests have been made. Incremented per
+    /// selection; a decode that comes back holding an older number describes
+    /// an entry the user has already moved past.
+    /// </summary>
+    private int _detailImageRequests;
+
+    /// <summary>
+    /// The detail picture, decoded on the thread pool (O-36): a 4K original
+    /// is megabytes of PNG, and the decode used to happen between the list's
+    /// two paints — every selection paid it on the thread that draws. The
+    /// original is preferred, the database's thumbnail is the forever-kept
+    /// promise behind it, and a fast walk down the list never lands one
+    /// entry's picture on another's row: the counter moved on.
+    /// </summary>
+    private void FillDetailImage(Entry entry)
+    {
+        var request = ++_detailImageRequests;
+        DetailImage.Source = null;
+
+        var original = entry.HasOriginal ? entry.OriginalPath : null;
+        var thumbnail = entry.ThumbnailPng;
+        var dispatcher = Dispatcher;
+
+        Task.Run(() =>
+        {
+            var source = original is { Length: > 0 } path ? DecodeImageFile(path, 640) : null;
+            source ??= AppIconCache.Decode(thumbnail, 480);
+
+            dispatcher.BeginInvoke(() =>
+            {
+                if (request != _detailImageRequests)
+                {
+                    return;
+                }
+
+                if (source is null)
+                {
+                    // expected: 原图损坏或已被清理——收起图片区，条目本身照常。
+                    DetailImage.Visibility = Visibility.Collapsed;
+                    return;
+                }
+
+                DetailImage.Source = source;
+            });
+        });
+    }
+
+    /// <summary>Decodes an image file off the calling thread; null when it cannot be read.</summary>
+    private static ImageSource? DecodeImageFile(string path, int pixelWidth)
+    {
+        try
+        {
+            var image = new BitmapImage();
+            image.BeginInit();
+            image.CacheOption = BitmapCacheOption.OnLoad;
+            image.DecodePixelWidth = pixelWidth;
+            image.UriSource = new Uri(path);
+            image.EndInit();
+            image.Freeze();
+            return image;
+        }
+        catch (Exception failure) when (
+            failure is IOException or UnauthorizedAccessException
+            or NotSupportedException or FileFormatException)
+        {
+            return null;
         }
     }
 

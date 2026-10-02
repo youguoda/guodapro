@@ -635,6 +635,11 @@ internal partial class BarWindow
     /// bar hides first — until it does, it is the thing in the way of the
     /// foreground the paste needs. A rich entry pastes as itself: formats
     /// written first, then the keystroke into the restored window.
+    ///
+    /// The hide is the full <see cref="Dismiss"/> (O-37): this path once
+    /// called Hide directly, which left the preview clock armed and skipped
+    /// the lightweight drop — a pasted-from bar kept its decoded thumbnails
+    /// and its timers alive for as long as it sat hidden.
     /// </summary>
     private void PasteEntry(BarCard card)
     {
@@ -643,13 +648,7 @@ internal partial class BarWindow
             _returnTo = ForegroundWindow.Current();
         }
 
-        // The bar is about to vanish; its preview must not be left hovering
-        // over the destination the paste is about to land in.
-        RunPreviewCommand(_previewPolicy.BarHidden());
-        _previewTick.Stop();
-
-        Hide();
-        _returnTo.Restore();
+        Dismiss();
 
         if (card.Files.Count > 0)
         {
