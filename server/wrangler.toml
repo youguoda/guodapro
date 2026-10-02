@@ -17,9 +17,14 @@ MAX_REQUEST_CHARS = "2000"
 UPSTREAM_MODEL = "glm-4-flash"
 UPSTREAM_BASE_URL = "https://open.bigmodel.cn/api/paas/v4"
 
-# 配额计数桶。id 换成你自己的：
-#   npx wrangler kv namespace create QUOTA
-#   → 取输出里的 id 填到下面
-[[kv_namespaces]]
-binding = "QUOTA"
-id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+# 原子配额计数（O-19）：按日期分片的 Durable Object。Workers 免费计划只
+# 允许 SQLite 后端的 DO，因此用 new_sqlite_classes 建类（首次 wrangler
+# deploy 自动执行该 migration，无需手动建桶）：
+# https://developers.cloudflare.com/durable-objects/reference/durable-objects-migrations/
+[[durable_objects.bindings]]
+name = "QUOTA_COUNTER"
+class_name = "DailyCounter"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["DailyCounter"]

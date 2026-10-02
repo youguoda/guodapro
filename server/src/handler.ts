@@ -1,7 +1,9 @@
 import type { Env, RelayServices } from "./types.js";
 import { readLimits } from "./limits.js";
 import { saltedHash } from "./hash.js";
-import { KvStore, Quota, type Identity } from "./quota.js";
+import { normalizeIp } from "./ip.js";
+import { normalizeLanguage } from "./langs.js";
+import { DurableCounter, type Identity } from "./quota.js";
 import { ZhipuUpstream } from "./upstream.js";
 
 const ClientIdPattern = /^[A-Za-z0-9-]{8,64}$/;
@@ -20,9 +22,21 @@ export async function handleTranslate(
     return jsonError(405, "METHOD_NOT_ALLOWED", "只接受 POST。");
   }
 
+  // 盐缺失宁可全拒也不回退默认盐（fail closed，O-19）：默认盐人人可得，
+  // 等于 IP 哈希裸奔——拖库者能跨部署链接全部用户。
+  const salt = env.IP_HASH_SALT;
+  if (typeof salt !== "string" || salt.trim().length === 0) {
+    return jsonError(503, "SERVICE_MISCONFIGURED", "服务未正确配置，请稍后再试。");
+  }
+
   const limits = injected.limits ?? readLimits(env);
   const now = injected.now ?? (() => new Date());
-  const quota = injected.quota ?? new Quota(new KvStore(env.QUOTA), limits, now);
+  // 绑定缺失同样 fail closed（/health 也会把它亮出来）。
+  const quota = injected.quota
+    ?? (env.QUOTA_COUNTER ? new DurableCounter(env.QUOTA_COUNTER, limits) : null);
+  if (!quota) {
+    return jsonError(503, "SERVICE_MISCONFIGURED", "服务未正确配置，请稍后再试。");
+  }
   const upstream = injected.upstream
     ?? new ZhipuUpstream({
       apiKey: env.ZHIPU_API_KEY,
@@ -42,9 +56,24 @@ export async function handleTranslate(
     return jsonError(400, "BAD_REQUEST", parsed.message);
   }
 
-  const { clientId, text, from, to } = parsed.value;
+  const { clientId, text, from: rawFrom, to: rawTo } = parsed.value;
 
-  // 计费与上限都按码点数：一个汉字与一个字母同价。
+  // 语言白名单：to/from 只认封闭集合（含语言代码与常见别名），折叠成
+  // 规范名后才进提示词——自由文本的 to/from 是提示词注入与额度绕过的
+  // 入口（O-19）。
+  const to = normalizeLanguage(rawTo);
+  if (!to) {
+    return jsonError(400, "UNSUPPORTED_LANGUAGE", "暂不支持这种目标语言（to）。");
+  }
+  const from = rawFrom === null ? null : normalizeLanguage(rawFrom);
+  if (rawFrom !== null && from === null) {
+    return jsonError(400, "UNSUPPORTED_LANGUAGE", "暂不支持这种源语言（from），留空可自动识别。");
+  }
+
+  // 计费与上限都按码点数：一个汉字与一个字母同价。只计 text 是安全的：
+  // to/from 经白名单后是从固定词表里选出的规范名（集合封闭、长度有界），
+  // 既夹带不了内容也放大不了提示词；指令模板与 system 提示是服务端常量。
+  // 因此 text 就是"用户控制且进入提示词"的全部内容（O-19）。
   const chars = [...text].length;
   if (chars > limits.maxRequestChars) {
     return jsonError(400, "TEXT_TOO_LONG", `单次最多 ${limits.maxRequestChars} 字。`, {
@@ -52,11 +81,21 @@ export async function handleTranslate(
     });
   }
 
-  const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
-  const identity: Identity = { clientId, ipHash: await saltedHash(env.IP_HASH_SALT, ip) };
+  // IP 先规范化（IPv6 折叠到 /64）再哈希：IP 层按网段而不是按单个地址记账（O-19）。
+  const ip = normalizeIp(request.headers.get("CF-Connecting-IP") ?? "unknown");
+  const identity: Identity = { clientId, ipHash: await saltedHash(salt, ip) };
 
-  const denial = await quota.reserve(identity, chars);
+  // 限速 + 三层原子预留：任一超限则全都不扣（退款也按同一天的桶退）。
+  const at = now();
+  const denial = await quota.admit(identity, chars, at);
   if (denial) {
+    if (denial.code === "RATE_LIMITED") {
+      // Retry-After 按标准头给出：429 在客户端本来就不重试，这个头是给
+      // 守规矩的调用方与未来的批量路径用的。
+      return jsonError(429, denial.code, denial.message, {
+        retryAfterSeconds: denial.retryAfterSeconds,
+      }, { "Retry-After": String(denial.retryAfterSeconds ?? 60) });
+    }
     return jsonError(429, denial.code, denial.message, {
       remaining: denial.remaining,
       resetAt: denial.resetAt,
@@ -68,7 +107,7 @@ export async function handleTranslate(
     return json(200, { translation });
   } catch (error) {
     // 上游没给译文：已计字符如数退还，用户不替我们的故障买单。
-    await quota.refund(identity, chars);
+    await quota.refund(identity, chars, at);
     return jsonError(502, "UPSTREAM_ERROR", "翻译服务暂时不可用，请稍后再试。");
   }
 }
@@ -103,10 +142,14 @@ function parseBody(raw: unknown): Parsed {
   return { value: { clientId, text: body.text, from, to: body.to.trim() } };
 }
 
-function json(status: number, payload: unknown): Response {
+function json(
+  status: number,
+  payload: unknown,
+  headers: Record<string, string> = {},
+): Response {
   return new Response(JSON.stringify(payload), {
     status,
-    headers: { "content-type": "application/json; charset=utf-8" },
+    headers: { "content-type": "application/json; charset=utf-8", ...headers },
   });
 }
 
@@ -115,6 +158,7 @@ function jsonError(
   code: string,
   message: string,
   extra: Record<string, unknown> = {},
+  headers: Record<string, string> = {},
 ): Response {
-  return json(status, { error: { code, message, ...extra } });
+  return json(status, { error: { code, message, ...extra } }, headers);
 }
