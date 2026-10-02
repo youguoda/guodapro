@@ -545,4 +545,86 @@ public class StorageScaleTests
         store.Changed += () => Assert.Equal(1, store.Count());
         store.Append("the only entry", "test", Noon);
     }
+
+    // --- the full upgrade ladder ------------------------------------------------
+
+    /// <summary>
+    /// The oldest shape that still had images: version 2, thumbnails inline,
+    /// subtypes not yet invented. This is the library an early adopter brings
+    /// to the current build — the whole migration ladder runs in one open, and
+    /// everything they had must come through it.
+    /// </summary>
+    [Fact]
+    public void A_version_two_library_upgrades_whole_with_search_and_without_rescans()
+    {
+        using var database = new TempDatabase();
+        var thumbnail = new byte[] { 0x89, 0x50, 0x4E, 0x47, 7, 7 };
+
+        using (var old = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={database.FilePath}"))
+        {
+            old.Open();
+            using var create = old.CreateCommand();
+            create.CommandText = """
+                CREATE TABLE entries (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    text        TEXT    NOT NULL,
+                    source_app  TEXT    NULL,
+                    created_at  INTEGER NOT NULL,
+                    kind        INTEGER NOT NULL DEFAULT 0,
+                    thumbnail   BLOB    NULL,
+                    original_path TEXT  NULL
+                );
+                CREATE TABLE tags (
+                    id   INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL COLLATE NOCASE UNIQUE
+                );
+                CREATE TABLE entry_tags (
+                    entry_id INTEGER NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+                    tag_id   INTEGER NOT NULL REFERENCES tags(id)    ON DELETE CASCADE,
+                    PRIMARY KEY (entry_id, tag_id)
+                );
+                CREATE INDEX idx_entry_tags_tag ON entry_tags (tag_id);
+                PRAGMA user_version = 2;
+
+                INSERT INTO entries (text, source_app, created_at, kind, thumbnail, original_path)
+                VALUES ('https://old.example.com', 'browser', 1758542400000, 0, NULL, NULL);
+                INSERT INTO entries (text, source_app, created_at, kind, thumbnail, original_path)
+                VALUES ('很普通的一句话', 'notepad', 1758542400001, 0, NULL, NULL);
+                INSERT INTO entries (text, source_app, created_at, kind, thumbnail, original_path)
+                VALUES ('老图片 320×240', 'brush', 1758542400002, 1, $png, 'C:\\gone-long-ago.png');
+                """;
+            create.Parameters.AddWithValue("$png", thumbnail);
+            create.ExecuteNonQuery();
+        }
+
+        using (var store = EntryStore.Open(database.FilePath))
+        {
+            // Every entry survived, with its kind and its payload.
+            Assert.Equal(3, store.Count());
+            var rows = store.Page(10).ToDictionary(entry => entry.Text);
+            Assert.Equal(EntrySubtype.Link, rows["https://old.example.com"].Subtype);
+            Assert.Equal(EntrySubtype.None, rows["很普通的一句话"].Subtype);
+            Assert.Equal(thumbnail, store.Get(rows["老图片 320×240"].Id)!.ThumbnailPng);
+
+            // Search reaches rows the index never saw until now.
+            Assert.Single(store.Search("老图片", limit: 10));
+            Assert.Single(store.Find(new HistoryFilter { Subtype = EntrySubtype.Link }, limit: 10));
+
+            // The ladder stamped everything it owed: no NULL subtypes left on
+            // text rows, current version reached.
+            using var command = store.Connection.CreateCommand();
+            command.CommandText = "SELECT COUNT(*) FROM entries WHERE sub_type IS NULL AND kind = 0;";
+            Assert.Equal(0L, command.ExecuteScalar());
+            command.CommandText = "PRAGMA user_version;";
+            Assert.Equal(14L, command.ExecuteScalar());
+        }
+
+        // And the second open is an ordinary one: nothing left to migrate, the
+        // history exactly as the first open left it.
+        using (var reopened = EntryStore.Open(database.FilePath))
+        {
+            Assert.Equal(3, reopened.Count());
+            Assert.Single(reopened.Search("很普通", limit: 10));
+        }
+    }
 }
