@@ -3,9 +3,15 @@
 **来源：** 优化报告 O-09、O-10；ADR-0010
 **Blocked by:** 03（已完成）
 **Branch:** `v3/release`（已并 master，3ed19b7）
-**Status:** ready-for-human
+**Status:** done
 
-实施记录（2026-10-02）：验签进 Core `UpdateSignature`（aed9f8b）；编排下沉 `UpdateOrchestrator`、删 fail-open（60afeca）；App 薄壳/更新窗单例/点击保护/InformationalVersion 显示（58e6ce0）；release.yml + 本地演练测试（664d1b3，测试钥实跑 publish→打包→签名→VerifyInstaller/Extract/验签全链）。694/694 双配置全绿。主控已核对：workflow 公钥 == 内置公钥 == 本机密钥对；secret 已就位；分支保护已开。
+实施记录（2026-10-02）：验签进 Core `UpdateSignature`（aed9f8b）；编排下沉 `UpdateOrchestrator`、删 fail-open（60afeca）；App 薄壳/更新窗单例/点击保护/InformationalVersion 显示（58e6ce0）；release.yml + 本地演练测试（664d1b3）。694/694 双配置全绿。
+
+**验收全通过（2026-10-02）**：
+- 端到端篡改包拒绝（探针实例 + 本地伪发布源）：显示"更新包签名不符，已拒绝安装。 原版本不受影响。"，暂存区不残留
+- **首个真实发布**：tag `v0.9.0-rc1` → release workflow 2m17s 成功，GitHub Release"拾语 0.9.0-rc1"（prerelease）带三件套（zip 65,035,461 字节 / .sha256 / .sig）
+- 独立复核：下载回本机，用离线密钥对的公钥 `openssl dgst` 验签 **Verified OK**，SHA-256 匹配；解压 261 文件，`FileVersion=0.9.0.0`（比较用）、`ProductVersion=0.9.0-rc1+<hash>`（关于页显示、剥 hash）
+- 首次在用户机安装运行：留给 Release 切换时由用户确认
 
 **What to build:**
 - `release.yml`：推送 `v*` tag 时，发布 self-contained 的 win-x64 包，版本号取自 tag；生成 zip、`.sha256`、`.sig`（ECDSA P-256，私钥来自 Actions secret）；创建 GitHub Release。
