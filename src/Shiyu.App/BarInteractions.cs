@@ -536,6 +536,50 @@ internal partial class BarWindow
         => ExecuteAction(id, card, button);
 
     /// <summary>
+    /// The tray's ⋯（§6.1）：the folded low-frequency pair — 打开/定位 —
+    /// listed in a popup beside the button that collected them. The window
+    /// owns the chrome; the tray only knows where it sits.
+    /// </summary>
+    private Popup? _trayMorePopup;
+
+    public void OpenTrayMore(BarCard card, IReadOnlyList<string> folded, Button anchor)
+    {
+        if (_trayMorePopup is { IsOpen: true })
+        {
+            _trayMorePopup.IsOpen = false;
+            return;
+        }
+
+        var host = new StackPanel { MinWidth = 120 };
+
+        foreach (var action in folded)
+        {
+            var captured = action;
+            var key = BarKeys.TrayKey(action);
+            host.Children.Add(MenuRow(
+                HoverActions.Name(action),
+                key ?? string.Empty,
+                HoverActions.IsDestructive(captured),
+                () =>
+                {
+                    _trayMorePopup!.IsOpen = false;
+                    ExecuteAction(captured, card, feedback: null);
+                }));
+        }
+
+        _trayMorePopup = new Popup
+        {
+            Child = WithPopupFont(MenuSurface(host)),
+            PlacementTarget = anchor,
+            Placement = PlacementMode.Bottom,
+            StaysOpen = false,
+            AllowsTransparency = true,
+        };
+        _trayMorePopup.Opened += (_, _) => FlipIntoWorkArea(_trayMorePopup);
+        _trayMorePopup.IsOpen = true;
+    }
+
+    /// <summary>
     /// Executes one action. The keyboard uses this too, where there is no
     /// button to give feedback on.
     /// </summary>

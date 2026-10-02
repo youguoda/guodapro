@@ -9,83 +9,178 @@ using Shiyu.Core;
 namespace Shiyu.App;
 
 /// <summary>
-/// The hover tray on a card: its quick actions squeeze in from the edge —
-/// width 0→20 with a slight scale and slide, on the motion system's fast
-/// tier — and squeeze back out on leave. Squeezing rather than popping is
-/// what keeps the row from jerking.
+/// The hover tray on a card（§6.1 托盘）: a h32 strip floating ON the meta row,
+/// not inside it — 32×32 hits on a 32 pitch, 16 DIP glyphs resting in
+/// TextSecondary (delete keeps its danger red at rest, per the state matrix),
+/// a 1×16 divider before the delete button, and the open/locate pair folding
+/// into ⋯ once the tray would pass eight buttons. Because the tray is an
+/// overlay, the card's height is a constant: the strip slides in over the
+/// timestamp (which hands over by fading) on the motion system's fast tier.
 ///
-/// Built per card, because the action set differs per entry kind. All motion
-/// lives in code rather than style storyboards on purpose: with container
-/// recycling the same tray instance moves to another row's card, and only
-/// code can tear the previous row's animation state down at that moment
-/// (<see cref="Reset"/> — the issue 02 spike's finding).
+/// Built per card, because the action set differs per entry kind — and by
+/// entry state: the favourite and pin buttons carry the glyph of the state
+/// the entry is IN, not a fixed symbol. All motion lives in code rather than
+/// style storyboards on purpose: with container recycling the same tray
+/// instance moves to another row's card, and only code can tear the previous
+/// row's animation state down at that moment (<see cref="Reset"/> — the
+/// issue 02 spike's finding).
 /// </summary>
-internal sealed class ActionTray : StackPanel
+internal sealed class ActionTray : Grid
 {
-    private const int ButtonSize = 24;
+    private const int ButtonSize = 32;
+
+    /// <summary>Past eight buttons the low-frequency pair folds into ⋯ (§6.1).</summary>
+    private const int MaxButtons = 8;
+
+    private const string MoreId = "more";
+
+    /// <summary>The folded pair, in tray order; emptied unless the tray overflows.</summary>
+    private IReadOnlyList<string> _folded = [];
+
+    private readonly StackPanel _buttons = new() { Orientation = Orientation.Horizontal };
+
+    private BarCard? _card;
 
     public ActionTray()
     {
-        Orientation = Orientation.Horizontal;
-        VerticalAlignment = VerticalAlignment.Center;
+        VerticalAlignment = VerticalAlignment.Top;
+        HorizontalAlignment = HorizontalAlignment.Right;
+        Margin = new Thickness(0, 0, 12, 0);
+        RenderTransform = new TranslateTransform();
+
+        // Rests closed and untouchable; Open() is the only way in.
+        Opacity = 0;
+        IsHitTestVisible = false;
+
+        Children.Add(Plate());
+        Children.Add(_buttons);
     }
 
-    /// <summary>Raises the executed action. Set by the window.</summary>
+    /// <summary>Raises an executed action. Set by the window.</summary>
     public event Action<string, BarCard, Button>? ActionExecuted;
+
+    /// <summary>
+    /// The ⋯ button's ask: run the folded actions. The window owns the popup
+    /// (it has the menu chrome); the tray only knows where it sits.
+    /// </summary>
+    public event Action<BarCard, IReadOnlyList<string>, Button>? MoreRequested;
 
     /// <summary>Rebuilds the buttons for the card this tray now belongs to.</summary>
     public void Configure(BarCard card, IReadOnlyList<string> actions)
     {
-        Children.Clear();
+        _card = card;
+        _buttons.Children.Clear();
 
-        foreach (var id in actions)
+        // 超过 8 枚收 ⋯：打开/定位入内，删除恒在可见面上（§6.1）。
+        var fold = actions.Count > MaxButtons;
+        _folded = fold ? actions.Where(id => id is "open" or "locate").ToArray() : [];
+        var folding = _folded.Count > 0;
+
+        var visible = actions.Where(id => !_folded.Contains(id)).ToList();
+        var moreAt = folding ? actions.Count - visible.Count : -1;
+
+        for (var i = 0; i < visible.Count; i++)
         {
-            Children.Add(MakeButton(id, card));
+            if (folding && i == moreAt)
+            {
+                _buttons.Children.Add(MakeButton(MoreId, card));
+            }
+
+            // The divider sits before delete wherever delete travels — the
+            // destructive act is separated from the rest of the row.
+            if (visible[i] == "delete")
+            {
+                _buttons.Children.Add(Divider());
+            }
+
+            _buttons.Children.Add(MakeButton(visible[i], card));
         }
     }
+
+    private static Border Divider()
+    {
+        var divider = new Border
+        {
+            Width = 1,
+            Height = 16,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(4, 0, 4, 0),
+        };
+        divider.SetResourceReference(Border.BackgroundProperty, "Brush.Divider");
+        return divider;
+    }
+
+    /// <summary>
+    /// The tray's backing plate: the card's surface colour, fading in over 16
+    /// DIP at the left edge so the glyphs read over whatever they float on.
+    /// The mask is geometry (fixed stops) so the colour itself stays a live
+    /// resource — theme changes keep reaching it.
+    /// </summary>
+    private static Border Plate()
+    {
+        var plate = new Border
+        {
+            Margin = new Thickness(-16, 0, 0, 0),
+            OpacityMask = new LinearGradientBrush
+            {
+                MappingMode = BrushMappingMode.Absolute,
+                StartPoint = new Point(0, 0),
+                EndPoint = new Point(16, 0),
+                GradientStops =
+                {
+                    new GradientStop(Colors.Transparent, 0),
+                    new GradientStop(Colors.Black, 1),
+                },
+            },
+        };
+        plate.SetResourceReference(Border.BackgroundProperty, "Brush.Surface");
+        return plate;
+    }
+
+    /// <summary>
+    /// The glyph a button carries for this card right now: favourite and pin
+    /// follow the entry's state (空心星 = 未收藏), everything else its action
+    /// glyph; ⋯ collects the folded pair.
+    /// </summary>
+    private static string GlyphFor(string id, BarCard card) => id switch
+    {
+        "favorite" => card.Favorite ? "\uE735" : "\uE734",
+        "pin" => card.IsPinned ? "\uE77A" : "\uE718",
+        MoreId => "\uE710",
+        _ => HoverActions.IconGlyph(id),
+    };
 
     private Button MakeButton(string id, BarCard card)
     {
         var key = BarKeys.TrayKey(id);
+        var danger = HoverActions.IsDestructive(id);
 
         // The symbol is a TextBlock we own, not a bare string: a string would
         // be presented through a TextBlock that the implicit TextBlock style
         // forces onto Font.Ui, and symbol codepoints render as tofu boxes.
         var label = new TextBlock
         {
-            Text = HoverActions.IconGlyph(id),
+            Text = GlyphFor(id, card),
             FontFamily = IconFont,
         };
         label.SetResourceReference(TextElement.FontSizeProperty, "Size.IconS");
 
         var button = new Button
         {
-            Width = 0,
+            Width = ButtonSize,
             Height = ButtonSize,
-            ClipToBounds = true,
             Focusable = false,
-            Tag = id,
+            Tag = new TraySlot(id, GlyphFor(id, card)),
             Content = label,
-
-            // The system symbol carries recognition (Segoe Fluent Icons —
-            // ticket 30); the single Chinese mark stays as the brand, in the
-            // tooltip beside the key, and the key badges keep their letters.
             Cursor = Cursors.Hand,
-            ToolTip = key is null
-                ? $"{HoverActions.Name(id)}（{HoverActions.Glyph(id)}）"
-                : $"{HoverActions.Name(id)}（{HoverActions.Glyph(id)} · {key}）",
-            RenderTransform = new TransformGroup
-            {
-                Children = { new ScaleTransform(0.9, 0.9), new TranslateTransform(4, 0) },
-            },
-            RenderTransformOrigin = new Point(0.5, 0.5),
-            Style = (Style)TryFindResource("TrayButtonStyle") ?? new Style(typeof(Button)),
+            ToolTip = id == MoreId
+                ? $"更多（{string.Join(" / ", _folded.Select(HoverActions.Name))}）"
+                : key is null
+                    ? $"{HoverActions.Name(id)}（{HoverActions.Glyph(id)}）"
+                    : $"{HoverActions.Name(id)}（{HoverActions.Glyph(id)} · {key}）",
+            Style = (Style)TryFindResource(danger ? "TrayDangerButtonStyle" : "TrayButtonStyle")
+                ?? new Style(typeof(Button)),
         };
-
-        // Theme-following through resources; destructive actions keep their
-        // own colour so they never read as ordinary.
-        button.SetResourceReference(Control.ForegroundProperty,
-            HoverActions.IsDestructive(id) ? "Brush.Danger" : "Brush.Text");
 
         // Every mouse event stops here — on the bubbling versions, after the
         // button's own class handlers have run, so the button still clicks
@@ -99,32 +194,44 @@ internal sealed class ActionTray : StackPanel
         button.MouseDown += Swallow;
         button.MouseUp += Swallow;
 
-        button.Click += (_, _) => ActionExecuted?.Invoke(id, card, button);
+        button.Click += (_, _) =>
+        {
+            if (id == MoreId)
+            {
+                MoreRequested?.Invoke(card, _folded, button);
+                return;
+            }
+
+            ActionExecuted?.Invoke(id, card, button);
+        };
 
         return button;
 
         static void Swallow(object sender, MouseButtonEventArgs e) => e.Handled = true;
     }
 
+    /// <summary>One button's identity: its action id and the state glyph it carries.</summary>
+    private sealed record TraySlot(string Id, string Glyph);
+
     /// <summary>
     /// While Ctrl is held, buttons that answer to a letter show the letter
     /// instead of their glyph — the badge and the key handler both read
     /// <see cref="BarKeys"/>, so they cannot disagree. Letters are UI-font
-    /// text, not symbol-font codepoints, so the family swaps with the content.
-    /// Buttons without a key keep their glyph.
+    /// text, not symbol-font codepoints, so the family swaps with the
+    /// content. Buttons without a key (and ⋯) keep their glyph.
     /// </summary>
     public void ShowHints(bool on)
     {
-        foreach (var button in Children.OfType<Button>())
+        foreach (var button in _buttons.Children.OfType<Button>())
         {
-            if (button.Tag is not string id || button.Content is not TextBlock label)
+            if (button.Tag is not TraySlot slot || button.Content is not TextBlock label)
             {
                 continue;
             }
 
-            var key = BarKeys.TrayKey(id);
+            var key = BarKeys.TrayKey(slot.Id);
             var letter = on && key is not null;
-            label.Text = letter ? key : HoverActions.IconGlyph(id);
+            label.Text = letter ? key : slot.Glyph;
             label.FontFamily = letter ? UiFont : IconFont;
         }
     }
@@ -144,35 +251,27 @@ internal sealed class ActionTray : StackPanel
     /// </summary>
     public void Reset()
     {
-        foreach (var button in Children.OfType<Button>())
+        BeginAnimation(OpacityProperty, null);
+        Opacity = 0;
+        IsHitTestVisible = false;
+
+        if (RenderTransform is TranslateTransform slide)
         {
-            button.BeginAnimation(WidthProperty, null);
-
-            var group = (TransformGroup)button.RenderTransform;
-            var scale = (ScaleTransform)group.Children[0];
-            var translate = (TranslateTransform)group.Children[1];
-
-            scale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
-            scale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
-            translate.BeginAnimation(TranslateTransform.XProperty, null);
+            slide.BeginAnimation(TranslateTransform.XProperty, null);
+            slide.X = 0;
         }
     }
 
     private void Animate(bool open)
     {
-        foreach (var button in Children.OfType<Button>())
+        // Open first, then move: the buttons become touchable the moment the
+        // tray starts arriving, and stop being touchable the moment it leaves.
+        IsHitTestVisible = open;
+        BeginAnimation(OpacityProperty, Motion.Fade(open ? 1 : 0));
+
+        if (RenderTransform is TranslateTransform slide)
         {
-            // To-only: an interrupted squeeze continues from wherever it is,
-            // so re-hovering mid-close reads as one smooth reversal.
-            button.BeginAnimation(WidthProperty, Motion.Double(open ? ButtonSize : 0));
-
-            var group = (TransformGroup)button.RenderTransform;
-            var scale = (ScaleTransform)group.Children[0];
-            var translate = (TranslateTransform)group.Children[1];
-
-            scale.BeginAnimation(ScaleTransform.ScaleXProperty, Motion.Double(open ? 1 : 0.9));
-            scale.BeginAnimation(ScaleTransform.ScaleYProperty, Motion.Double(open ? 1 : 0.9));
-            translate.BeginAnimation(TranslateTransform.XProperty, Motion.Double(open ? 0 : 4));
+            slide.BeginAnimation(TranslateTransform.XProperty, Motion.Double(open ? 0 : 8));
         }
     }
 }

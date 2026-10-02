@@ -174,6 +174,13 @@ internal partial class BarWindow
                     return;
                 }
 
+                // The tray's ⋯ popup is a layer the same way.
+                if (_trayMorePopup is { IsOpen: true })
+                {
+                    _trayMorePopup.IsOpen = false;
+                    return;
+                }
+
                 // The header's group menu is a layer the same way (票 39): it
                 // goes before any filter the stack would clear underneath it.
                 if (_groupMenu is { IsOpen: true })

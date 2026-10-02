@@ -34,24 +34,58 @@
     -->
     <Window.Resources>
 
-        <!-- The tray buttons' look; their motion lives in code (ActionTray). -->
+        <!--
+          The tray buttons' look（§6.1 托盘/状态矩阵）；their motion lives in
+          code (ActionTray). 命中 32×32、hover 底块 28×28、字形 16；静止
+          TextSecondary。危险钮独立一族：静止 Danger、hover 字转 Danger 底叠
+          Danger 8%（DangerSubtle），再叠 9%。
+        -->
         <Style x:Key="TrayButtonStyle" TargetType="Button">
             <Setter Property="Padding" Value="0"/>
+            <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
                         <Grid x:Name="Root" Background="Transparent">
-                            <Border x:Name="Chrome" CornerRadius="{DynamicResource Radius.Thumb}"
-                                    Background="Transparent">
-                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
+                            <Border x:Name="Hover" CornerRadius="{DynamicResource Radius.Control}"
+                                    Margin="2" Background="{DynamicResource Brush.StateHover}" Opacity="0"/>
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Brush.StateHover}"/>
+                                <Setter TargetName="Hover" Property="Opacity" Value="1"/>
+                                <Setter Property="Foreground" Value="{DynamicResource Brush.Text}"/>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Brush.StatePressed}"/>
+                                <Setter TargetName="Hover" Property="Background" Value="{DynamicResource Brush.StatePressed}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Root" Property="Opacity" Value="0.4"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="TrayDangerButtonStyle" TargetType="Button">
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Danger}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid x:Name="Root" Background="Transparent">
+                            <Border x:Name="Hover" CornerRadius="{DynamicResource Radius.Control}"
+                                    Margin="2" Background="{DynamicResource Brush.DangerSubtle}" Opacity="0"/>
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Hover" Property="Opacity" Value="1"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Hover" Property="Opacity" Value="1"/>
+                                <Setter TargetName="Hover" Property="Background" Value="{DynamicResource Brush.StatePressed}"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="Root" Property="Opacity" Value="0.4"/>
@@ -206,14 +240,14 @@
               布局）；选中 = 2 DIP accent 内环（Ring，独立 Border 叠加，正文
               一像素都不动——选中不再换 BorderThickness）。
             -->
-            <Grid>
+            <Grid MouseLeftButtonDown="OnCardPressed"
+                  MouseRightButtonUp="OnCardRightClick"
+                  MouseEnter="OnCardMouseEnter" MouseLeave="OnCardMouseLeave"
+                  MouseMove="OnCardMouseMove">
             <local:CardSurface x:Name="Card" CornerRadius="{DynamicResource Radius.Control}"
                     Background="{DynamicResource Brush.Surface}"
                     BorderBrush="{DynamicResource Brush.CardStroke}" BorderThickness="1"
-                    Padding="12,8" MouseLeftButtonDown="OnCardPressed"
-                    MouseRightButtonUp="OnCardRightClick"
-                    MouseEnter="OnCardMouseEnter" MouseLeave="OnCardMouseLeave"
-                    MouseMove="OnCardMouseMove">
+                    Padding="12,8">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -245,7 +279,6 @@
                                                 Foreground="{DynamicResource Brush.TextSecondary}"
                                                 VerticalAlignment="Center"
                                                 ToolTip="{Binding WhenToolTip}"/>
-                            <local:ActionTray Margin="6,0,0,0"/>
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
                                     ToolTip="{Binding KindToolTip}"
@@ -369,6 +402,10 @@
                     </StackPanel>
                 </Grid>
             </local:CardSurface>
+
+            <!-- 悬停动作托盘（§6.1）：浮在元信息行上的 h32 叠加层，不进布局
+                 ——悬停前后卡片高度差 0（U-20）。 -->
+            <local:ActionTray/>
 
             <!-- 四态叠加层与选中内环：CardSurface 的兄弟层，铺在内容之上，
                  不进布局、不推动正文一个像素（§6.1"就地显示，零位移"）。 -->

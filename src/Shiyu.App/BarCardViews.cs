@@ -181,6 +181,8 @@ internal sealed class BarCardContainer : ListBoxItem
             // survives recycling and would otherwise fire twice per press.
             tray.ActionExecuted -= host.RunHoverAction;
             tray.ActionExecuted += host.RunHoverAction;
+            tray.MoreRequested -= host.OpenTrayMore;
+            tray.MoreRequested += host.OpenTrayMore;
 
             // A row realized while Ctrl is held must arrive with its badge.
             host.ApplyKeyHintsTo(badge, tray);
