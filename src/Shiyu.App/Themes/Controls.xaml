@@ -13,10 +13,16 @@
       readable in both themes meanwhile.
     -->
 
-    <Style TargetType="TextBlock">
-        <Setter Property="FontFamily" Value="{DynamicResource Font.Ui}"/>
-        <Setter Property="Foreground" Value="{DynamicResource Brush.Text}"/>
-    </Style>
+    <!--
+      Deliberately NO implicit TextBlock style (ticket 18 / review R1): a
+      style setter outranks inherited values, so an implicit FontFamily or
+      Foreground here would land on every TextBlock that a ContentPresenter
+      generates for string content — caption-button glyphs rendered in
+      Font.Ui (tofu), the segmented control's TextOnAccent selection beaten
+      back to Brush.Text (3.0:1), and Danger button text swallowed. Windows
+      instead set TextElement.FontFamily / FontSize / Foreground on their
+      root, which content-generated TextBlocks inherit from their control.
+    -->
 
     <Style TargetType="Button">
         <Setter Property="FontFamily" Value="{DynamicResource Font.Ui}"/>

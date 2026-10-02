@@ -3,7 +3,10 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="拾语 · 设置" Width="560" Height="640" MinWidth="520"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
-        WindowStartupLocation="CenterScreen">
+        WindowStartupLocation="CenterScreen"
+        TextElement.FontFamily="{DynamicResource Font.Ui}"
+        TextElement.FontSize="{DynamicResource Size.Secondary}"
+        TextElement.Foreground="{DynamicResource Brush.Text}">
     <WindowChrome.WindowChrome>
         <WindowChrome CaptionHeight="0" ResizeBorderThickness="6"
                       GlassFrameThickness="0" CornerRadius="0"

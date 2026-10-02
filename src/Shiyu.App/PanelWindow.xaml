@@ -3,7 +3,10 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         ShowActivated="False" ShowInTaskbar="False" Topmost="True"
-        ResizeMode="NoResize" SizeToContent="Height" Width="420" Opacity="0">
+        ResizeMode="NoResize" SizeToContent="Height" Width="420" Opacity="0"
+        TextElement.FontFamily="{DynamicResource Font.Ui}"
+        TextElement.FontSize="{DynamicResource Size.Body}"
+        TextElement.Foreground="{DynamicResource Brush.Text}">
     <Border x:Name="Shell" CornerRadius="{DynamicResource Radius.Window}" Background="{DynamicResource Brush.SurfaceMaterial}"
             BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1">
         <Border.Effect>
@@ -91,16 +94,17 @@
                                     <ItemsControl ItemsSource="{Binding Examples}" Margin="8,2,0,0">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
+                                                <!-- 例句/同义词走次级色：三级色在卡面上只有 4.33:1（票 18） -->
                                                 <TextBlock Text="{Binding}" TextWrapping="Wrap"
                                                            FontSize="{DynamicResource Size.Hint}"
                                                            FontStyle="Italic" Margin="0,1"
-                                                           Foreground="{DynamicResource Brush.TextTertiary}" />
+                                                           Foreground="{DynamicResource Brush.TextSecondary}" />
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
                                     <TextBlock Text="{Binding SynonymsLine}" TextWrapping="Wrap"
                                                FontSize="{DynamicResource Size.Hint}" Margin="8,2,0,0"
-                                               Foreground="{DynamicResource Brush.TextTertiary}" />
+                                               Foreground="{DynamicResource Brush.TextSecondary}" />
                                 </StackPanel>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>

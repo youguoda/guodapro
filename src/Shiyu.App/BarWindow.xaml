@@ -9,6 +9,8 @@
         WindowStartupLocation="Manual"
         Background="Transparent"
         FontSize="{DynamicResource Size.Body}"
+        TextElement.FontFamily="{DynamicResource Font.Ui}"
+        TextElement.Foreground="{DynamicResource Brush.Text}"
         PreviewKeyDown="OnPreviewKeyDown"
         PreviewKeyUp="OnPreviewKeyUp"
         Deactivated="OnLostFocus"
@@ -392,7 +394,9 @@
                                             <DataTrigger Binding="{Binding Dead}" Value="True">
                                                 <Setter TargetName="RowName" Property="TextDecorations"
                                                         Value="Strikethrough"/>
-                                                <Setter TargetName="RowName" Property="Opacity" Value="0.5"/>
+                                                <!-- 已失效的路径用次级色表达，不乘透明度（票 18/R6） -->
+                                                <Setter TargetName="RowName" Property="Foreground"
+                                                        Value="{DynamicResource Brush.TextTertiary}"/>
                                             </DataTrigger>
                                         </DataTemplate.Triggers>
                                     </DataTemplate>

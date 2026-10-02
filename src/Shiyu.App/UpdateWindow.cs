@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Media;
 using Shiyu.Core;
 
@@ -68,6 +69,10 @@ internal sealed class UpdateWindow : Window
         MinWidth = 380;
         Background = (Brush)FindResource("Brush.Background");
         FontSize = DesignTokens.FontBody;
+
+        // R1（票 18）：隐式 TextBlock 样式已删，字体与文字色由窗口根继承。
+        SetResourceReference(TextElement.FontFamilyProperty, "Font.Ui");
+        SetResourceReference(TextElement.ForegroundProperty, "Brush.Text");
 
         _currentLabel.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
         _latestLabel.SetResourceReference(TextBlock.ForegroundProperty, "Brush.Text");
