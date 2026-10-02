@@ -2,7 +2,10 @@
 
 **来源：** 优化报告 O-07、O-20；审计 A2 §1（S1–S7）
 **Blocked by:** 02
-**Status:** ready-for-agent
+**Branch:** `v3/settings`（b0d8af1 + d86d145，待并）
+**Status:** ready-for-human
+
+实施记录（2026-10-02）：Core `SettingsStore`（b0d8af1）——`Update(mutate, path)` 锁内对磁盘真值做增量、写盘成功才前进 `Current`、失败抛专用 `SettingsSaveException`（内存与磁盘要么都改要么都没改）；`Load` 解析失败先把原文件改名 `settings.json.bad-<yyyyMMdd-HHmmss>` 再给默认值（`QuarantinedPath` 带回，App 在托盘出现后提示一次）；环境变量旁路（`SHIYU_RELAY_URL`）只叠加在 `Current`、从不落盘也从不出现在 mutate 面前；`Changed` 锁外广播且取广播时刻最新生效值（处理器里级联 Update 不死锁、不倒序）。App 接线（d86d145）——App 持唯一 store，三份分叉的 apply（App.Apply/引导回调/RestoreSettingsFromBackup）合并为唯一 `OnSettingsChanged`；窄条图钉改 `TopmostWanted(bool)` 单字段写入，几何防抖保存同样走 store（无变化早退）；设置窗保存只提交改过项（`SettingsBindings.IsUnchanged/ChangedOnly`）并订阅 `Changed` 让未动过的编辑器跟随最新值；引导完成同样只写改过项；面板语言改完即生效。Core 696 全绿（+10 新测试），App Debug 构建 0 警告 0 错误。开机自启保持既有语义（每次保存照 Windows 现状写回文件）。
 
 **What to build:**
 - Core 里的 `SettingsStore { Current; Update(Func<AppSettings, AppSettings>); event Changed }`：所有写入都是"在最新值上做增量"，保存后广播。
@@ -12,6 +15,7 @@
 - `SHIYU_RELAY_URL` 只在内存中生效，不再被写进文件。
 
 **验收：**
-- [ ] Core 单测：两个调用方交错修改不同字段，两处修改都保留
-- [ ] Core 单测：加载损坏的文件时原文件被改名保留
+- [x] Core 单测：两个调用方交错修改不同字段，两处修改都保留
+- [x] Core 单测：加载损坏的文件时原文件被改名保留
 - [ ] 实机：S1（设置窗开着点置顶钉再保存）、S2（引导期间唤出窄条后点置顶钉）、S3（导入后保存）、S4（重跑引导）都不再回滚
+- [ ] 实机：改译文语言后不重启，下一次翻译即用新语言

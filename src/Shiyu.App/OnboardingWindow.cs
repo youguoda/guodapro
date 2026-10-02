@@ -23,7 +23,7 @@ namespace Shiyu.App;
 internal sealed class OnboardingWindow : Window
 {
     private readonly AppSettings _current;
-    private readonly Action<AppSettings> _apply;
+    private readonly SettingsStore _store;
 
     private readonly Dictionary<string, ItemState> _states = [];
     private readonly List<FrameworkElement> _steps = [];
@@ -35,10 +35,12 @@ internal sealed class OnboardingWindow : Window
     private readonly Button _back = new() { Content = "上一步", Padding = new Thickness(12, 4, 12, 4), Cursor = Cursors.Hand };
     private readonly Button _next = new() { Content = "下一步", Padding = new Thickness(12, 4, 12, 4), Cursor = Cursors.Hand };
 
-    public OnboardingWindow(AppSettings current, Action<AppSettings> apply)
+    /// <param name="current">开窗时的设置：编辑器的初值，也是"改过没改过"的对照基线。</param>
+    /// <param name="store">写设置的唯一入口（O-20）：引导只提交改过的项，落盘与应用走同一条路。</param>
+    public OnboardingWindow(AppSettings current, SettingsStore store)
     {
         _current = current;
-        _apply = apply;
+        _store = store;
 
         Title = "欢迎使用拾语";
         Width = 470;
@@ -428,15 +430,23 @@ internal sealed class OnboardingWindow : Window
             }
         }
 
-        // Untouched states keep their current values: the apply chain runs
-        // over every wizard item with whatever the user left in them.
-        var updated = _current;
-        foreach (var (id, state) in _states)
+        // Only what the user actually answered is written, and onto the
+        // latest settings rather than this window's opening snapshot (O-20):
+        // a bar pin clicked mid-guide survives the finish, and the guide's
+        // own answers survive a later save from the settings window.
+        var edited = SettingsBindings.ChangedOnly(_current, _states);
+        try
         {
-            updated = SettingsBindings.Apply(id, updated, state.Text, state.Choice);
+            _store.Update(s => edited(s) with { OnboardingCompleted = true }, AppPaths.SettingsFile);
+        }
+        catch (SettingsSaveException failure)
+        {
+            // 引导的结果没能落盘必须明说——安静关窗会让人以为一切都好了。
+            MessageBox.Show(
+                this, failure.Message + " 可以关闭本窗继续使用，稍后重新运行引导即可重试。",
+                "拾语", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
 
-        _apply(updated with { OnboardingCompleted = true });
         Close();
     }
 }

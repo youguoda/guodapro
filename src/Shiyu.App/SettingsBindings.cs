@@ -126,6 +126,52 @@ internal static class SettingsBindings
 
     private static bool AsBool(string text) => text == "1";
 
+    // --- 只写改过的项（O-20） ---------------------------------------------------
+    //
+    // 设置窗和引导窗都攥着一份开窗快照：保存时若把所有项重放一遍，别处
+    // 在此期间改过的字段就会被旧值覆盖（S1–S4 的共同根源）。以下两个
+    // 成员把"哪些项真的改了"变成数据：对照快照逐项比较，未变的项不动。
+
+    /// <summary>
+    /// 一项的编辑值是否仍与快照一致。一致的项在保存时不写——让别处的
+    /// 修改活下来。
+    /// </summary>
+    public static bool IsUnchanged(string id, AppSettings baseline, ItemState state) => id switch
+    {
+        "theme" => state.Choice == (int)baseline.Theme,
+        "service.backend-kind" => state.Choice == (int)baseline.TranslationBackend,
+
+        // 这个开关的基线是 Windows 的现状而非文件值（两者可能不一致，
+        // 而 Windows 是事实）。既有保存行为是每次都照 Windows 现状写回
+        // 文件——保持不变，别让"没碰过的开关"在保存后反向改写注册表。
+        "store.start-with-windows" => false,
+
+        _ when ReadToggle(id, baseline) is { } on => state.Text == (on ? "1" : "0"),
+        _ => ReadText(id, baseline) is { } text
+            && string.Equals(text.Trim(), state.Text.Trim(), StringComparison.Ordinal),
+    };
+
+    /// <summary>
+    /// 把编辑器状态变成"在最新设置上只应用改过项"的增量函数。
+    /// </summary>
+    public static Func<AppSettings, AppSettings> ChangedOnly(
+        AppSettings baseline, IReadOnlyDictionary<string, ItemState> states)
+        => current =>
+        {
+            var updated = current;
+            foreach (var (id, state) in states)
+            {
+                if (IsUnchanged(id, baseline, state))
+                {
+                    continue;
+                }
+
+                updated = Apply(id, updated, state.Text, state.Choice);
+            }
+
+            return updated;
+        };
+
     internal static List<StoredExclusionRule> ParseExclusionRules(string text)
         => text
             .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)

@@ -21,12 +21,6 @@ public partial class App : Application
     private SelectionCapture? _capture;
     private HotkeyRegistry? _hotkeys;
     private BadgeWindow? _badge;
-    private PanelWindow? _panel;
-    private AppSettings _settings = new();
-    private WindowsCapturePlatform? _capturePlatform;
-    private QuickBarWindow? _quickBar;
-    private ImageArchive? _images;
-    private System.Windows.Threading.DispatcherTimer? _retention;
     private SettingsWindow? _settingsWindow;
     private UpdateWindow? _updateWindow;
     private ThemeManager? _theme;
@@ -37,6 +31,27 @@ public partial class App : Application
     private WinVHook? _winV;
     private SpeechSynthesis? _speech;
     private MouseDragHook? _mouseDrag;
+    private PanelWindow? _panel;
+    private WindowsCapturePlatform? _capturePlatform;
+    private QuickBarWindow? _quickBar;
+    private ImageArchive? _images;
+    private System.Windows.Threading.DispatcherTimer? _retention;
+
+    /// <summary>
+    /// 设置的唯一写入口（O-20）：一切读走 <see cref="Settings"/>，一切写走
+    /// <see cref="SettingsStore.Update"/>——此前每个写入方攥着整份快照各自
+    /// 写回，最后保存的一方获胜。
+    /// </summary>
+    private SettingsStore? _settingsStore;
+
+    /// <summary>生效设置，永远是 store 的最新值。</summary>
+    private AppSettings Settings => _settingsStore!.Current;
+
+    /// <summary>上一次已应用的设置：Changed 处理器靠它分辨"数据位置是否刚被改过"。</summary>
+    private AppSettings _appliedSettings = new();
+
+    /// <summary>加载设置时若发生了坏文件迁移，托盘起来后要说一次的话。</summary>
+    private string? _settingsQuarantineNotice;
 
     /// <summary>
     /// 划词路径挂起的剪贴板还原：取词借走了用户剪贴板，还原被推迟到面板
@@ -86,8 +101,24 @@ public partial class App : Application
             return;
         }
 
-        _settings = AppSettings.Load(AppPaths.SettingsFile);
-        AppPaths.UseDirectory(_settings.DataDirectoryOverride);
+        // Everything reads and writes settings through one store (O-20). The
+        // relay override stays a probe convenience riding the store's
+        // non-persisting bypass: reads see it, the file never learns of it.
+        var relayUrl = Environment.GetEnvironmentVariable("SHIYU_RELAY_URL");
+        var loaded = SettingsStore.Load(
+            AppPaths.SettingsFile,
+            string.IsNullOrEmpty(relayUrl) ? null : s => s with { RelayEndpoint = relayUrl });
+        _settingsStore = loaded.Store;
+        AppPaths.UseDirectory(Settings.DataDirectoryOverride);
+
+        // An unparseable settings file was renamed aside, not overwritten:
+        // that deserves one honest sentence once a tray exists to say it in.
+        if (loaded.QuarantinedPath is { } quarantined)
+        {
+            _settingsQuarantineNotice =
+                "设置文件无法读取，已把原文件保留为 "
+                + Path.GetFileName(quarantined) + "，并暂时使用默认设置。";
+        }
 
         // A probe convenience in the same family as SHIYU_OPEN_SETTINGS: run
         // against an isolated data directory so automated checks never touch a
@@ -98,21 +129,22 @@ public partial class App : Application
             AppPaths.UseDirectory(dataDirectory);
         }
 
-        // Same family again: point the public relay at a local worker so the
-        // whole channel can be probed without a cloud deployment. Deliberately
-        // in-memory only — the settings file keeps the official endpoint.
-        if (Environment.GetEnvironmentVariable("SHIYU_RELAY_URL") is { Length: > 0 } relayUrl)
-        {
-            _settings = _settings with { RelayEndpoint = relayUrl };
-        }
-
         // The relay's device identity: an anonymous install id, generated once
         // and stable for the machine's life. Persisted right away — a new id
         // every launch would quietly double the device's daily quota draw.
-        if (_settings.RelayClientId.Length == 0)
+        // A failed write has nothing to show itself in yet; the id simply
+        // regenerates next launch.
+        if (Settings.RelayClientId.Length == 0)
         {
-            _settings = _settings with { RelayClientId = Guid.NewGuid().ToString("N") };
-            _settings.Save(AppPaths.SettingsFile);
+            try
+            {
+                _settingsStore.Update(
+                    s => s with { RelayClientId = Guid.NewGuid().ToString("N") },
+                    AppPaths.SettingsFile);
+            }
+            catch (SettingsSaveException)
+            {
+            }
         }
 
         // The finalizer's unfinished chore: it cannot delete the staged
@@ -125,20 +157,20 @@ public partial class App : Application
         // Before any window exists: the first frame a window ever shows must
         // already be in the right theme.
         _theme = new ThemeManager();
-        _theme.Apply(_settings.Theme);
+        _theme.Apply(Settings.Theme);
 
         // One hidden window serves both the clipboard notifications and the
         // tray icon's callbacks — and, later, the global hotkeys.
         _messageWindow = new MessageWindow();
         _clipboard = new WindowsClipboardMonitor(_messageWindow);
-        _exclusions = _settings.BuildExclusionPolicy();
+        _exclusions = Settings.BuildExclusionPolicy();
         _images = new ImageArchive(AppPaths.ImageDirectory);
         _pipeline = new ClipboardPipeline(
             _clipboard, _store, TimeProvider.System, _exclusions, _images,
             icons: new SourceIconCache(_store, new WindowsSourceIcons()))
         {
-            RecordImages = _settings.RecordImages,
-            RecordFiles = _settings.RecordFiles,
+            RecordImages = Settings.RecordImages,
+            RecordFiles = Settings.RecordFiles,
         };
         _pipeline.ImageFailed += reason
             => _tray?.ShowNotification("拾语", $"复制的图片没能保存：{reason}");
@@ -154,6 +186,12 @@ public partial class App : Application
         _tray.OpenSettingsRequested += ShowSettings;
         _tray.UpdateCheckRequested += ShowUpdateWindow;
 
+        if (_settingsQuarantineNotice is { } notice)
+        {
+            _tray.ShowNotification("拾语", notice);
+            _settingsQuarantineNotice = null;
+        }
+
         _writer = new WindowsClipboardWriter(_messageWindow);
 
         _capturePlatform = new WindowsCapturePlatform(_messageWindow, _writer);
@@ -162,6 +200,14 @@ public partial class App : Application
         RegisterHotkeys();
         ApplyWinVTakeover();
         ApplySelectionBadge();
+
+        // One subscription, every writer (O-20): theme, bar, exclusions,
+        // recording switches, hotkeys, Win+V and the selection badge all
+        // re-apply from the single handler below. There used to be three
+        // apply paths — settings save, onboarding, restore — each applying a
+        // different subset, and they had drifted apart.
+        _settingsStore.Changed += OnSettingsChanged;
+        _appliedSettings = Settings;
 
         _singleInstance.WatchForOtherInstances(_messageWindow);
 
@@ -192,20 +238,13 @@ public partial class App : Application
         // The first-run guide asks the few things only the user knows. A
         // history that already exists says this is not a first run — the
         // guide stays away and never nags an upgrading user.
-        if (!_settings.OnboardingCompleted && _store.Count() == 0)
+        if (!Settings.OnboardingCompleted && _store.Count() == 0)
         {
-            var wizard = new OnboardingWindow(_settings, settings =>
-            {
-                _settings = settings;
-                _settings.Save(AppPaths.SettingsFile);
-                _exclusions = settings.BuildExclusionPolicy();
-                _pipeline?.UseExclusions(_exclusions);
-                if (_pipeline is not null)
-                {
-                    _pipeline.RecordImages = settings.RecordImages;
-                    _pipeline.RecordFiles = settings.RecordFiles;
-                }
-            });
+            // The wizard writes through the store like everyone else, so what
+            // it collects — hotkeys, theme, backend, rules — applies live via
+            // the same OnSettingsChanged path a settings save takes, and a
+            // bar summoned mid-guide can no longer erase it (S2).
+            var wizard = new OnboardingWindow(Settings, _settingsStore);
             wizard.Show();
         }
     }
@@ -237,7 +276,7 @@ public partial class App : Application
     /// </summary>
     private void StartUpdateWatch()
     {
-        if (!_settings.UpdateAutoCheck)
+        if (!Settings.UpdateAutoCheck)
         {
             return;
         }
@@ -285,13 +324,13 @@ public partial class App : Application
     {
 #if !DEBUG
         var path = Environment.ProcessPath ?? string.Empty;
-        if (StartupRegistration.IsEnabled() == _settings.StartWithWindows
-            && (!_settings.StartWithWindows || StartupRegistration.PointsAt(path)))
+        if (StartupRegistration.IsEnabled() == Settings.StartWithWindows
+            && (!Settings.StartWithWindows || StartupRegistration.PointsAt(path)))
         {
             return;
         }
 
-        StartupRegistration.Set(_settings.StartWithWindows, path);
+        StartupRegistration.Set(Settings.StartWithWindows, path);
 #endif
     }
 
@@ -321,7 +360,7 @@ public partial class App : Application
             }
 
             var service = new RetentionService(_store, _images, TimeProvider.System);
-            var days = Math.Max(1, _settings.ImageRetentionDays);
+            var days = Math.Max(1, Settings.ImageRetentionDays);
 
             Task.Run(() =>
             {
@@ -329,8 +368,8 @@ public partial class App : Application
                 {
                     service.Sweep(
                         TimeSpan.FromDays(days),
-                        _settings.ProtectEntries && _settings.ProtectFavorites,
-                        _settings.ProtectEntries && _settings.ProtectPinned);
+                        Settings.ProtectEntries && Settings.ProtectFavorites,
+                        Settings.ProtectEntries && Settings.ProtectPinned);
                 }
                 catch (Exception)
                 {
@@ -342,9 +381,9 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// Opens the settings, and applies whatever comes back without a restart —
-    /// except the data location, which by its nature cannot change underneath a
-    /// running database.
+    /// Opens the settings window. It reads from the store and submits only
+    /// what the user changed; live effects come from the same
+    /// <see cref="OnSettingsChanged"/> everyone else answers to.
     /// </summary>
     private void ShowSettings()
     {
@@ -355,8 +394,7 @@ public partial class App : Application
         }
 
         _settingsWindow = new SettingsWindow(
-            _settings,
-            Apply,
+            _settingsStore!,
             new BackupUi(
                 _store!,
                 AppPaths.ImageDirectory,
@@ -365,48 +403,12 @@ public partial class App : Application
         _settingsWindow.Closed += (_, _) => _settingsWindow = null;
         _settingsWindow.Show();
 
-        void Apply(AppSettings updated)
-        {
-            var movedData = updated.DataDirectoryOverride != _settings.DataDirectoryOverride;
-
-            _settings = updated;
-            _settings.Save(AppPaths.SettingsFile);
-
-            // Applied immediately, no restart: swapping the token dictionary
-            // re-resolves every DynamicResource in every open window.
-            _theme?.Apply(updated.Theme);
-
-            // The bar's density knobs take effect on the spot too.
-            _bar?.ApplySettings(updated);
-
-            // Rules are swapped in on the live policy object, so the very next
-            // copy is judged by them.
-            _exclusions = updated.BuildExclusionPolicy();
-            _pipeline?.UseExclusions(_exclusions);
-            if (_pipeline is not null)
-            {
-                _pipeline.RecordImages = updated.RecordImages;
-                _pipeline.RecordFiles = updated.RecordFiles;
-            }
-
-            // Hotkeys are dropped and taken again as a set: working out which
-            // individual ones changed would be more code than redoing all three.
-            _hotkeys?.Dispose();
-            _hotkeys = new HotkeyRegistry(_messageWindow!);
-            RegisterHotkeys();
-            ApplyWinVTakeover();
-            ApplySelectionBadge();
-
-            if (movedData)
-            {
-                _tray?.ShowNotification("拾语", "数据位置已更改，重启拾语后生效。");
-            }
-        }
-
         /// <summary>
-        /// A backup's settings land the way a saved settings window does:
-        /// validated first, written to disk atomically, then applied live — a
-        /// restore should not have to wait for a restart to feel real.
+        /// A backup's settings land the way every write does: through the
+        /// store, whole-record, then applied live by the one changed handler.
+        /// The settings window refreshes itself from that same event, so a
+        /// later save can no longer roll the import back from a stale
+        /// snapshot (S3).
         ///
         /// Called on the UI thread by BackupUi once the import has landed.
         /// Answers null when applied, or the plain-words reason the current
@@ -420,26 +422,81 @@ public partial class App : Application
                 return "条目已导入，但备份里的设置无法识别，已保留当前设置。";
             }
 
-            _settings = restored;
-            _settings.Save(AppPaths.SettingsFile);
-
-            _theme?.Apply(restored.Theme);
-            _bar?.ApplySettings(restored);
-            _exclusions = restored.BuildExclusionPolicy();
-            _pipeline?.UseExclusions(_exclusions);
-            if (_pipeline is not null)
+            try
             {
-                _pipeline.RecordImages = restored.RecordImages;
-                _pipeline.RecordFiles = restored.RecordFiles;
+                _settingsStore!.Update(_ => restored, AppPaths.SettingsFile);
+            }
+            catch (SettingsSaveException)
+            {
+                // The store refused the change: memory and disk still hold
+                // the pre-import settings, so that is exactly what the
+                // summary should claim.
+                return "条目已导入，但设置没能写入磁盘，已保留当前设置。";
             }
 
-            _hotkeys?.Dispose();
-            _hotkeys = new HotkeyRegistry(_messageWindow!);
-            RegisterHotkeys();
-            ApplyWinVTakeover();
-            ApplySelectionBadge();
-
             return null;
+        }
+    }
+
+    /// <summary>
+    /// The one apply path (O-20): whatever changed the settings — the
+    /// settings window, onboarding, a restore, the bar's pin, a geometry
+    /// save — the effects land here, immediately, no restart.
+    /// </summary>
+    private void OnSettingsChanged(AppSettings updated)
+    {
+        var movedData = updated.DataDirectoryOverride != _appliedSettings.DataDirectoryOverride;
+        _appliedSettings = updated;
+
+        // Swapping the token dictionary re-resolves every DynamicResource in
+        // every open window.
+        _theme?.Apply(updated.Theme);
+
+        // The bar's density knobs take effect on the spot; the panel's
+        // languages follow without a restart.
+        _bar?.ApplySettings(updated);
+        _panel?.ApplySettings(updated);
+
+        // Rules are swapped in on the live policy object, so the very next
+        // copy is judged by them.
+        _exclusions = updated.BuildExclusionPolicy();
+        _pipeline?.UseExclusions(_exclusions);
+        if (_pipeline is not null)
+        {
+            _pipeline.RecordImages = updated.RecordImages;
+            _pipeline.RecordFiles = updated.RecordFiles;
+        }
+
+        // Hotkeys are dropped and taken again as a set: working out which
+        // individual ones changed would be more code than redoing all four.
+        _hotkeys?.Dispose();
+        _hotkeys = new HotkeyRegistry(_messageWindow!);
+        RegisterHotkeys();
+        ApplyWinVTakeover();
+        ApplySelectionBadge();
+
+        if (movedData)
+        {
+            _tray?.ShowNotification("拾语", "数据位置已更改，重启拾语后生效。");
+        }
+    }
+
+    /// <summary>
+    /// Writes one settings change through the store. A failed write becomes
+    /// a tray event rather than an exception escaping a UI handler — and the
+    /// store has already refused the change, so memory and disk still agree.
+    /// </summary>
+    private bool TryUpdateSettings(Func<AppSettings, AppSettings> mutate)
+    {
+        try
+        {
+            _settingsStore!.Update(mutate, AppPaths.SettingsFile);
+            return true;
+        }
+        catch (SettingsSaveException failure)
+        {
+            _tray?.ShowNotification("拾语", failure.Message);
+            return false;
         }
     }
 
@@ -467,20 +524,18 @@ public partial class App : Application
 
         if (_bar is null)
         {
-            _bar = new BarWindow(_store, _icons, _writer, _capture, _settings, _fileIcons!);
+            _bar = new BarWindow(_store, _icons, _writer, _capture, Settings, _fileIcons!);
             _bar.GeometryChanged += OnBarGeometryChanged;
             _bar.DataSettingsRequested += OpenSettingsAt;
             _bar.DeadDragNotice += notice => _tray?.ShowNotification("拾语", notice);
 
-            // The header's pin writes its own setting (票 39): the bar hands
-            // the updated record up, this side writes it down — the settings
-            // page flows the other way through ApplySettings, so the two
-            // editors never loop.
-            _bar.SettingsChanged += settings =>
-            {
-                _settings = settings;
-                _settings.Save(AppPaths.SettingsFile);
-            };
+            // The header's pin reports only what it wants (票 39/O-20): this
+            // side turns it into a one-field update through the store, and
+            // the pin's visual state comes back via ApplySettings when the
+            // store broadcasts — the bar never writes settings itself again,
+            // so its snapshot can no longer erase anyone else's changes (S1/S2).
+            _bar.TopmostWanted += wanted =>
+                TryUpdateSettings(s => s with { BarAlwaysOnTop = wanted });
         }
 
         _bar.Toggle();
@@ -512,13 +567,22 @@ public partial class App : Application
             return;
         }
 
-        _settings = _settings with
+        // An unchanged geometry — the common case at shutdown — skips the
+        // write entirely: every store update re-applies settings everywhere,
+        // and exit has no use for that.
+        if (Settings.BarLeft == _bar.BarLeft
+            && Settings.BarTop == _bar.BarTop
+            && Settings.BarHeight == _bar.BarHeight)
+        {
+            return;
+        }
+
+        TryUpdateSettings(s => s with
         {
             BarLeft = _bar.BarLeft,
             BarTop = _bar.BarTop,
             BarHeight = _bar.BarHeight,
-        };
-        _settings.Save(AppPaths.SettingsFile);
+        });
     }
 
     /// <summary>
@@ -592,7 +656,7 @@ public partial class App : Application
         _speech ??= new SpeechSynthesis();
 
         _panel ??= new PanelWindow(
-            _hotkeys, _writer, () => _settings.BuildTranslationBackend(), _settings,
+            _hotkeys, _writer, () => Settings.BuildTranslationBackend(), Settings,
             SaveTranslationToHistory,
             dictionary: BuildDictionary,
             speech: _speech);
@@ -621,10 +685,10 @@ public partial class App : Application
     /// 路宽一个数量级，因为它是兜底，慢到也仍然胜过没有卡。
     /// </summary>
     private IDictionaryApi? OwnKeyDictionary()
-        => string.IsNullOrWhiteSpace(_settings.BackendApiKey)
+        => string.IsNullOrWhiteSpace(Settings.BackendApiKey)
             ? null
             : new BudgetedDictionary(
-                new LlmDictionaryApi(new OpenAiCompatibleBackend(_settings.Backend)),
+                new LlmDictionaryApi(new OpenAiCompatibleBackend(Settings.Backend)),
                 TimeSpan.FromSeconds(8));
 
     /// <summary>
@@ -664,8 +728,8 @@ public partial class App : Application
             // /translate 一张脸——这里恒走自备密钥后端；没配密钥的用户点
             // 动作时由面板如实报"还没有配置"，不影响翻译本身。
             _library = new LibraryWindow(
-                _store, _writer, _images!, () => new OpenAiCompatibleBackend(_settings.Backend), _icons!,
-                () => _settings, _pipeline);
+                _store, _writer, _images!, () => new OpenAiCompatibleBackend(Settings.Backend), _icons!,
+                () => Settings, _pipeline);
             _library.Closed += (_, _) => _library = null;
             _library.Show();
         }
@@ -737,7 +801,7 @@ public partial class App : Application
     /// </summary>
     private void ApplyWinVTakeover()
     {
-        if (_settings.TakeOverWinV)
+        if (Settings.TakeOverWinV)
         {
             if (_winV is null)
             {
@@ -771,7 +835,7 @@ public partial class App : Application
     /// </summary>
     private void ApplySelectionBadge()
     {
-        if (_settings.SelectionBadge)
+        if (Settings.SelectionBadge)
         {
             if (_mouseDrag is null)
             {
@@ -814,7 +878,7 @@ public partial class App : Application
 
         // 总开关传实时值：装钩与事件抵达之间设置若被关掉，这里也拦得住。
         if (SelectionBadgeFilter.JudgeBeforeCapture(
-                _settings.SelectionBadge, DesktopShell.IsForeground())
+                Settings.SelectionBadge, DesktopShell.IsForeground())
             != SelectionBadgeVerdict.Offer)
         {
             return;
@@ -872,17 +936,17 @@ public partial class App : Application
         // some configurations.
         var conflicts = new List<HotkeyConflict>();
 
-        Add(_settings.CaptureHotkey, "划词翻译", TranslateSelection);
+        Add(Settings.CaptureHotkey, "划词翻译", TranslateSelection);
 
         // Ctrl+Shift+V sits next to the paste the user already knows.
-        Add(_settings.QuickBarHotkey, "快速条", ShowQuickBar);
+        Add(Settings.QuickBarHotkey, "快速条", ShowQuickBar);
 
         // The resident narrow bar: summoned and hidden by the same key.
-        Add(_settings.BarHotkey, "窄条", ToggleBar);
+        Add(Settings.BarHotkey, "窄条", ToggleBar);
 
         // The escape hatch. Without it the user cannot tell a filter that
         // judged wrongly from a tool that broke, and has no way to insist.
-        Add(_settings.ClipboardTranslateHotkey, "翻译剪贴板内容", TranslateClipboard);
+        Add(Settings.ClipboardTranslateHotkey, "翻译剪贴板内容", TranslateClipboard);
 
         if (conflicts.Count > 0)
         {
