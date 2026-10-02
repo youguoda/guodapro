@@ -21,7 +21,7 @@ public sealed class BackupUi(
     EntryStore store,
     string imagesDirectory,
     Func<string?> readSettingsJson,
-    Action<string> restoreSettingsJson)
+    Func<string, string?> restoreSettingsJson)
 {
     public void Export(Window owner)
     {
@@ -49,7 +49,8 @@ public sealed class BackupUi(
             var counts = BackupArchive.Export(
                 dialog.FileName, store, imagesDirectory, settings, password.Bytes, report);
             return $"已导出 {counts.Entries} 条、{counts.Images} 张原图，共 {counts.Bytes / 1024} KB。";
-        });
+        },
+        summary => MessageBox.Show(owner, summary, "备份", MessageBoxButton.OK, MessageBoxImage.Information));
     }
 
     public void Import(Window owner)
@@ -80,11 +81,40 @@ public sealed class BackupUi(
         RunWithProgress(owner, "正在导入…", report =>
         {
             var outcome = BackupArchive.Import(
-                dialog.FileName, store, imagesDirectory, overwrite.Value,
-                restoreSettingsJson, password.Bytes, report);
-            return overwrite.Value
+                dialog.FileName, store, imagesDirectory, overwrite.Value, password.Bytes, report);
+            return (outcome, overwrite.Value);
+        },
+        result =>
+        {
+            var (outcome, overwrite) = result;
+            var summary = overwrite
                 ? $"覆盖完成：导入 {outcome.Added} 条、{outcome.ImagesRestored} 张原图、{outcome.GroupsCreated} 个分组。"
                 : $"合并完成：新增 {outcome.Added} 条（{outcome.SkippedExisting} 条已有跳过），还原 {outcome.ImagesRestored} 张原图。";
+
+            if (outcome.SettingsJson is { } settings)
+            {
+                // Applied here, on the UI thread, after the import landed.
+                // The delegate answers null for applied, or the plain-words
+                // reason it kept the current settings instead.
+                string? refusal;
+                try
+                {
+                    refusal = restoreSettingsJson(settings);
+                }
+                catch (Exception)
+                {
+                    // The import itself has landed; only the settings
+                    // stumbled, and the summary must not claim otherwise.
+                    refusal = "条目已导入，但设置恢复没有完成。";
+                }
+
+                if (refusal is { } because)
+                {
+                    summary += "\n" + because;
+                }
+            }
+
+            MessageBox.Show(owner, summary, "备份", MessageBoxButton.OK, MessageBoxImage.Information);
         });
     }
 
@@ -270,7 +300,13 @@ public sealed class BackupUi(
         }
     }
 
-    private static void RunWithProgress(Window owner, string title, Func<IProgress<string>, string> work)
+    /// <summary>
+    /// Runs the work on the pool and hands its result to
+    /// <paramref name="done"/> back on the UI thread — the await resumes on
+    /// the dispatcher, so settings and windows may be touched from there and
+    /// nowhere else.
+    /// </summary>
+    private static void RunWithProgress<T>(Window owner, string title, Func<IProgress<string>, T> work, Action<T> done)
     {
         var window = new Window
         {
@@ -299,9 +335,9 @@ public sealed class BackupUi(
         {
             try
             {
-                var summary = await Task.Run(() => work(progress));
+                var result = await Task.Run(() => work(progress));
                 window.Close();
-                MessageBox.Show(owner, summary, "备份", MessageBoxButton.OK, MessageBoxImage.Information);
+                done(result);
             }
             catch (BackupException failure)
             {
@@ -310,6 +346,9 @@ public sealed class BackupUi(
             }
             catch (Exception)
             {
+                // The import itself is transactional (O-03): whatever it
+                // wrote, it wrote all of it or none. This path is the none,
+                // so "nothing was touched" is the truth it says it is.
                 window.Close();
                 MessageBox.Show(owner, "备份操作失败了，现有数据没有被动过。", "备份", MessageBoxButton.OK, MessageBoxImage.Warning);
             }

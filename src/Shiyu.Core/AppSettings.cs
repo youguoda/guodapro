@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -242,24 +243,9 @@ public sealed record AppSettings
     {
         try
         {
-            var loaded = File.Exists(path)
-                ? JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(path), Format) ?? new AppSettings()
+            return File.Exists(path) && TryParse(File.ReadAllText(path), out var loaded)
+                ? loaded
                 : new AppSettings();
-
-            // A saved action list that exactly matches a former default is a
-            // default that predates newer actions, not a choice — upgrade it,
-            // while respecting anything the user actually reordered or pruned.
-            if (loaded.BarActions.SequenceEqual(FormerDefaultActions)
-                || loaded.BarActions.SequenceEqual(HoverActions.FormerDefaultWithoutGroup))
-            {
-                loaded = loaded with { BarActions = HoverActions.All };
-            }
-
-            return loaded;
-        }
-        catch (JsonException)
-        {
-            return new AppSettings();
         }
         catch (IOException)
         {
@@ -268,6 +254,47 @@ public sealed record AppSettings
         catch (UnauthorizedAccessException)
         {
             return new AppSettings();
+        }
+    }
+
+    /// <summary>
+    /// Parses settings JSON, refusing anything that would not come back as
+    /// usable settings: empty, malformed, or not an object all say false.
+    /// A restore refuses to touch the settings file until the backup's copy
+    /// passes here — writing it first and discovering garbage on load would
+    /// silently reset the user to defaults (O-02).
+    /// </summary>
+    public static bool TryParse(string json, [NotNullWhen(true)] out AppSettings? settings)
+    {
+        settings = null;
+
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return false;
+        }
+
+        try
+        {
+            if (JsonSerializer.Deserialize<AppSettings>(json, Format) is not { } parsed)
+            {
+                return false;
+            }
+
+            // A saved action list that exactly matches a former default is a
+            // default that predates newer actions, not a choice — upgrade it,
+            // while respecting anything the user actually reordered or pruned.
+            if (parsed.BarActions.SequenceEqual(FormerDefaultActions)
+                || parsed.BarActions.SequenceEqual(HoverActions.FormerDefaultWithoutGroup))
+            {
+                parsed = parsed with { BarActions = HoverActions.All };
+            }
+
+            settings = parsed;
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
         }
     }
 

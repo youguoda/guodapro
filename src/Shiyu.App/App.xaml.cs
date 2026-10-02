@@ -393,25 +393,41 @@ public partial class App : Application
 
         /// <summary>
         /// A backup's settings land the way a saved settings window does:
-        /// written to disk, then applied live — a restore should not have to
-        /// wait for a restart to feel real.
+        /// validated first, written to disk atomically, then applied live — a
+        /// restore should not have to wait for a restart to feel real.
+        ///
+        /// Called on the UI thread by BackupUi once the import has landed.
+        /// Answers null when applied, or the plain-words reason the current
+        /// settings were kept: an unparseable backup must not be written to
+        /// disk, where a later load would quietly reset the user to defaults.
         /// </summary>
-        void RestoreSettingsFromBackup(string json)
+        string? RestoreSettingsFromBackup(string json)
         {
-            File.WriteAllText(AppPaths.SettingsFile, json);
-            var restored = AppSettings.Load(AppPaths.SettingsFile);
+            if (!AppSettings.TryParse(json, out var restored))
+            {
+                return "条目已导入，但备份里的设置无法识别，已保留当前设置。";
+            }
 
             _settings = restored;
+            _settings.Save(AppPaths.SettingsFile);
+
             _theme?.Apply(restored.Theme);
             _bar?.ApplySettings(restored);
             _exclusions = restored.BuildExclusionPolicy();
             _pipeline?.UseExclusions(_exclusions);
+            if (_pipeline is not null)
+            {
+                _pipeline.RecordImages = restored.RecordImages;
+                _pipeline.RecordFiles = restored.RecordFiles;
+            }
 
             _hotkeys?.Dispose();
             _hotkeys = new HotkeyRegistry(_messageWindow!);
             RegisterHotkeys();
             ApplyWinVTakeover();
             ApplySelectionBadge();
+
+            return null;
         }
     }
 
