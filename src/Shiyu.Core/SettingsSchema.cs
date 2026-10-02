@@ -44,6 +44,7 @@ public enum SettingsControl
 /// </summary>
 /// <param name="Unit">数值项的单位后缀（天、毫秒、行、px、条），数值必带单位（U-14）。</param>
 /// <param name="Icon">Fluent 字形码位（如 "E713"），设置卡左缘 20 DIP 图标。</param>
+/// <param name="FullBleed">编辑器占满卡的整行（标签与说明在上方）——给天生高瘦的编辑器（三层排除、动作清单）用。</param>
 public sealed record SettingsItem(
     string Id,
     string Label,
@@ -55,7 +56,8 @@ public sealed record SettingsItem(
     string? Parent = null,
     string[]? Keywords = null,
     string? Unit = null,
-    string? Icon = null)
+    string? Icon = null,
+    bool FullBleed = false)
 {
     public string[] ChoiceList => Choices ?? [];
     public string[] KeywordList => Keywords ?? [];
@@ -166,7 +168,8 @@ public static class SettingsSchema
                     "bar.actions", "动作清单", SettingsControl.Actions,
                     Hint: "悬停卡片时托盘里出现的动作与顺序；关闭的动作不再出现。上下拖动调整顺序。",
                     Keywords: ["悬停", "托盘", "按钮", "复制", "粘贴", "删除", "动作", "顺序"],
-                    Icon: "E8C8"),
+                    Icon: "E8C8",
+                    FullBleed: true),
                 new SettingsItem(
                     "action.sound", "完成提示音", SettingsControl.Toggle,
                     Hint: "动作完成后播放一声提示；默认只显示对勾。",
@@ -195,7 +198,8 @@ public static class SettingsSchema
                     "exclusions", "排除规则", SettingsControl.Custom,
                     Hint: "内置清单始终生效；你自己的排除可从正在运行的应用添加；高级规则用 re: 正则匹配内容。",
                     Keywords: ["排除", "隐私", "密码", "不记录", "敏感", "正则", "密码管理器"],
-                    Icon: "E72E")),
+                    Icon: "E72E",
+                    FullBleed: true)),
             new SettingsSection("privacy.retention", "保留与保护",
                 new SettingsItem(
                     "store.retention-days", "图片保留", SettingsControl.Number, Min: 1, Max: 36500,
@@ -247,21 +251,25 @@ public static class SettingsSchema
                     Icon: "E72E"),
                 new SettingsItem(
                     "service.preset", "服务商预设", SettingsControl.Custom,
+                    Parent: "service.backend-kind",
                     Hint: "选中即填好服务地址与模型；手改地址或模型则视为自定义。预设附带「申请密钥」直达与「测试连接」。",
                     Keywords: ["预设", "服务商", "百炼", "阿里云", "deepseek", "智谱", "glm", "硅基流动", "kimi", "测试连接", "申请密钥", "自定义"],
                     Icon: "E713"),
                 new SettingsItem(
                     "service.base-url", "服务地址", SettingsControl.Text,
+                    Parent: "service.backend-kind",
                     Hint: "自备密钥时使用：OpenAI 兼容接口地址。",
                     Keywords: ["接口", "地址", "服务", "后端"],
                     Icon: "E8C1"),
                 new SettingsItem(
                     "service.model", "模型", SettingsControl.Text,
+                    Parent: "service.backend-kind",
                     Hint: "自备密钥时使用。",
                     Keywords: ["模型", "服务"],
                     Icon: "E8D2"),
                 new SettingsItem(
                     "service.api-key", "凭据", SettingsControl.Password,
+                    Parent: "service.backend-kind",
                     Hint: "自备密钥时使用。已保存的凭据不回显。填入后点「保存凭据」。",
                     Keywords: ["凭据", "密钥", "api", "key"],
                     Icon: "E72E")),
@@ -321,8 +329,8 @@ public static class SettingsSchema
             new SettingsSection("about.app", "拾语",
                 new SettingsItem(
                     "about.brand", "拾语", SettingsControl.Custom,
-                    Hint: "复制到剪贴板再粘贴。历史与图片只存在这台电脑上。",
-                    Keywords: ["品牌", "版本"],
+                    Hint: "剪贴板历史、划词翻译与悬停动作——一切只在这台电脑上。",
+                    Keywords: ["品牌", "拾语"],
                     Icon: "E946"),
                 new SettingsItem(
                     "about.version", "版本", SettingsControl.ReadOnly,

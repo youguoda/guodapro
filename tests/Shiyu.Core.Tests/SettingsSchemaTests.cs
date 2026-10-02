@@ -115,10 +115,22 @@ public class SettingsSchemaTests
             Assert.NotNull(parent);
 
             // 父项要么是开关、要么是热键（快速粘贴为空时“也用 Win+V”没有
-            // 意义）——两类都能回答“孩子该不该露面”。
+            // 意义）、要么是分段（翻译方式停在公共通道时自备密钥四行收起）
+            // ——三类都能回答“孩子该不该露面”。
             Assert.Contains(
                 parent!.Control,
-                new[] { SettingsControl.Toggle, SettingsControl.Hotkey });
+                new[] { SettingsControl.Toggle, SettingsControl.Hotkey, SettingsControl.Segmented });
+        }
+    }
+
+    [Fact]
+    public void The_own_key_rows_fold_under_the_backend_choice()
+    {
+        // §5.1：自备密钥的预设/地址/模型/凭据是“翻译方式”选了自备密钥才有
+        // 意义的四个子行——同一张组卡、同一份可见性裁决。
+        foreach (var id in new[] { "service.preset", "service.base-url", "service.model", "service.api-key" })
+        {
+            Assert.Equal("service.backend-kind", Items().Single(i => i.Id == id).Parent);
         }
     }
 

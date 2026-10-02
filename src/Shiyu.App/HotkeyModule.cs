@@ -78,6 +78,9 @@ internal sealed class HotkeyModule
             // The escape hatch. Without it the user cannot tell a filter that
             // judged wrongly from a tool that broke, and has no way to insist.
             [HotkeyAction.ClipboardTranslate] = () => shell.TranslateClipboard?.Invoke(),
+
+            // 打开管理窗（§5.1 新增，默认不设）：键盘重度用户不必绕托盘。
+            [HotkeyAction.Library] = () => shell.ShowLibrary?.Invoke(),
         };
 
         var (bindings, problems) = HotkeyPlan.Build(shell.Settings);

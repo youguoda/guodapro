@@ -3,7 +3,9 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Documents;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using Shiyu.Core;
@@ -12,319 +14,353 @@ using Shiyu.Windows;
 namespace Shiyu.App;
 
 /// <summary>
-/// The settings surface, rendered from the schema tree: pages by user intent,
-/// every editor built from its declaration. The window hardcodes no setting —
-/// it knows control shapes, not settings. Adding one is a schema leaf plus a
-/// value binding; this file does not change.
+/// The settings surface, rendered from the schema tree: five pages by user
+/// intent plus About (§5.1), every editor built from its declaration. The
+/// window hardcodes no setting — it knows control shapes, not settings.
+/// Adding one is a schema leaf plus a value binding; this file does not
+/// change.
+///
+/// 票 23：系统窗框 + Mica；左导航 240（窄于 760 收成图标条）；设置卡
+/// 标签与说明同列、控件右对齐；即改即生效（去保存/关闭底栏，只有数据
+/// 位置、导入备份、自备密钥保留显式操作）；错误显示在出错的卡片里。
 /// </summary>
 public partial class SettingsWindow : Window
 {
+    private const double NavWide = 240;
+    private const double NavIcons = 48;
+    private const double NavCollapseWidth = 760;
+
     private readonly SettingsStore _store;
     private readonly BackupUi? _backup;
+    private readonly Action<Window>? _checkForUpdate;
 
-    /// <summary>开窗（或上次跟随）时的设置基线：保存时只写与它不同的项（O-20）。</summary>
+    /// <summary>开窗（或上次跟随）时的设置基线：跟随与"改没改"的对照（O-20）。</summary>
     private AppSettings _baseline;
 
     private readonly Dictionary<string, ItemState> _edited = [];
     private readonly Dictionary<string, FrameworkElement> _rows = [];
+    private readonly Dictionary<string, SettingsCardView> _cards = [];
     private readonly Dictionary<string, TextBox> _numberBoxes = [];
-    private readonly Dictionary<string, ScrollViewer> _pageScrollers = [];
-    private readonly Dictionary<string, int> _pageTabIndex = [];
+    private readonly Dictionary<string, StackPanel> _pageBodies = [];
+    private readonly List<(string PageId, ToggleButton Button, TextBlock Label)> _nav = [];
 
     // 外部变化的"跟随"要把新值推进控件，建行时把每种形状的控件记下来。
     private readonly Dictionary<string, TextBox> _textBoxes = [];
     private readonly Dictionary<string, CheckBox> _toggles = [];
     private readonly Dictionary<string, ToggleButton[]> _segmented = [];
+    private readonly Dictionary<string, ComboBox> _choices = [];
 
     private TextBox? _directoryBox;
     private TextBlock? _directoryWarning;
     private PasswordBox? _secretBox;
     private ServicePresetRow? _presetRow;
+    private ExclusionRulesCard? _exclusions;
+    private ActionsListCard? _actionsList;
+    private TextBlock? _linkValue;
+
+    private TextBox _searchBox = new();
+    private int _searchCursor;
+    private List<SettingsHit> _searchHits = [];
+    private readonly List<Button> _resultRows = [];
 
     /// <summary>The page the user last had open, kept per session.</summary>
-    private static int _lastTabIndex;
+    private static string _lastPage = "general";
 
-    public SettingsWindow(SettingsStore store, BackupUi? backup = null)
+    public SettingsWindow(
+        SettingsStore store,
+        BackupUi? backup = null,
+        Action<Window>? checkForUpdate = null)
     {
         InitializeComponent();
 
         _store = store;
         _baseline = store.Current;
         _backup = backup;
+        _checkForUpdate = checkForUpdate;
 
         // 别处的写入（图钉、导入、引导完成）即时反映到本窗：没动过的
-        // 编辑器跟随最新值，动过的保留用户手里的值——开窗快照从此不再
-        // 是回滚的根源（S1/S3/S4）。
+        // 编辑器跟随最新值，动过的保留用户手里的值（S1/S3/S4）。
         store.Changed += OnSettingsChanged;
         Closed += (_, _) => store.Changed -= OnSettingsChanged;
 
-        Backdrop.Attach(this, () => BackdropKind.Mica);
+        // 票 19 spike 配方（ADR-0012 §7）：非分层窗口透出 DWM 材质的前提
+        // 是重定向面底色透明。材质没被系统接受时（旧系统），回退成
+        // Mica 官方回退色一档的不透明底。
+        SourceInitialized += (_, _) =>
+        {
+            if (PresentationSource.FromVisual(this) is HwndSource source
+                && source.CompositionTarget is { } target)
+            {
+                target.BackgroundColor = Colors.Transparent;
+            }
+        };
+        Backdrop.Attach(this, () => BackdropKind.Mica, applied =>
+        {
+            if (!applied)
+            {
+                ContentHost.SetResourceReference(BackgroundProperty, "Brush.Background");
+                NavPane.SetResourceReference(BackgroundProperty, "Brush.Background");
+            }
+        });
 
-        // Borderless chrome (ticket 33): maximize visuals follow state.
-        StateChanged += (_, _) => TitlebarChrome.UpdateMaximizeVisuals(this, Shell, MaximizeButton);
-        TitlebarChrome.UpdateMaximizeVisuals(this, Shell, MaximizeButton);
-
-        BuildTree();
-        ApplyBackendKindRows();
+        BuildNav();
+        BuildPages();
+        ApplyParentVisibility();
         HookPresetDemotion();
 
-        // Reopen where the user left off; the index is clamped by the count
-        // so a future schema shrink cannot select a ghost page.
-        Pages.SelectionChanged += (_, _) => _lastTabIndex = Pages.SelectedIndex;
-        Pages.SelectedIndex = Math.Clamp(_lastTabIndex, 0, Pages.Items.Count - 1);
+        Loaded += (_, _) => ReflowNav();
+        SizeChanged += (_, _) => ReflowNav();
+
+        SelectPage(SettingsSchema.ResolvePage(_lastPage)?.Id ?? "general");
     }
 
-    // --- building ----------------------------------------------------------------
+    // --- building: navigation ---------------------------------------------------
 
-    private void BuildTree()
+    private void BuildNav()
     {
-        foreach (var page in SettingsSchema.Tree)
+        var pane = new DockPanel { LastChildFill = true };
+
+        _searchBox = new TextBox { Height = 32 };
+        _searchBox.SetResourceReference(StyleProperty, "SearchBox");
+        InputProps.SetPlaceholder(_searchBox, "搜索设置");
+        InputProps.SetRightGutter(_searchBox, 56);
+        _searchBox.ToolTip = "搜索设置——支持你自己的说法，比如\u201c多久删\u201d";
+        _searchBox.TextChanged += OnSearchChanged;
+        _searchBox.PreviewKeyDown += OnSearchKeyDown;
+
+        // Ctrl+F 键帽浮在搜索框右缘（§6.3：搜索框带键帽）。
+        var hint = new ContentControl
         {
-            var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
-            var body = new StackPanel { Margin = new Thickness(0, 4, 8, 0) };
-
-            foreach (var section in page.Sections)
-            {
-                var heading = new TextBlock { Text = section.Title, Style = (Style)FindResource("SectionHeading") };
-                body.Children.Add(heading);
-
-                foreach (var item in section.Items)
-                {
-                    var row = RowFor(item);
-                    _rows[item.Id] = row;
-                    body.Children.Add(row);
-                }
-            }
-
-            scroll.Content = body;
-            _pageScrollers[page.Id] = scroll;
-            _pageTabIndex[page.Id] = Pages.Items.Count;
-            Pages.Items.Add(new TabItem { Header = page.Title, Content = scroll });
-        }
-    }
-
-    // --- search and deep links --------------------------------------------------
-
-    private void OnSearchChanged(object sender, TextChangedEventArgs e)
-    {
-        ResultsList.Children.Clear();
-
-        var hits = SettingsSearch.Find(SearchBox.Text);
-        if (SearchBox.Text.Trim().Length == 0)
-        {
-            ResultsHost.Visibility = Visibility.Collapsed;
-            return;
-        }
-
-        ResultsHost.Visibility = Visibility.Visible;
-
-        if (hits.Count == 0)
-        {
-            var none = new TextBlock
-            {
-                Text = "没有匹配的设置项——换个说法试试？",
-                Margin = new Thickness(8, 6, 8, 6),
-            };
-            none.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
-            ResultsList.Children.Add(none);
-            return;
-        }
-
-        foreach (var hit in hits)
-        {
-            var captured = hit;
-            // 面包屑与主标签分层靠令牌色，不乘透明度（票 18/R6）。
-            var breadcrumb = new TextBlock
-            {
-                Text = $"{hit.PageTitle} · {hit.SectionTitle}",
-                FontSize = (double)FindResource("Type.Caption"),
-            };
-            breadcrumb.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
-
-            var button = new Button
-            {
-                Content = new StackPanel
-                {
-                    Children =
-                    {
-                        new TextBlock { Text = hit.Item.Label },
-                        breadcrumb,
-                    },
-                },
-                Padding = new Thickness(10, 5, 10, 5),
-                Margin = new Thickness(0, 0, 0, 2),
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                Cursor = Cursors.Hand,
-            };
-            button.SetResourceReference(BackgroundProperty, "Brush.Surface");
-            button.Click += (_, _) => JumpTo(captured.Item.Id, captured.PageId);
-            ResultsList.Children.Add(button);
-        }
-
-        if (hits.Count >= SettingsSearch.ResultCap)
-        {
-            var cap = new TextBlock
-            {
-                Text = $"已显示前 {SettingsSearch.ResultCap} 项——再具体一点。",
-                Margin = new Thickness(8, 4, 8, 4),
-                FontSize = (double)FindResource("Type.Caption"),
-            };
-            cap.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextTertiary");
-            ResultsList.Children.Add(cap);
-        }
-    }
-
-    /// <summary>
-    /// The deep link: one id lands the user on that item — tab selected, row
-    /// scrolled to the middle of the view, and a decaying pulse saying
-    /// "this one", because landing silently looks like not landing at all.
-    /// </summary>
-    public void JumpToItem(string itemId)
-    {
-        var hit = SettingsSchema.Tree
-            .SelectMany(page => page.Sections.SelectMany(section => section.Items)
-                .Select(item => (page.Id, item)))
-            .FirstOrDefault(entry => entry.item.Id == itemId);
-
-        if (hit.item is not null)
-        {
-            JumpTo(hit.item.Id, hit.Id);
-        }
-    }
-
-    private void JumpTo(string itemId, string pageId)
-    {
-        SearchBox.Clear();
-
-        if (!_pageTabIndex.TryGetValue(pageId, out var index)
-            || !_rows.TryGetValue(itemId, out var row))
-        {
-            return;
-        }
-
-        // A child under a collapsed parent cannot be shown without flipping
-        // the parent's value — not ours to do — so the pulse lands on the
-        // deepest ancestor the user can actually see.
-        var target = row;
-        var candidate = AllItems().FirstOrDefault(item => item.Id == itemId);
-        while (candidate is { Parent: { } parentId }
-               && _edited.TryGetValue(parentId, out var parent)
-               && !parent.Toggle)
-        {
-            if (!_rows.TryGetValue(parentId, out var parentRow))
-            {
-                break;
-            }
-
-            target = parentRow;
-            candidate = AllItems().FirstOrDefault(next => next.Id == parentId);
-        }
-
-        Pages.SelectedIndex = index;
-
-        // The tab has to lay out before there is anything to scroll.
-        Dispatcher.BeginInvoke(() =>
-        {
-            if (!_pageScrollers.TryGetValue(pageId, out var scroller))
-            {
-                return;
-            }
-
-            var top = target.TranslatePoint(new Point(0, 0), (UIElement)scroller.Content).Y;
-            var centre = top + target.ActualHeight / 2 - scroller.ViewportHeight / 2;
-            scroller.ScrollToVerticalOffset(Math.Max(0, centre));
-
-            Pulse(target);
-        }, System.Windows.Threading.DispatcherPriority.Render);
-    }
-
-    /// <summary>
-    /// Three decaying flashes rather than one steady glow: steady reads as
-    /// "selected", decay reads as "look here". With animations reduced, a
-    /// quiet static wash says the same thing without moving.
-    /// </summary>
-    private static void Pulse(FrameworkElement row)
-    {
-        if (row is not Grid grid)
-        {
-            return;
-        }
-
-        var wash = new Border
-        {
-            Background = (Brush)row.FindResource("Brush.Accent"),
-            Opacity = 0,
+            Content = "Ctrl F",
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Right,
             IsHitTestVisible = false,
         };
-        // 脉冲底块的圆角跟随行卡片的 Radius.Control（4）。
-        wash.SetResourceReference(Border.CornerRadiusProperty, "Radius.Control");
-        Grid.SetColumnSpan(wash, 2);
-        grid.Children.Add(wash);
+        hint.SetResourceReference(StyleProperty, "KeyCap");
+        hint.Margin = new Thickness(0, 0, 8, 0);
 
-        void Remove()
+        var searchWrap = new Grid { Margin = new Thickness(0, 0, 0, 12) };
+        searchWrap.Children.Add(_searchBox);
+        searchWrap.Children.Add(hint);
+        DockPanel.SetDock(searchWrap, Dock.Top);
+        pane.Children.Add(searchWrap);
+
+        var items = new StackPanel();
+        foreach (var page in SettingsSchema.Tree.Where(page => page.Id != "about"))
         {
-            grid.Children.Remove(wash);
+            items.Children.Add(NavItem(page));
         }
 
-        if (!UiAnimation.Allowed())
-        {
-            wash.Opacity = 0.16;
-            var timer = new System.Windows.Threading.DispatcherTimer
-            {
-                Interval = TimeSpan.FromSeconds(1.8),
-            };
-            timer.Tick += (_, _) =>
-            {
-                timer.Stop();
-                Remove();
-            };
-            timer.Start();
-            return;
-        }
+        var foot = new StackPanel();
+        foot.Children.Add(NavItem(SettingsSchema.Tree.Single(p => p.Id == "about")));
 
-        var pulse = new DoubleAnimationUsingKeyFrames { Duration = TimeSpan.FromSeconds(1.3) };
-        foreach (var (at, peak) in new[]
-                 {
-                     (0.0, 0.0), (0.15, 0.38), (0.45, 0.0),
-                     (0.55, 0.22), (0.85, 0.0), (0.95, 0.12), (1.3, 0.0),
-                 })
-        {
-            pulse.KeyFrames.Add(new EasingDoubleKeyFrame(peak, KeyTime.FromTimeSpan(TimeSpan.FromSeconds(at))));
-        }
+        var list = new DockPanel { LastChildFill = true };
+        DockPanel.SetDock(foot, Dock.Bottom);
+        list.Children.Add(foot);
+        list.Children.Add(items);
+        pane.Children.Add(list);
 
-        pulse.Completed += (_, _) => Remove();
-        wash.BeginAnimation(OpacityProperty, pulse);
+        NavPane.Child = pane;
     }
 
-    private FrameworkElement RowFor(SettingsItem item)
+    private FrameworkElement NavItem(SettingsPage page)
     {
-        var grid = new Grid();
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(104) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.Margin = new Thickness(0, 0, 0, 6);
+        var glyph = new TextBlock
+        {
+            Text = SettingsCardView.GlyphOf(page.Icon),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        glyph.SetResourceReference(TextElement.FontFamilyProperty, "Font.Icon");
+        glyph.SetResourceReference(TextElement.FontSizeProperty, "Size.IconS");
+        glyph.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
+        glyph.Margin = new Thickness(12, 0, 12, 0);
 
         var label = new TextBlock
         {
-            Text = item.Label,
-            Style = (Style)FindResource("FieldLabel"),
-            ToolTip = item.Hint,
+            Text = page.Title,
+            VerticalAlignment = VerticalAlignment.Center,
         };
-        Grid.SetColumn(label, 0);
-        grid.Children.Add(label);
+        label.SetResourceReference(TextElement.FontSizeProperty, "Type.Body");
+        label.SetResourceReference(TextBlock.ForegroundProperty, "Brush.Text");
 
-        var editor = EditorFor(item);
-        Grid.SetColumn(editor, 1);
-        grid.Children.Add(editor);
-
-        // An item under a collapsed parent is not merely greyed — it is gone,
-        // because greyed controls invite exactly the clicks they refuse.
-        if (item.Parent is { } parent && _edited.TryGetValue(parent, out var parentState))
+        // 选中 = Selected 底 + 左缘 3×16 指示条 + 文字加粗（§6.3）。
+        // token-ok: 指示条圆角 1.5 = 宽 3 的一半（胶囊按高度/宽度的半推导），
+        // 不是 Radius.* 的任何一档；KindTab 下划线同款。
+        var indicator = new Border
         {
-            grid.Visibility = parentState.Toggle ? Visibility.Visible : Visibility.Collapsed;
+            Width = 3,
+            Height = 16,
+            CornerRadius = new CornerRadius(1.5),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Center,
+            Visibility = Visibility.Collapsed,
+        };
+        indicator.SetResourceReference(BackgroundProperty, "Brush.Accent");
+
+        var row = new Grid();
+        row.Children.Add(glyph);
+        row.Children.Add(label);
+        label.Margin = new Thickness(40, 0, 0, 0);
+
+        var button = new ToggleButton
+        {
+            Content = row,
+            Height = 36,
+            Cursor = Cursors.Hand,
+            IsChecked = false,
+            ToolTip = page.Title,
+        };
+        button.SetResourceReference(StyleProperty, "NavToggle");
+
+        var host = new Grid();
+        host.Children.Add(button);
+        host.Children.Add(indicator);
+        indicator.IsHitTestVisible = false;
+
+        _nav.Add((page.Id, button, label));
+        button.Click += (_, _) => SelectPage(page.Id);
+        return host;
+    }
+
+    private void SelectPage(string pageId)
+    {
+        foreach (var (id, button, _) in _nav)
+        {
+            button.IsChecked = id == pageId;
         }
 
-        return grid;
+        UpdateNavSelectionVisuals();
+
+        if (_pageBodies.TryGetValue(pageId, out var body))
+        {
+            PageScroller.Content = body;
+        }
+
+        _lastPage = pageId;
     }
+
+    private void UpdateNavSelectionVisuals()
+    {
+        foreach (var (_, button, label) in _nav)
+        {
+            var selected = button.IsChecked == true;
+            label.FontWeight = selected ? FontWeights.SemiBold : FontWeights.Regular;
+            label.SetResourceReference(TextBlock.ForegroundProperty, selected ? "Brush.Text" : "Brush.TextSecondary");
+
+            if (button.Parent is Grid host
+                && host.Children.Count > 1
+                && host.Children[1] is Border indicator)
+            {
+                indicator.Visibility = selected ? Visibility.Visible : Visibility.Collapsed;
+            }
+        }
+    }
+
+    /// <summary>宽 &lt; 760 时导航收成 48 宽的图标条：藏文字、留图标与 tooltip。</summary>
+    private void ReflowNav()
+    {
+        var collapsed = ActualWidth < NavCollapseWidth;
+        NavColumn.Width = new GridLength(collapsed ? NavIcons : NavWide);
+
+        foreach (var (_, button, label) in _nav)
+        {
+            label.Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible;
+        }
+
+        // 收起时搜索框跟着收（Ctrl+F 会先把导航展开再聚焦）。
+        if (_searchBox.Parent is FrameworkElement wrap)
+        {
+            wrap.Visibility = collapsed && ActualWidth > 0 ? Visibility.Collapsed : Visibility.Visible;
+        }
+    }
+
+    // --- building: pages ----------------------------------------------------------
+
+    private void BuildPages()
+    {
+        foreach (var page in SettingsSchema.Tree)
+        {
+            var body = new StackPanel { Margin = new Thickness(32, 20, 32, 32) };
+
+            var title = new TextBlock { Text = page.Title };
+            title.SetResourceReference(TextElement.FontSizeProperty, "Type.Subtitle");
+            title.FontWeight = FontWeights.SemiBold;
+            title.SetResourceReference(TextBlock.ForegroundProperty, "Brush.Text");
+            body.Children.Add(title);
+
+            if (page.Description is { Length: > 0 } description)
+            {
+                var caption = new TextBlock
+                {
+                    Text = description,
+                    TextWrapping = TextWrapping.Wrap,
+                    Margin = new Thickness(0, 4, 0, 0),
+                    LineStackingStrategy = LineStackingStrategy.BlockLineHeight,
+                };
+                caption.SetResourceReference(TextElement.FontSizeProperty, "Type.Caption");
+                caption.SetResourceReference(TextBlock.LineHeightProperty, "Line.CaptionMulti");
+                caption.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
+                body.Children.Add(caption);
+            }
+
+            var firstSection = true;
+            foreach (var section in page.Sections)
+            {
+                var heading = new TextBlock
+                {
+                    Text = section.Title,
+                    Margin = new Thickness(0, firstSection ? 16 : 24, 0, 8),
+                };
+                heading.SetResourceReference(TextElement.FontSizeProperty, "Type.Body");
+                heading.FontWeight = FontWeights.SemiBold;
+                heading.SetResourceReference(TextBlock.ForegroundProperty, "Brush.Text");
+                body.Children.Add(heading);
+                firstSection = false;
+
+                foreach (var item in section.Items.Where(item => item.Parent is null))
+                {
+                    body.Children.Add(RowFor(item, section));
+                }
+            }
+
+            _pageBodies[page.Id] = body;
+        }
+    }
+
+    /// <summary>
+    /// 一项 → 一张卡；带子项的父项与子项折进同一张组卡（§6.3 Expander：
+    /// 缩进即从属）。子项与父项都登记进 <see cref="_rows"/> 与
+    /// <see cref="_cards"/>——深链、跟随与错误位都按 item Id 找。
+    /// </summary>
+    private FrameworkElement RowFor(SettingsItem item, SettingsSection section)
+    {
+        var children = section.Items.Where(child => child.Parent == item.Id).ToList();
+        if (children.Count == 0)
+        {
+            var card = SettingsCardView.Create(item, EditorFor(item));
+            _rows[item.Id] = card.Root;
+            _cards[item.Id] = card;
+            return card.Root;
+        }
+
+        var parent = SettingsCardView.Create(item, EditorFor(item));
+        parent.Margin = new Thickness(0);
+        _rows[item.Id] = parent.Root;
+        _cards[item.Id] = parent;
+
+        var rows = new List<FrameworkElement> { parent.Root };
+        foreach (var child in children)
+        {
+            var sub = SettingsCardView.CreateSub(child.Label, EditorFor(child));
+            _rows[child.Id] = sub.Root;
+            _cards[child.Id] = sub;
+            rows.Add(sub.Root);
+        }
+
+        return SettingsGroup.Card(rows.ToArray());
+    }
+
+    // --- editors ------------------------------------------------------------------
 
     private FrameworkElement EditorFor(SettingsItem item)
     {
@@ -338,107 +374,42 @@ public partial class SettingsWindow : Window
             SettingsControl.Number => NumberFor(item, state),
             SettingsControl.Password => SecretFor(item, state),
             SettingsControl.Directory => DirectoryFor(item, state),
-            SettingsControl.Multiline => TextFor(item, state),
-            SettingsControl.Actions => TextFor(item, state),
-            SettingsControl.Hotkey => HotkeyCapture(item, state),
+            SettingsControl.Choice => ChoiceFor(item, state),
+            SettingsControl.Hotkey => HotkeyRecorder(item, state),
             SettingsControl.Text => TextFor(item, state),
             SettingsControl.ReadOnly => ReadOnlyFor(item),
+            SettingsControl.Link => LinkFor(item),
             SettingsControl.Custom => CustomFor(item, state),
+            SettingsControl.Actions => CustomFor(item, state),
             _ => new TextBlock(),
         };
     }
 
-    /// <summary>
-    /// The hotkey editor as a capture control: click it, press the combination,
-    /// done — the same interaction the system's own settings use, and one that
-    /// cannot produce the typos a hand-typed "Ctrl+Shift+Z" can. Only letters
-    /// and digits register (the spec registers nothing else globally); Esc
-    /// leaves the box without changing anything.
-    /// </summary>
-    private FrameworkElement HotkeyCapture(SettingsItem item, ItemState state)
+    private FrameworkElement ChoiceFor(SettingsItem item, ItemState state)
     {
-        var box = new TextBox
+        var editor = ItemEditors.Choice(
+            item, _baseline, state,
+            toDisplay: LanguageOptions.ToDisplay,
+            toValue: LanguageOptions.ToValue,
+            changed: () => Commit(item, state));
+
+        if (editor is ComboBox picker)
         {
-            Text = SettingsBindings.ReadText(item.Id, _baseline) ?? string.Empty,
-            Padding = new Thickness(4),
-            VerticalContentAlignment = VerticalAlignment.Center,
-            Cursor = Cursors.Hand,
-            ToolTip = "点击后直接按下组合键；Esc 取消。仅支持字母/数字键加修饰键。",
-        };
-        box.SetResourceReference(BackgroundProperty, "Brush.SurfaceInput");
-        state.Text = box.Text;
-        _textBoxes[item.Id] = box;
+            _choices[item.Id] = picker;
+        }
 
-        box.GotFocus += (_, _) => box.SetResourceReference(BorderBrushProperty, "Brush.Accent");
-        box.LostFocus += (_, _) => box.SetResourceReference(BorderBrushProperty, "Brush.Border");
-
-        box.PreviewKeyDown += (_, e) =>
-        {
-            var key = e.Key == Key.System ? e.SystemKey : e.Key;
-
-            // Modifier keys alone are the "listening" state: swallowed so
-            // nothing types while the user composes the combination.
-            if (key is Key.LeftCtrl or Key.RightCtrl or Key.LeftShift or Key.RightShift
-                or Key.LeftAlt or Key.RightAlt or Key.LWin or Key.RWin)
-            {
-                e.Handled = true;
-                return;
-            }
-
-            if (key == Key.Escape)
-            {
-                e.Handled = true;
-                Keyboard.ClearFocus();
-                return;
-            }
-
-            var mods = Keyboard.Modifiers;
-            if (mods == ModifierKeys.None || e.IsRepeat)
-            {
-                e.Handled = true;
-                return;
-            }
-
-            char? letter = key switch
-            {
-                >= Key.A and <= Key.Z => (char)('A' + (key - Key.A)),
-                >= Key.D0 and <= Key.D9 => (char)('0' + (key - Key.D0)),
-                >= Key.NumPad0 and <= Key.NumPad9 => (char)('0' + (key - Key.NumPad0)),
-                _ => null,
-            };
-
-            // Unsupported keys (F-keys, punctuation) are refused silently:
-            // the spec cannot register them globally anyway.
-            if (letter is not { } digit)
-            {
-                e.Handled = true;
-                return;
-            }
-
-            var parts = new List<string>();
-            if (mods.HasFlag(ModifierKeys.Control)) parts.Add("Ctrl");
-            if (mods.HasFlag(ModifierKeys.Shift)) parts.Add("Shift");
-            if (mods.HasFlag(ModifierKeys.Alt)) parts.Add("Alt");
-            if (mods.HasFlag(ModifierKeys.Windows)) parts.Add("Win");
-            parts.Add(digit.ToString());
-
-            state.Text = string.Join("+", parts);
-            box.Text = state.Text;
-            e.Handled = true;
-        };
-
-        return WrapWithHint(box, item.Hint);
+        return editor;
     }
 
     private FrameworkElement SegmentedFor(SettingsItem item, ItemState state)
     {
-        // Built by the shared factory, like every other editor: settings and
-        // onboarding render the same tree with the same hands. The choice of
-        // translation road also decides whether the own-key rows below it are
-        // worth anyone's attention.
         var editor = ItemEditors.Segmented(
             item, _baseline, state,
-            changed: _ => ApplyBackendKindRows(),
+            changed: _ =>
+            {
+                ApplyParentVisibility();
+                Commit(item, state);
+            },
 
             // 公共通道未上线（票 08/ADR-0009）：看得见、点不动。
             choiceEnabled: item.Id == "service.backend-kind"
@@ -452,128 +423,274 @@ public partial class SettingsWindow : Window
         return editor;
     }
 
-    /// <summary>
-    /// 公共通道不需要接口地址、模型与凭据——选了它就把这几行收走，免得
-    /// "开箱即用"的承诺旁边摆着三个要填的框。
-    /// </summary>
-    private void ApplyBackendKindRows()
-    {
-        var ownKey = _edited["service.backend-kind"].Choice
-            == (int)TranslationBackendKind.OwnKey;
-        foreach (var id in new[] { "service.preset", "service.base-url", "service.model", "service.api-key" })
-        {
-            if (_rows.TryGetValue(id, out var row))
-            {
-                row.Visibility = ownKey ? Visibility.Visible : Visibility.Collapsed;
-            }
-        }
-    }
-
     private FrameworkElement ToggleFor(SettingsItem item, ItemState state)
     {
-        // Built by the shared factory: settings and onboarding render the
-        // same tree with the same hands. The checkbox may sit under a hint,
-        // so it is picked back out of either shape for the follow-along.
         var editor = ItemEditors.Toggle(
             item, _baseline, state,
-            changed: () => ApplyParentVisibility(item.Id, state.Toggle));
+            changed: () =>
+            {
+                ApplyParentVisibility();
+
+                // 开机自启的事实在 Windows 而不在文件：写完文件再把注册表
+                // 对上，箱子显示 Windows 说了算的那一档。
+                if (item.Id == "store.start-with-windows")
+                {
+                    CommitStartup(state);
+                    return;
+                }
+
+                Commit(item, state);
+            },
+
+            // 设置卡的说明列由卡片自己渲染（§6.3）：编辑器里再带一份就重复。
+            withHint: false);
 
         if (editor is CheckBox box)
         {
             _toggles[item.Id] = box;
         }
-        else if (editor is StackPanel panel)
-        {
-            _toggles[item.Id] = panel.Children.OfType<CheckBox>().First();
-        }
 
         return editor;
     }
 
-    private void ApplyParentVisibility(string parentId, bool on)
-    {
-        foreach (var other in SettingsSchema.Tree.SelectMany(p => p.Sections).SelectMany(s => s.Items))
-        {
-            if (other.Parent == parentId && _rows.TryGetValue(other.Id, out var row))
-            {
-                row.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
-            }
-        }
-    }
-
     private FrameworkElement NumberFor(SettingsItem item, ItemState state)
     {
-        var box = new TextBox
+        var box = new NumberBox
         {
             Text = SettingsBindings.ReadText(item.Id, _baseline) ?? string.Empty,
-            Width = 70,
+            Width = 110,
+            Unit = item.Unit ?? string.Empty,
             VerticalContentAlignment = VerticalAlignment.Center,
         };
-        box.SetResourceReference(BackgroundProperty, "Brush.SurfaceInput");
         state.Text = box.Text;
         _textBoxes[item.Id] = box;
+        _numberBoxes[item.Id] = box;
 
-        void MarkDirty(bool dirty)
+        box.Committed += (_, _) =>
         {
-            // The uncommitted state is visible: an accent border says "what
-            // you typed is not yet what will be saved".
-            if (dirty)
+            if (!int.TryParse(box.Text.Trim(), out var value)
+                || value < item.Min
+                || value > item.Max)
             {
-                box.SetResourceReference(BorderBrushProperty, "Brush.Accent");
+                CardOf(item)?.ShowError(
+                    $"{item.Label}需要是 {(int)item.Min} 到 {(int)item.Max} 之间的整数。");
+                return;
             }
-            else
-            {
-                box.SetResourceReference(BorderBrushProperty, "Brush.Border");
-            }
-        }
 
-        box.TextChanged += (_, _) => MarkDirty(true);
-
-        void Commit()
-        {
-            if (double.TryParse(box.Text.Trim(), out var value))
-            {
-                var clamped = Math.Clamp(value, item.Min, item.Max);
-                var formatted = clamped == Math.Floor(clamped)
-                    ? ((int)clamped).ToString()
-                    : clamped.ToString("0.#");
-                state.Text = formatted;
-                box.Text = formatted;
-                MarkDirty(false);
-            }
-        }
-
-        box.LostFocus += (_, _) => Commit();
-        box.PreviewKeyDown += (_, e) =>
-        {
-            if (e.Key == Key.Enter)
-            {
-                Commit();
-                e.Handled = true;
-            }
+            CardOf(item)?.ClearError();
+            state.Text = value.ToString();
+            Commit(item, state);
         };
 
-        _numberBoxes[item.Id] = box;
         return box;
     }
 
     private FrameworkElement TextFor(SettingsItem item, ItemState state)
     {
-        var editor = ItemEditors.Text(item, _baseline, state);
+        var editor = ItemEditors.Text(item, _baseline, state, withHint: false);
+        var box = (TextBox)editor;
+        box.MinWidth = 240;
+        _textBoxes[item.Id] = box;
 
-        // The shared factory wraps the box under a hint; either way the box
-        // itself is what a follow-along needs to push into.
-        _textBoxes[item.Id] = editor is TextBox box
-            ? box
-            : ((StackPanel)editor).Children.OfType<TextBox>().First();
-        return editor;
+        void CommitText()
+        {
+            var trimmed = box.Text.Trim();
+
+            // 译文语言不能为空：清空不是"没有语言"，是还没选。
+            if (item.Id == "service.target-language" && trimmed.Length == 0)
+            {
+                CardOf(item)?.ShowError("译文语言不能为空——从下拉里选一个。");
+                return;
+            }
+
+            CardOf(item)?.ClearError();
+            state.Text = box.Text;
+            Commit(item, state);
+        }
+
+        box.LostFocus += (_, _) => CommitText();
+        box.PreviewKeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Enter)
+            {
+                CommitText();
+                e.Handled = true;
+            }
+        };
+
+        return box;
+    }
+
+    /// <summary>
+    /// 键帽录制器（§5.1 快捷键页）：点一下，按下组合键，即录即校验——
+    /// 与其余四键（含未在此编辑的那个）的撞车在录制时就点名，而不是等
+    /// 注册失败后托盘里冒一句。Esc 取消；「清除」把键位拿掉（打开管理窗
+    /// 默认就是不设）。
+    /// </summary>
+    private FrameworkElement HotkeyRecorder(SettingsItem item, ItemState state)
+    {
+        var box = new TextBox
+        {
+            Text = SettingsBindings.ReadText(item.Id, _baseline) ?? string.Empty,
+            Width = 150,
+            IsReadOnly = true,
+            Cursor = Cursors.Hand,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            Focusable = false,
+        };
+        InputProps.SetPlaceholder(box, "未设置");
+        box.SetResourceReference(BackgroundProperty, "Brush.SurfaceInput");
+        state.Text = box.Text;
+        _textBoxes[item.Id] = box;
+
+        var clear = new Button
+        {
+            Content = "清除",
+            Padding = new Thickness(10, 3, 10, 3),
+            Margin = new Thickness(6, 0, 0, 0),
+            Cursor = Cursors.Hand,
+            ToolTip = "拿掉这个快捷键（不注册）",
+        };
+        clear.SetResourceReference(StyleProperty, "FlyoutButton");
+
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        row.Children.Add(box);
+        row.Children.Add(clear);
+
+        box.PreviewMouseDown += (_, e) =>
+        {
+            e.Handled = true;
+            CaptureNextCombination(item, state, box);
+        };
+
+        clear.Click += (_, _) =>
+        {
+            state.Text = string.Empty;
+            box.Text = string.Empty;
+            ApplyParentVisibility();
+            Commit(item, state);
+        };
+
+        return row;
+    }
+
+    private void CaptureNextCombination(SettingsItem item, ItemState state, TextBox box)
+    {
+        var listening = true;
+        box.SetResourceReference(BorderBrushProperty, "Brush.Accent");
+        InputProps.SetPlaceholder(box, "按下组合键…");
+
+        // 键盘钩子在窗口层面接一次：焦点不用真给输入框（它是只读的），
+        // 组合键直接落在窗口消息上。
+        PreviewKeyDown += OnKey;
+
+        void OnKey(object sender, KeyEventArgs e)
+        {
+            if (!listening)
+            {
+                return;
+            }
+
+            var key = e.Key == Key.System ? e.SystemKey : e.Key;
+            if (key is Key.LeftCtrl or Key.RightCtrl or Key.LeftShift or Key.RightShift
+                or Key.LeftAlt or Key.RightAlt or Key.LWin or Key.RWin or Key.System
+                or Key.Tab)
+            {
+                e.Handled = true;
+                return;
+            }
+
+            listening = false;
+            PreviewKeyDown -= OnKey;
+            box.SetResourceReference(BorderBrushProperty, "Brush.Border");
+            InputProps.SetPlaceholder(box, "未设置");
+            e.Handled = true;
+
+            if (key == Key.Escape)
+            {
+                return;
+            }
+
+            var mods = Keyboard.Modifiers;
+            if (mods == ModifierKeys.None)
+            {
+                CardOf(item)?.ShowError("全局快捷键至少要带一个修饰键（Ctrl/Shift/Alt/Win）。");
+                return;
+            }
+
+            char? letter = key switch
+            {
+                >= Key.A and <= Key.Z => (char)('A' + (key - Key.A)),
+                >= Key.D0 and <= Key.D9 => (char)('0' + (key - Key.D0)),
+                >= Key.NumPad0 and <= Key.NumPad9 => (char)('0' + (key - Key.NumPad0)),
+                _ => null,
+            };
+
+            if (letter is not { } digit)
+            {
+                CardOf(item)?.ShowError("只支持字母/数字键加修饰键（F 键与标点注册不了）。");
+                return;
+            }
+
+            var parts = new List<string>();
+            if (mods.HasFlag(ModifierKeys.Control)) parts.Add("Ctrl");
+            if (mods.HasFlag(ModifierKeys.Shift)) parts.Add("Shift");
+            if (mods.HasFlag(ModifierKeys.Alt)) parts.Add("Alt");
+            if (mods.HasFlag(ModifierKeys.Windows)) parts.Add("Win");
+            parts.Add(digit.ToString());
+            var combination = string.Join("+", parts);
+
+            // 即时校验：候选方案里有任何问题（多半是撞车）就点名不落盘。
+            var candidate = SettingsBindings.Apply(item.Id, _store.Current, combination, 0);
+            var problems = HotkeyPlan.Build(candidate).Problems;
+            if (problems.Count > 0)
+            {
+                CardOf(item)?.ShowError(string.Join(" ", problems));
+                return;
+            }
+
+            CardOf(item)?.ClearError();
+            state.Text = combination;
+            box.Text = combination;
+            ApplyParentVisibility();
+            Commit(item, state);
+        }
     }
 
     private FrameworkElement SecretFor(SettingsItem item, ItemState state)
     {
-        var (editor, box) = ItemEditors.Password(item, _baseline, state);
+        var (editor, box) = ItemEditors.Password(item, _baseline, state, withHint: false);
         _secretBox = box;
-        return editor;
+
+        var save = new Button
+        {
+            Content = "保存凭据",
+            Padding = new Thickness(12, 3, 12, 3),
+            Margin = new Thickness(6, 0, 0, 0),
+            Cursor = Cursors.Hand,
+        };
+
+        // 自备密钥保留显式操作（ADR-0012 §15）：凭据不是改了就发的开关，
+        // 点了「保存凭据」才离手；留空就是"不动它"。
+        save.Click += (_, _) =>
+        {
+            if (state.Text.Length == 0)
+            {
+                CardOf(item)?.ShowError("还没有输入任何凭据。");
+                return;
+            }
+
+            CardOf(item)?.ClearError();
+            Commit(item, state);
+            box.Clear();
+            state.Text = string.Empty;
+        };
+
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        box.Width = 220;
+        row.Children.Add(box);
+        row.Children.Add(save);
+        return row;
     }
 
     private FrameworkElement DirectoryFor(SettingsItem item, ItemState state)
@@ -581,7 +698,7 @@ public partial class SettingsWindow : Window
         var box = new TextBox
         {
             Text = SettingsBindings.ReadText(item.Id, _baseline) ?? string.Empty,
-            Padding = new Thickness(4),
+            MinWidth = 200,
             VerticalContentAlignment = VerticalAlignment.Center,
         };
         box.SetResourceReference(BackgroundProperty, "Brush.SurfaceInput");
@@ -593,7 +710,12 @@ public partial class SettingsWindow : Window
             UpdateSyncWarning();
         };
 
-        var browse = new Button { Content = "浏览…", Padding = new Thickness(9, 3, 9, 3), Margin = new Thickness(6, 0, 0, 0), Cursor = Cursors.Hand };
+        var browse = new Button
+        {
+            Content = "浏览…",
+            Padding = new Thickness(10, 3, 10, 3),
+            Cursor = Cursors.Hand,
+        };
         browse.Click += (_, _) =>
         {
             var dialog = new Microsoft.Win32.OpenFolderDialog
@@ -607,15 +729,21 @@ public partial class SettingsWindow : Window
             }
         };
 
-        // A two-column row so the path box stretches with the page instead of
-        // squeezing into its own minimum width.
-        var rowGrid = new Grid();
-        rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        Grid.SetColumn(box, 0);
-        Grid.SetColumn(browse, 1);
-        rowGrid.Children.Add(box);
-        rowGrid.Children.Add(browse);
+        // 数据位置保留显式操作（ADR-0012 §15）：这是一次搬迁，不是一次
+        // 输入——点「应用」才走确认与落盘。
+        var apply = new Button
+        {
+            Content = "应用",
+            Padding = new Thickness(12, 3, 12, 3),
+            Margin = new Thickness(6, 0, 0, 0),
+            Cursor = Cursors.Hand,
+        };
+        apply.Click += (_, _) => ApplyDirectory(item, state, box);
+
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        row.Children.Add(box);
+        row.Children.Add(browse);
+        row.Children.Add(apply);
 
         _directoryBox = box;
         _directoryWarning = new TextBlock
@@ -630,11 +758,35 @@ public partial class SettingsWindow : Window
         _directoryWarning.SetResourceReference(TextBlock.ForegroundProperty, "Brush.Danger");
 
         var stack = new StackPanel();
-        stack.Children.Add(rowGrid);
+        stack.Children.Add(row);
         stack.Children.Add(_directoryWarning);
         UpdateSyncWarning();
 
-        return WrapWithHint(stack, item.Hint);
+        return stack;
+    }
+
+    /// <summary>应用数据位置：云同步目录先过 ContentDialog（§6.5 可逆但影响大）。</summary>
+    private void ApplyDirectory(SettingsItem item, ItemState state, TextBox box)
+    {
+        var directory = box.Text.Trim();
+        if (CloudSyncedPaths.DetectSyncFolder(directory) is { } synced)
+        {
+            var answer = ContentDialog.Show(
+                this,
+                "更改数据位置",
+                $"「{synced}」会被同步到云端，而历史记录并未加密——放在这里等于把明文的剪贴板内容交给同步服务。",
+                new ContentDialogButton("取消", ContentDialogButtonStyle.Standard, IsCancelFocus: true),
+                new ContentDialogButton("仍然放在这里", ContentDialogButtonStyle.Accent));
+
+            if (answer != 1)
+            {
+                return;
+            }
+        }
+
+        state.Text = directory;
+        Commit(item, state);
+        UpdateSyncWarning();
     }
 
     private FrameworkElement ReadOnlyFor(SettingsItem item)
@@ -644,25 +796,89 @@ public partial class SettingsWindow : Window
             VerticalAlignment = VerticalAlignment.Center,
         };
 
+    /// <summary>引用卡（§5.1）：只读 + 跳转——同一设置只有一个编辑处。</summary>
+    private FrameworkElement LinkFor(SettingsItem item)
+    {
+        var value = new TextBlock
+        {
+            Text = LinkValueText(),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        value.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
+        _linkValue = value;
+
+        var jump = new Button
+        {
+            Content = "去快捷键 ›",
+            Padding = new Thickness(10, 3, 10, 3),
+            Margin = new Thickness(6, 0, 0, 0),
+            Cursor = Cursors.Hand,
+        };
+        jump.SetResourceReference(StyleProperty, "FlyoutButton");
+        jump.Click += (_, _) => JumpToItem("hotkey.capture");
+
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        row.Children.Add(value);
+        row.Children.Add(jump);
+        return row;
+    }
+
+    private string LinkValueText()
+        => SettingsBindings.ReadText("hotkey.capture", _store.Current) is { Length: > 0 } key
+            ? key
+            : "未设置";
+
     private FrameworkElement CustomFor(SettingsItem item, ItemState state) => item.Id switch
     {
         "store.backup" => BackupRow(),
         "store.usage" => StorageUsagePanel(),
         "about.onboarding" => OnboardingRow(),
+        "about.brand" => BrandHeader(),
+        "about.update-check" => UpdateCheckRow(),
+        "about.logs" => LogsRow(),
+        "about.privacy-note" => PrivacyNote(),
+        "hotkeys.reset" => ResetHotkeysRow(),
         "service.preset" => PresetRow(state),
+        "exclusions" => ExclusionsRow(item, state),
+        "bar.actions" => ActionsListRow(item, state),
         _ => new TextBlock(),
     };
 
+    private FrameworkElement ExclusionsRow(SettingsItem item, ItemState state)
+    {
+        _exclusions = new ExclusionRulesCard(
+            _baseline,
+            text =>
+            {
+                state.Text = text;
+                Commit(item, state);
+            });
+        return _exclusions.Element;
+    }
+
+    private FrameworkElement ActionsListRow(SettingsItem item, ItemState state)
+    {
+        _actionsList = new ActionsListCard(
+            _baseline,
+            text =>
+            {
+                state.Text = text;
+                Commit(item, state);
+            });
+        return _actionsList.Element;
+    }
+
     /// <summary>
-    /// 服务商预设行（票 08）：与引导共用 <see cref="ServicePresetRow"/>。地址与
-    /// 模型框是各自的编辑器行——建行顺序在本行之后，所以读取走字典惰性
-    /// 解析；「测试连接」用框里现值（凭据留空表示沿用已存的），不是存档值。
+    /// 服务商预设行（票 08）：与引导共用 <see cref="ServicePresetRow"/>。选中即
+    /// 代填地址与模型并一并落盘（预设三字段是一件事）；手改地址/模型时
+    /// 预设立即降级为「自定义」。
     /// </summary>
     private FrameworkElement PresetRow(ItemState state)
     {
+        var presetState = state;
         _presetRow = new ServicePresetRow(
             _baseline,
-            state,
+            presetState,
             readForm: () =>
             {
                 var url = _textBoxes.TryGetValue("service.base-url", out var urlBox)
@@ -680,6 +896,8 @@ public partial class SettingsWindow : Window
             },
             applyPreset: preset =>
             {
+                // 选中预设 = 预设、地址、模型三字段一次落盘（即改即生效的
+                // 一次提交），编辑框同步显示。
                 if (_textBoxes.TryGetValue("service.base-url", out var urlBox))
                 {
                     urlBox.Text = preset.BaseUrl;
@@ -688,6 +906,27 @@ public partial class SettingsWindow : Window
                 if (_textBoxes.TryGetValue("service.model", out var modelBox))
                 {
                     modelBox.Text = preset.DefaultModel;
+                }
+
+                presetState.Text = preset.Id;
+                _edited["service.base-url"].Text = preset.BaseUrl;
+                _edited["service.model"].Text = preset.DefaultModel;
+
+                try
+                {
+                    _store.Update(
+                        latest => latest with
+                        {
+                            BackendPresetId = preset.Id,
+                            BackendBaseUrl = preset.BaseUrl,
+                            BackendModel = preset.DefaultModel,
+                        },
+                        AppPaths.SettingsFile);
+                }
+                catch (SettingsSaveException failure)
+                {
+                    CardOf(SettingsSchema.Find("service.preset")!)
+                        ?.ShowError(failure.Message + " 可以重试。");
                 }
             });
 
@@ -711,18 +950,110 @@ public partial class SettingsWindow : Window
         }
     }
 
+    // --- the About page pieces ------------------------------------------------
+
+    /// <summary>
+    /// 品牌头（§5.1 关于页）：卡标签即名称、说明即一句话，控件列放标识
+    /// 与「复制版本信息」——不多占一行去重复一遍"拾语"。
+    /// </summary>
+    private FrameworkElement BrandHeader()
+    {
+        var mark = new Border
+        {
+            Width = 40,
+            Height = 40,
+            Child = new TextBlock
+            {
+                Text = "拾",
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+            },
+        };
+        mark.SetResourceReference(BackgroundProperty, "Brush.Accent");
+        mark.SetResourceReference(Border.CornerRadiusProperty, "Radius.Control");
+        var markText = (TextBlock)mark.Child;
+        markText.SetResourceReference(TextElement.FontSizeProperty, "Type.Subtitle");
+        markText.FontWeight = FontWeights.SemiBold;
+        markText.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextOnAccent");
+
+        var copy = new Button
+        {
+            Content = "复制版本信息",
+            Padding = new Thickness(10, 3, 10, 3),
+            Margin = new Thickness(12, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Cursor = Cursors.Hand,
+            ToolTip = "版本号与运行环境，不含任何个人数据",
+        };
+        copy.Click += (_, _) =>
+        {
+            try
+            {
+                Clipboard.SetText(
+                    $"拾语 {SettingsBindings.VersionText} / {Environment.OSVersion.VersionString}");
+                ((App)Application.Current).TellUser("版本信息已复制。");
+            }
+            catch (Exception failure)
+            {
+                Log.Event(LogEvent.OpenLinkFailed, failure, ("clipboard", 1));
+            }
+        };
+
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        row.Children.Add(mark);
+        row.Children.Add(copy);
+        return row;
+    }
+
+    private FrameworkElement UpdateCheckRow()
+    {
+        var check = new Button
+        {
+            Content = "检查更新",
+            Padding = new Thickness(12, 3, 12, 3),
+            Cursor = Cursors.Hand,
+        };
+        check.Click += (_, _) => _checkForUpdate?.Invoke(this);
+        return check;
+    }
+
+    private FrameworkElement LogsRow()
+    {
+        var open = new Button
+        {
+            Content = "打开日志目录",
+            Padding = new Thickness(10, 3, 10, 3),
+            Cursor = Cursors.Hand,
+        };
+        open.Click += (_, _) =>
+        {
+            try
+            {
+                using var opened = System.Diagnostics.Process.Start(
+                    new System.Diagnostics.ProcessStartInfo(Path.Combine(AppPaths.DataDirectory, "logs"))
+                    {
+                        UseShellExecute = true,
+                    });
+            }
+            catch (Exception failure)
+            {
+                Log.Event(LogEvent.OpenLinkFailed, failure, ("folder", 2));
+                ((App)Application.Current).TellUser("没能打开日志目录。");
+            }
+        };
+        return open;
+    }
+
     private FrameworkElement OnboardingRow()
     {
         var run = new Button
         {
             Content = "重新运行引导",
-            Padding = new Thickness(10, 4, 10, 4),
+            Padding = new Thickness(10, 3, 10, 3),
             Cursor = Cursors.Hand,
         };
         run.Click += (_, _) =>
         {
-            // 基线取点击那一刻的最新值，落笔走同一个 store（O-20）：引导
-            // 与设置窗互相只写自己改过的项，谁也不再整份覆盖谁（S4）。
             var wizard = new OnboardingWindow(_store.Current, _store)
             {
                 Owner = this,
@@ -731,6 +1062,43 @@ public partial class SettingsWindow : Window
         };
         return run;
     }
+
+    private FrameworkElement ResetHotkeysRow()
+    {
+        var reset = new Button
+        {
+            Content = "恢复全部默认",
+            Padding = new Thickness(10, 3, 10, 3),
+            Cursor = Cursors.Hand,
+        };
+        reset.Click += (_, _) =>
+        {
+            try
+            {
+                var latest = _store.Update(
+                    current => current with
+                    {
+                        CaptureHotkey = "Ctrl+Shift+Z",
+                        ClipboardTranslateHotkey = "Ctrl+Shift+X",
+                        QuickBarHotkey = "Ctrl+Shift+V",
+                        BarHotkey = "Ctrl+Shift+B",
+                        LibraryHotkey = string.Empty,
+                    },
+                    AppPaths.SettingsFile);
+                _baseline = latest;
+            }
+            catch (SettingsSaveException failure)
+            {
+                CardOf(SettingsSchema.Find("hotkeys.reset")!)
+                    ?.ShowError(failure.Message + " 可以重试。");
+            }
+        };
+        return reset;
+    }
+
+    /// <summary>隐私说明的正文就是卡片的说明列（schema Hint）；控件列为空。</summary>
+    private FrameworkElement PrivacyNote()
+        => new TextBlock();
 
     /// <summary>
     /// What Shiyu actually takes from the disk, measured where it lies —
@@ -747,8 +1115,8 @@ public partial class SettingsWindow : Window
             {
                 Text = $"{name}  {FormatBytes(bytes)}",
                 Margin = new Thickness(0, 2, 0, 2),
-                FontSize = (double)FindResource("Type.Caption"),
             };
+            row.SetResourceReference(TextElement.FontSizeProperty, "Type.Caption");
             row.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
             return row;
         }
@@ -766,8 +1134,6 @@ public partial class SettingsWindow : Window
             panel.Children.Add(Row("图片原图", images));
             panel.Children.Add(Row("合计", database + images));
 
-            // Past this, the folder is doing more than a tray tool should,
-            // and the user deserves the number in the same breath as the why.
             const long threshold = 500L * 1024 * 1024;
             if (database + images > threshold)
             {
@@ -776,9 +1142,9 @@ public partial class SettingsWindow : Window
                     Text = "已超过 500 MB——考虑缩短图片保留天数，或导出备份后清空。",
                     TextWrapping = TextWrapping.Wrap,
                     Margin = new Thickness(0, 4, 0, 0),
-                    FontSize = (double)FindResource("Type.Caption"),
                     LineStackingStrategy = LineStackingStrategy.BlockLineHeight,
                 };
+                warning.SetResourceReference(TextElement.FontSizeProperty, "Type.Caption");
                 warning.SetResourceReference(TextBlock.LineHeightProperty, "Line.CaptionMulti");
                 warning.SetResourceReference(TextBlock.ForegroundProperty, "Brush.Danger");
                 panel.Children.Add(warning);
@@ -798,7 +1164,6 @@ public partial class SettingsWindow : Window
         {
             try
             {
-                // 打开即弃（O-43）：资源管理器自己会活，句柄当场还。
                 using var opened = System.Diagnostics.Process.Start(
                     new System.Diagnostics.ProcessStartInfo(AppPaths.DataDirectory)
                     {
@@ -807,8 +1172,6 @@ public partial class SettingsWindow : Window
             }
             catch (Exception failure)
             {
-                // 用户点名要开文件夹（O-24）：点了解没动静要说一句，日志
-                // 留一条——弹窗确实不必。
                 Log.Event(LogEvent.OpenLinkFailed, failure, ("folder", 1));
                 ((App)Application.Current).TellUser("没能打开数据文件夹。");
             }
@@ -879,30 +1242,6 @@ public partial class SettingsWindow : Window
         return row;
     }
 
-    private FrameworkElement WrapWithHint(FrameworkElement editor, string? hint)
-    {
-        if (hint is not { Length: > 0 })
-        {
-            return editor;
-        }
-
-        var stack = new StackPanel();
-        editor.Margin = new Thickness(0, 0, 0, 2);
-        stack.Children.Add(editor);
-
-        var text = new TextBlock
-        {
-            Text = hint,
-            TextWrapping = TextWrapping.Wrap,
-            FontSize = (double)FindResource("Type.Caption"),
-            LineStackingStrategy = LineStackingStrategy.BlockLineHeight,
-        };
-        text.SetResourceReference(TextBlock.LineHeightProperty, "Line.CaptionMulti");
-        text.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
-        stack.Children.Add(text);
-        return stack;
-    }
-
     private void UpdateSyncWarning()
     {
         if (_directoryBox is null || _directoryWarning is null)
@@ -918,109 +1257,425 @@ public partial class SettingsWindow : Window
               + "放在这里等于把明文的剪贴板内容交给同步服务。";
     }
 
-    // --- saving ------------------------------------------------------------------
+    // --- instant apply (ADR-0012 §15) ---------------------------------------------
 
-    private void OnSave(object sender, RoutedEventArgs e)
+    private SettingsCardView? CardOf(SettingsItem item)
+        => _cards.TryGetValue(item.Id, out var card) ? card : null;
+
+    /// <summary>
+    /// 单字段即改即生效：在最新设置上只应用这一项（O-20 的增量写），失败
+    /// 把话说在出错的卡片里——没有底栏可推诿了。
+    /// </summary>
+    private void Commit(SettingsItem item, ItemState state)
     {
-        // Whatever a number box still holds uncommitted commits now, so the
-        // save judges the value the user can see.
-        foreach (var box in _numberBoxes.Values)
-        {
-            box.RaiseEvent(new RoutedEventArgs(LostFocusEvent, box));
-        }
-
-        var problems = new List<string>();
-
-        // 热键判定问 Core 的同一份方案（O-27）：设置窗、引导、App 注册三处
-        // 共用——解析失败、缺修饰键、两键相撞都在那里逐条点名是哪两个
-        // 动作撞了哪一个组合。
-        var hotkeyCandidate = _baseline with
-        {
-            CaptureHotkey = _edited["hotkey.capture"].Text.Trim(),
-            ClipboardTranslateHotkey = _edited["hotkey.clipboard"].Text.Trim(),
-            QuickBarHotkey = _edited["hotkey.quickbar"].Text.Trim(),
-            BarHotkey = _edited["hotkey.bar"].Text.Trim(),
-        };
-        problems.AddRange(HotkeyPlan.Build(hotkeyCandidate).Problems);
-
-        foreach (var item in AllItems().Where(item => item.Control == SettingsControl.Number))
-        {
-            if (!int.TryParse(_edited[item.Id].Text.Trim(), out var value) || value < item.Min || value > item.Max)
-            {
-                problems.Add($"{item.Label}需要是 {(int)item.Min} 到 {(int)item.Max} 之间的整数。");
-            }
-        }
-
-        var actions = ParseBarActions(_edited["bar.actions"].Text, problems);
-
-        if (_edited["service.target-language"].Text.Trim().Length == 0)
-        {
-            problems.Add("译文语言不能为空。");
-        }
-
-        if (problems.Count > 0)
-        {
-            SaveStatus.Text = string.Join(" ", problems);
-            return;
-        }
-
-        var directory = _edited["store.directory"].Text.Trim();
-        if (CloudSyncedPaths.DetectSyncFolder(directory) is { } synced
-            && !Confirm($"「{synced}」会被同步到云端，而历史记录并未加密。确定要把数据放在这里吗？"))
-        {
-            return;
-        }
-
-        // Only what the user changed is written, and onto the latest settings
-        // (O-20): fields someone else changed while this window was open —
-        // the bar's pin, an import, the wizard — survive the save (S1/S3).
-        var edited = SettingsBindings.ChangedOnly(_baseline, _edited);
-        var actionsChanged = !actions.SequenceEqual(_baseline.BarActions);
-
         try
         {
             _store.Update(
-                latest => actionsChanged
-                    ? edited(latest) with { BarActions = actions }
-                    : edited(latest),
+                latest => SettingsBindings.Apply(item.Id, latest, state.Text, state.Choice),
                 AppPaths.SettingsFile);
         }
         catch (SettingsSaveException failure)
         {
-            // The store refused the change: memory and disk still hold the
-            // pre-save settings, so "try again" is an honest instruction.
-            SaveStatus.Text = failure.Message + " 可以重试保存。";
+            CardOf(item)?.ShowError(failure.Message + " 本次改动没有生效，可以重试。");
+        }
+    }
+
+    private void CommitStartup(ItemState state)
+    {
+        var wanted = state.Toggle;
+        var ok = StartupRegistration.Set(wanted, Environment.ProcessPath ?? string.Empty);
+        var actual = StartupRegistration.IsEnabled();
+
+        // Windows 的现状是唯一事实：文件与开关都对齐它；注册失败要说一句。
+        state.Toggle = actual;
+        state.Text = actual ? "1" : "0";
+        if (_toggles.TryGetValue("store.start-with-windows", out var box) && box.IsChecked != actual)
+        {
+            box.IsChecked = actual;
+        }
+
+        if (_store.Current.StartWithWindows != actual)
+        {
+            Commit(SettingsSchema.Find("store.start-with-windows")!, state);
+        }
+
+        if (!ok)
+        {
+            CardOf(SettingsSchema.Find("store.start-with-windows")!)
+                ?.ShowError("开机自启没能写入系统，请检查是否有安全软件拦截。");
+        }
+    }
+
+    /// <summary>
+    /// 父项的"开着"：开关看开关；热键看有没有键；分段看是否停在第一位
+    /// （翻译方式的第一位是暂不可选的公共通道）。子项随它露面或收起。
+    /// </summary>
+    private void ApplyParentVisibility()
+    {
+        var byId = AllItems().ToDictionary(item => item.Id);
+        foreach (var child in AllItems().Where(item => item.Parent is not null))
+        {
+            if (!byId.TryGetValue(child.Parent!, out var parent)
+                || !_edited.TryGetValue(parent.Id, out var parentState)
+                || !_rows.TryGetValue(child.Id, out var row))
+            {
+                continue;
+            }
+
+            var on = parent.Control switch
+            {
+                SettingsControl.Toggle => parentState.Toggle,
+                SettingsControl.Hotkey => parentState.Text.Trim().Length > 0,
+                SettingsControl.Segmented => parentState.Choice != 0,
+                _ => true,
+            };
+            row.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+        }
+    }
+
+    // --- search and deep links ------------------------------------------------------
+
+    private void OnWindowKeyDown(object sender, KeyEventArgs e)
+    {
+        // Ctrl+F 聚焦搜索（§5.2：搜索的键位跨窗一致）；直接打字也进搜索。
+        if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            ExpandNav();
+            _searchBox.Focus();
+            _searchBox.SelectAll();
+            e.Handled = true;
             return;
         }
 
-        var startupOk = StartupRegistration.Set(
-            _store.Current.StartWithWindows, Environment.ProcessPath ?? string.Empty);
-
-        SaveStatus.Text = startupOk
-            ? "已保存。"
-            : "设置已保存，但开机自启没能写入系统，请检查是否有安全软件拦截。";
-
-        _secretBox?.Clear();
-        if (_edited.TryGetValue("store.start-with-windows", out var startup))
+        if (e.Key == Key.Escape && ResultsHost.Visibility == Visibility.Visible)
         {
-            // Follow whatever Windows ended up doing rather than leaving the
-            // box asserting something untrue.
-            startup.Toggle = StartupRegistration.IsEnabled();
-            startup.Text = startup.Toggle ? "1" : "0";
-            if (_toggles.TryGetValue("store.start-with-windows", out var box))
+            CloseResults();
+            e.Handled = true;
+            return;
+        }
+
+        // Typing anywhere that is not an editor goes to the search box: a
+        // settings window is mostly a search box with pages behind it.
+        if (Keyboard.Modifiers is ModifierKeys.None
+            && IsSearchableLetter(e.Key)
+            && FocusManager.GetFocusedElement(this) is not (TextBox or PasswordBox or ComboBox))
+        {
+            ExpandNav();
+            _searchBox.Focus();
+            // 让这次按键落进搜索框，而不是被这里吞掉。
+        }
+    }
+
+    private static bool IsSearchableLetter(Key key)
+        => key is >= Key.A and <= Key.Z or >= Key.D0 and <= Key.D9 or >= Key.NumPad0 and <= Key.NumPad9;
+
+    private void ExpandNav()
+    {
+        if (ActualWidth >= NavCollapseWidth)
+        {
+            return;
+        }
+
+        NavColumn.Width = new GridLength(NavWide);
+        foreach (var (_, _, label) in _nav)
+        {
+            label.Visibility = Visibility.Visible;
+        }
+
+        if (_searchBox.Parent is FrameworkElement wrap)
+        {
+            wrap.Visibility = Visibility.Visible;
+        }
+    }
+
+    private void OnSearchKeyDown(object sender, KeyEventArgs e)
+    {
+        if (ResultsHost.Visibility != Visibility.Visible)
+        {
+            return;
+        }
+
+        switch (e.Key)
+        {
+            case Key.Down:
+                MoveSearchCursor(1);
+                e.Handled = true;
+                break;
+
+            case Key.Up:
+                MoveSearchCursor(-1);
+                e.Handled = true;
+                break;
+
+            case Key.Enter:
+                if (_searchHits.Count > 0)
+                {
+                    var hit = _searchHits[Math.Clamp(_searchCursor, 0, _searchHits.Count - 1)];
+                    JumpTo(hit.Item.Id, SettingsSchema.FindPageOf(hit.Item.Id)!.Id);
+                    e.Handled = true;
+                }
+
+                break;
+
+            case Key.Escape:
+                _searchBox.Clear();
+                CloseResults();
+                e.Handled = true;
+                break;
+        }
+    }
+
+    private void MoveSearchCursor(int delta)
+    {
+        if (_resultRows.Count == 0)
+        {
+            return;
+        }
+
+        _searchCursor = Math.Clamp(_searchCursor + delta, 0, _resultRows.Count - 1);
+        PaintSearchCursor();
+    }
+
+    private void PaintSearchCursor()
+    {
+        foreach (var (row, index) in _resultRows.Select((row, index) => (row, index)))
+        {
+            row.SetResourceReference(
+                BackgroundProperty,
+                index == _searchCursor ? "Brush.Selected" : "Brush.Surface");
+        }
+    }
+
+    private void OnSearchChanged(object sender, TextChangedEventArgs e)
+    {
+        ResultsList.Children.Clear();
+        _resultRows.Clear();
+        _searchHits = [];
+        _searchCursor = 0;
+
+        if (_searchBox.Text.Trim().Length == 0)
+        {
+            ResultsHost.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        // 最多展示 8 行（§6.3）：再多是淹没，不是搜索。
+        _searchHits = SettingsSearch.Find(_searchBox.Text).Take(8).ToList();
+        ResultsHost.Visibility = Visibility.Visible;
+
+        if (_searchHits.Count == 0)
+        {
+            var none = new TextBlock
             {
-                box.IsChecked = startup.Toggle;
+                Text = "没有匹配的设置项——换个说法试试？",
+                Margin = new Thickness(8, 6, 8, 6),
+            };
+            none.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
+            ResultsList.Children.Add(none);
+            return;
+        }
+
+        foreach (var hit in _searchHits)
+        {
+            var captured = hit;
+
+            // 面包屑与主标签分层靠令牌色，不乘透明度（票 18/R6）。
+            var breadcrumb = new TextBlock
+            {
+                Text = $"{hit.PageTitle} · {hit.SectionTitle}",
+            };
+            breadcrumb.SetResourceReference(TextElement.FontSizeProperty, "Type.Caption");
+            breadcrumb.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
+
+            var button = new Button
+            {
+                Content = new StackPanel
+                {
+                    Children =
+                    {
+                        new TextBlock { Text = hit.Item.Label },
+                        breadcrumb,
+                    },
+                },
+                Padding = new Thickness(10, 5, 10, 5),
+                Margin = new Thickness(0, 0, 0, 2),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                Cursor = Cursors.Hand,
+            };
+            button.SetResourceReference(BackgroundProperty, "Brush.Surface");
+            button.Click += (_, _) => JumpTo(captured.Item.Id, captured.PageId);
+            ResultsList.Children.Add(button);
+            _resultRows.Add(button);
+        }
+
+        // 键帽行（§6.3）：Enter 的去处在结果脚下说清楚。
+        var footer = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Margin = new Thickness(8, 4, 8, 4),
+        };
+        var enterKey = new ContentControl { Content = "Enter" };
+        enterKey.SetResourceReference(StyleProperty, "KeyCap");
+        var enterNote = new TextBlock
+        {
+            Text = " 跳到这一项",
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        enterNote.SetResourceReference(TextElement.FontSizeProperty, "Type.Caption");
+        enterNote.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
+        footer.Children.Add(enterKey);
+        footer.Children.Add(enterNote);
+        ResultsList.Children.Add(footer);
+
+        PaintSearchCursor();
+    }
+
+    private void CloseResults()
+    {
+        ResultsHost.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>
+    /// The deep link: one id lands the user on that item — page selected, row
+    /// scrolled to the middle of the view, and a decaying pulse saying
+    /// "this one", because landing silently looks like not landing at all.
+    /// </summary>
+    public void JumpToItem(string itemId)
+    {
+        var page = SettingsSchema.FindPageOf(itemId);
+        if (page is null)
+        {
+            return;
+        }
+
+        JumpTo(itemId, page.Id);
+    }
+
+    /// <summary>按页跳转（深链的页名走 <see cref="SettingsSchema.ResolvePage"/> 的别名兜底）。</summary>
+    public void JumpToPage(string pageId)
+    {
+        if (SettingsSchema.ResolvePage(pageId) is { } page)
+        {
+            SelectPage(page.Id);
+        }
+    }
+
+    private void JumpTo(string itemId, string pageId)
+    {
+        _searchBox.Clear();
+        CloseResults();
+
+        if (!_rows.TryGetValue(itemId, out var row))
+        {
+            SelectPage(SettingsSchema.ResolvePage(pageId)?.Id ?? "general");
+            return;
+        }
+
+        SelectPage(pageId);
+
+        // A child under a collapsed parent cannot be shown without flipping
+        // the parent's value — not ours to do — so the pulse lands on the
+        // deepest ancestor the user can actually see.
+        var byId = AllItems().ToDictionary(entry => entry.Id);
+        var target = row;
+        var candidate = AllItems().FirstOrDefault(item => item.Id == itemId);
+        while (candidate is { Parent: { } parentId }
+               && byId.TryGetValue(parentId, out var parentItem)
+               && _edited.TryGetValue(parentId, out var parentState)
+               && !ParentOn(parentItem, parentState))
+        {
+            if (!_rows.TryGetValue(parentId, out var parentRow))
+            {
+                break;
             }
 
-            ApplyParentVisibility("store.start-with-windows", true);
+            target = parentRow;
+            candidate = AllItems().FirstOrDefault(next => next.Id == parentId);
         }
+
+        // The page has to lay out before there is anything to scroll.
+        Dispatcher.BeginInvoke(() =>
+        {
+            var top = target.TranslatePoint(new Point(0, 0), (UIElement)PageScroller.Content).Y;
+            var centre = top + target.ActualHeight / 2 - PageScroller.ViewportHeight / 2;
+            PageScroller.ScrollToVerticalOffset(Math.Max(0, centre));
+
+            Pulse(target);
+        }, System.Windows.Threading.DispatcherPriority.Render);
+    }
+
+    private bool ParentOn(SettingsItem? parent, ItemState state)
+        => parent?.Control switch
+        {
+            SettingsControl.Toggle => state.Toggle,
+            SettingsControl.Hotkey => state.Text.Trim().Length > 0,
+            SettingsControl.Segmented => state.Choice != 0,
+            _ => true,
+        };
+
+    /// <summary>
+    /// Three decaying flashes rather than one steady glow: steady reads as
+    /// "selected", decay reads as "look here". With animations reduced, a
+    /// quiet static wash says the same thing without moving.
+    /// </summary>
+    private static void Pulse(FrameworkElement row)
+    {
+        if (row is not Grid grid)
+        {
+            return;
+        }
+
+        var wash = new Border
+        {
+            Background = (Brush)row.FindResource("Brush.Accent"),
+            Opacity = 0,
+            IsHitTestVisible = false,
+        };
+        // 脉冲底块的圆角跟随行卡片的 Radius.Control（4）。
+        wash.SetResourceReference(Border.CornerRadiusProperty, "Radius.Control");
+        grid.Children.Add(wash);
+
+        void Remove()
+        {
+            grid.Children.Remove(wash);
+        }
+
+        if (!UiAnimation.Allowed())
+        {
+            wash.Opacity = 0.16;
+            var timer = new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(1.8),
+            };
+            timer.Tick += (_, _) =>
+            {
+                timer.Stop();
+                Remove();
+            };
+            timer.Start();
+            return;
+        }
+
+        var pulse = new DoubleAnimationUsingKeyFrames { Duration = TimeSpan.FromSeconds(1.3) };
+        foreach (var (at, peak) in new[]
+                 {
+                     (0.0, 0.0), (0.15, 0.38), (0.45, 0.0),
+                     (0.55, 0.22), (0.85, 0.0), (0.95, 0.12), (1.3, 0.0),
+                 })
+        {
+            pulse.KeyFrames.Add(new EasingDoubleKeyFrame(peak, KeyTime.FromTimeSpan(TimeSpan.FromSeconds(at))));
+        }
+
+        pulse.Completed += (_, _) => Remove();
+        wash.BeginAnimation(OpacityProperty, pulse);
     }
 
     // --- following outside changes (O-20) ---------------------------------------
 
     /// <summary>
     /// 别处改了设置（图钉、导入、引导、窄条几何）：本窗跟上去。用户已经
-    /// 动过的编辑器保持他们手里的值——保存时按字段写入；没动过的跟随最新。
+    /// 动过的编辑器保持他们手里的值；即改即生效之下，自己提交的那次广播
+    /// 也会走到这里——值相同，推送是无害的同位刷新。
     /// </summary>
     private void OnSettingsChanged(AppSettings updated)
     {
@@ -1069,7 +1724,24 @@ public partial class SettingsWindow : Window
                     }
                 }
 
-                ApplyBackendKindRows();
+                break;
+            }
+
+            case SettingsControl.Choice:
+            {
+                var text = SettingsBindings.ReadText(item.Id, updated) ?? string.Empty;
+                state.Text = text;
+                if (_choices.TryGetValue(item.Id, out var picker))
+                {
+                    var display = LanguageOptions.ToDisplay(text);
+                    var match = picker.Items.OfType<ComboBoxItem>()
+                        .FirstOrDefault(option => (string)option.Content == display);
+                    if (match is not null)
+                    {
+                        picker.SelectedItem = match;
+                    }
+                }
+
                 break;
             }
 
@@ -1087,74 +1759,26 @@ public partial class SettingsWindow : Window
                     {
                         UpdateSyncWarning();
                     }
+                }
 
-                    if (item.Control == SettingsControl.Number)
-                    {
-                        // 程序化写入会点亮"未提交"描边；这里不是用户输入。
-                        box.SetResourceReference(BorderBrushProperty, "Brush.Border");
-                    }
+                break;
+            }
+
+            case SettingsControl.Link:
+            {
+                // 引用卡读的是被引用项的现值：快捷键在别处改了，这里同步。
+                if (_linkValue is not null && item.Id == "translate.hotkey-ref")
+                {
+                    _linkValue.Text = LinkValueText();
                 }
 
                 break;
             }
         }
+
+        ApplyParentVisibility();
     }
 
     private static IEnumerable<SettingsItem> AllItems()
         => SettingsSchema.Tree.SelectMany(page => page.Sections).SelectMany(section => section.Items);
-
-    /// <summary>
-    /// Parses the comma-separated action list the user typed. Names rather
-    /// than ids, because ids are for files and names are for people; anything
-    /// unrecognised is a problem rather than a silent drop, because a
-    /// silently-shrinking tray looks like a bug.
-    /// </summary>
-    private static List<string> ParseBarActions(string text, List<string> problems)
-    {
-        var byName = HoverActions.All.ToDictionary(HoverActions.Name, StringComparer.Ordinal);
-        var result = new List<string>();
-
-        foreach (var raw in text.Split([',', '，', '、'], StringSplitOptions.TrimEntries))
-        {
-            if (raw.Length == 0)
-            {
-                continue;
-            }
-
-            if (byName.TryGetValue(raw, out var id))
-            {
-                if (!result.Contains(id))
-                {
-                    result.Add(id);
-                }
-            }
-            else
-            {
-                problems.Add($"悬停动作「{raw}」无法识别。");
-            }
-        }
-
-        if (result.Count == 0)
-        {
-            problems.Add("至少需要一个悬停动作。");
-        }
-
-        return result;
-    }
-
-    private bool Confirm(string message)
-        => MessageBox.Show(
-            this, message, "拾语", MessageBoxButton.OKCancel,
-            MessageBoxImage.Warning, MessageBoxResult.Cancel) == MessageBoxResult.OK;
-
-    private void OnTitleBarDrag(object sender, MouseButtonEventArgs e)
-        => TitlebarChrome.DragOrMaximize(this, e);
-
-    private void OnMinimizeClick(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
-
-    private void OnMaximizeRestoreClick(object sender, RoutedEventArgs e) => TitlebarChrome.ToggleMaximize(this);
-
-    private void OnCloseClick(object sender, RoutedEventArgs e) => Close();
-
-    private void OnClose(object sender, RoutedEventArgs e) => Close();
 }

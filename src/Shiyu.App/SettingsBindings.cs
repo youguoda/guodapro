@@ -20,6 +20,7 @@ internal static class SettingsBindings
                 ? PatternPrefix + rule.Value
                 : rule.Value)),
         "bar.actions" => string.Join(",", settings.BarActions.Select(HoverActions.Name)),
+        "record.text" => "始终开启",
         "theme" => null,
         "action.sound" => null,
         "store.protect" => null,
@@ -36,6 +37,7 @@ internal static class SettingsBindings
         "hotkey.clipboard" => settings.ClipboardTranslateHotkey,
         "hotkey.quickbar" => settings.QuickBarHotkey,
         "hotkey.bar" => settings.BarHotkey,
+        "hotkey.library" => settings.LibraryHotkey,
         "service.target-language" => settings.TargetLanguage,
         "service.source-language" => settings.SourceLanguage ?? string.Empty,
 
@@ -84,7 +86,9 @@ internal static class SettingsBindings
     public static AppSettings Apply(string id, AppSettings current, string text, int choice) => id switch
     {
         "exclusions" => current with { ExclusionRules = ParseExclusionRules(text) },
-        "bar.actions" => current,
+        "bar.actions" => ParseBarActions(text) is { Count: > 0 } actions
+            ? current with { BarActions = actions }
+            : current,
         "theme" => current with { Theme = (AppTheme)choice },
         "service.backend-kind" => current with { TranslationBackend = (TranslationBackendKind)choice },
         "action.sound" => current with { ActionSound = AsBool(text) },
@@ -109,6 +113,7 @@ internal static class SettingsBindings
         "hotkey.clipboard" => current with { ClipboardTranslateHotkey = text },
         "hotkey.quickbar" => current with { QuickBarHotkey = text },
         "hotkey.bar" => current with { BarHotkey = text },
+        "hotkey.library" => current with { LibraryHotkey = text },
         "service.target-language" => current with { TargetLanguage = text },
         "service.source-language" => current with
         {
@@ -133,6 +138,33 @@ internal static class SettingsBindings
     };
 
     private static bool AsBool(string text) => text == "1";
+
+    /// <summary>
+    /// 动作清单文本 → 顺序化 Id 列表（票 23 前这是保存时的窗口私有逻辑，
+    /// 即改即生效后它成了单字段落盘的一部分，搬进绑定层）。列表 UI 只会
+    /// 产出合法名字，但旧设置文件里可能存着任何手打内容——认不出的静默
+    /// 丢弃是"清单悄悄变短"，所以空结果返回 null，调用方保持旧值。
+    /// </summary>
+    public static List<string>? ParseBarActions(string text)
+    {
+        var byName = HoverActions.All.ToDictionary(HoverActions.Name, StringComparer.Ordinal);
+        var result = new List<string>();
+
+        foreach (var raw in text.Split([',', '，', '、'], StringSplitOptions.TrimEntries))
+        {
+            if (raw.Length == 0)
+            {
+                continue;
+            }
+
+            if (byName.TryGetValue(raw, out var id) && !result.Contains(id))
+            {
+                result.Add(id);
+            }
+        }
+
+        return result.Count > 0 ? result : null;
+    }
 
     // --- 只写改过的项（O-20） ---------------------------------------------------
     //
@@ -194,4 +226,47 @@ internal static class SettingsBindings
     /// 的 AssemblyVersion——rc 用户得能看见自己装的是 rc（票 09）。
     /// </summary>
     public static string VersionText => "v" + UpdateService.CurrentDisplay;
+}
+
+/// <summary>
+/// 语言项的显示名 ↔ 存储值（§3.9 P1：语言用下拉）。存储词汇是设置文件
+/// 的英文短名（English…），显示词汇走 <see cref="LanguageDisplay"/> 的中文。
+/// 认不出的值原样进出：绝不替用户换成最近似的一种。
+/// </summary>
+internal static class LanguageOptions
+{
+    public const string AutoDetect = "自动检测";
+
+    private static readonly (string Value, string Display)[] Map =
+    [
+        ("Chinese", "中文"),
+        ("English", "英语"),
+        ("Japanese", "日语"),
+        ("Korean", "韩语"),
+        ("Russian", "俄语"),
+        ("French", "法语"),
+        ("German", "德语"),
+        ("Spanish", "西班牙语"),
+    ];
+
+    /// <summary>显示名 → 存储值；「自动检测」= 空串；认不出的显示名原样返回。</summary>
+    public static string ToValue(string display)
+        => display == AutoDetect
+            ? string.Empty
+            : Map.FirstOrDefault(pair => pair.Display == display) is { } known
+                ? known.Value
+                : display;
+
+    /// <summary>存储值 → 显示名；空值（自动检测）只有源语言会遇到，映射回占位。</summary>
+    public static string ToDisplay(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return AutoDetect;
+        }
+
+        return Map.FirstOrDefault(pair => pair.Value == value) is { } known
+            ? known.Display
+            : LanguageDisplay.Name(value);
+    }
 }
