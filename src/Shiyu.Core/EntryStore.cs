@@ -25,6 +25,15 @@ public sealed partial class EntryStore : IDisposable
     /// <summary>The transaction <see cref="RunInTransaction"/> holds open, if any. Touched only under the gate.</summary>
     private SqliteTransaction? _batch;
 
+    /// <summary>
+    /// The last known row count, or null when a write has invalidated it. Read
+    /// by <see cref="Count"/> on every narrow-bar paint; a history of a hundred
+    /// thousand entries should not be COUNTed that often. Touched only under
+    /// the gate, so the invalidation a write performs cannot race the read
+    /// another thread is making.
+    /// </summary>
+    private int? _countCache;
+
     /// <summary>Internal for tests: writing rows the way an older build would have.</summary>
     internal SqliteConnection Connection => _connection;
 
@@ -53,7 +62,16 @@ public sealed partial class EntryStore : IDisposable
     /// <summary>
     /// The shape the code expects. Bumped whenever a migration is added below.
     /// </summary>
-    private const int SchemaVersion = 11;
+    private const int SchemaVersion = 12;
+
+    /// <summary>
+    /// What <see cref="EntrySubtype.None"/> is stored as. A value rather than
+    /// NULL, so "classified, nothing specific" and "not yet classified" are
+    /// different rows: the NULLs are exactly the ones an older build left
+    /// behind, and once the migration has filled them, plain text is never
+    /// rescanned on startup again (O-22).
+    /// </summary>
+    private const string SubtypeSentinel = "None";
 
     /// <summary>
     /// Joins tag names into one column. A unit separator, because it cannot
@@ -210,12 +228,31 @@ public sealed partial class EntryStore : IDisposable
             BackfillImageSizes();
         }
 
+        if (from < 12)
+        {
+            // Every list path — Recent, Page, Find, Search — orders by this
+            // exact triple. Without the index each of those is a full scan
+            // plus a sort; with it, a page is an index walk that stops at the
+            // limit (O-22). It lives here rather than in CreateSchema because
+            // the last column of the triple only exists from version 9 on.
+            Execute("""
+                CREATE INDEX IF NOT EXISTS idx_entries_order
+                ON entries (pinned DESC, created_at DESC, id DESC);
+                """);
+
+            // One-time version of the subtype backfill that used to run on
+            // every open. Rows written since subtypes existed store a value at
+            // write time — 'None' when there is nothing more specific — so the
+            // only rows with a NULL are ones an older build left behind. This
+            // pass classifies those and stamps the rest, after which NULL never
+            // recurs and the every-startup rescan is gone (O-22).
+            BackfillSubtypesOnce();
+        }
+
         if (from != SchemaVersion)
         {
             Execute($"PRAGMA user_version = {SchemaVersion};");
         }
-
-        BackfillSubtypes();
     }
 
     /// <summary>
@@ -270,11 +307,17 @@ public sealed partial class EntryStore : IDisposable
     }
 
     /// <summary>
-    /// Classifies any rows recorded before subtypes existed. Idempotent and
-    /// run on every open: it selects only NULL rows, so a clean database
-    /// costs one indexed query and the work happens exactly once per row.
+    /// Classifies any rows recorded before subtypes existed, and stamps the
+    /// rest with the 'None' sentinel — see <see cref="SubtypeSentinel"/>.
+    ///
+    /// Runs once, from the migration that owns it, not on every open: the
+    /// every-open version re-selected all plain text forever because plain
+    /// text was stored as NULL and NULL was exactly what it looked for.
+    /// Interrupted mid-run it simply runs again — version 12 is only stamped
+    /// after the last row is non-NULL — so a killed upgrade finishes itself on
+    /// the next open.
     /// </summary>
-    private void BackfillSubtypes()
+    private void BackfillSubtypesOnce()
     {
         var updates = new List<(long id, string subtype)>();
 
@@ -288,11 +331,7 @@ public sealed partial class EntryStore : IDisposable
             using var reader = read.ExecuteReader();
             while (reader.Read())
             {
-                var subtype = SubtypeClassifier.Detect(reader.GetString(1));
-                if (subtype != EntrySubtype.None)
-                {
-                    updates.Add((reader.GetInt64(0), subtype.ToString()));
-                }
+                updates.Add((reader.GetInt64(0), SubtypeClassifier.Detect(reader.GetString(1)).ToString()));
             }
         }
 
@@ -301,8 +340,6 @@ public sealed partial class EntryStore : IDisposable
             return;
         }
 
-        // None-valued rows stay NULL: they are the common case, and writing
-        // millions of no-ops is not free on a big history.
         using var transaction = _connection.BeginTransaction();
 
         using var update = _connection.CreateCommand();
@@ -364,12 +401,12 @@ public sealed partial class EntryStore : IDisposable
             command.Parameters.AddWithValue("$text", text);
             command.Parameters.AddWithValue("$sourceApp", (object?)sourceApp ?? DBNull.Value);
             command.Parameters.AddWithValue("$createdAt", createdAt.ToUnixTimeMilliseconds());
-            command.Parameters.AddWithValue("$subtype",
-                subtype == EntrySubtype.None ? DBNull.Value : (object)subtype.ToString());
+            command.Parameters.AddWithValue("$subtype", subtype.ToString());
             command.Parameters.AddWithValue("$html", (object?)html ?? DBNull.Value);
             command.Parameters.AddWithValue("$rtf", (object?)rtf ?? DBNull.Value);
 
             var id = (long)command.ExecuteScalar()!;
+            CountChanged();
             return new Entry(id, text, sourceApp, createdAt)
             {
                 Subtype = subtype,
@@ -406,6 +443,7 @@ public sealed partial class EntryStore : IDisposable
             command.Parameters.AddWithValue("$files", string.Join("\n", kept));
 
             var id = (long)command.ExecuteScalar()!;
+            CountChanged();
             return new Entry(id, label, sourceApp, createdAt)
             {
                 Kind = EntryKind.Files,
@@ -492,6 +530,7 @@ public sealed partial class EntryStore : IDisposable
             command.Parameters.AddWithValue("$h", height);
 
             var id = (long)command.ExecuteScalar()!;
+            CountChanged();
             return new Entry(id, label, sourceApp, createdAt)
             {
                 Kind = EntryKind.Image,
@@ -603,23 +642,29 @@ public sealed partial class EntryStore : IDisposable
             using var command = _connection.CreateCommand();
             command.Transaction = write.Transaction;
             command.CommandText = """
-                INSERT INTO entries (text, source_app, created_at)
-                VALUES ($text, $sourceApp, $createdAt);
+                INSERT INTO entries (text, source_app, created_at, sub_type)
+                VALUES ($text, $sourceApp, $createdAt, $subtype);
                 """;
 
             var text = command.Parameters.Add("$text", SqliteType.Text);
             var sourceApp = command.Parameters.Add("$sourceApp", SqliteType.Text);
             var createdAt = command.Parameters.Add("$createdAt", SqliteType.Integer);
+            var subtype = command.Parameters.Add("$subtype", SqliteType.Text);
 
             foreach (var entry in entries)
             {
                 text.Value = entry.Text;
                 sourceApp.Value = (object?)entry.SourceApp ?? DBNull.Value;
                 createdAt.Value = entry.CreatedAt.ToUnixTimeMilliseconds();
+
+                // Classified at write time like every other path — the startup
+                // backfill that used to sweep NULLs afterwards is gone (O-22).
+                subtype.Value = SubtypeClassifier.Detect(entry.Text).ToString();
                 command.ExecuteNonQuery();
             }
 
             write.Commit();
+            CountChanged();
         }
     }
 
@@ -838,11 +883,27 @@ public sealed partial class EntryStore : IDisposable
     {
         lock (_gate)
         {
+            // The narrow bar and library footer ask on every refresh; the
+            // answer changes only when a write lands, and every write drops
+            // the cache inside this same gate.
+            if (_countCache is { } cached)
+            {
+                return cached;
+            }
+
             using var command = _connection.CreateCommand();
             command.CommandText = "SELECT COUNT(*) FROM entries;";
-            return Convert.ToInt32(command.ExecuteScalar());
+            _countCache = Convert.ToInt32(command.ExecuteScalar());
+            return _countCache.Value;
         }
     }
+
+    /// <summary>
+    /// Called inside the gate by every write that can add or remove rows, so
+    /// <see cref="Count"/>'s cache can never answer with a number the table
+    /// has moved on from.
+    /// </summary>
+    private void CountChanged() => _countCache = null;
 
     /// <summary>
     /// How many entries the current protection settings would spare — the
@@ -884,7 +945,13 @@ public sealed partial class EntryStore : IDisposable
             using var command = _connection.CreateCommand();
             command.CommandText = "DELETE FROM entries WHERE id = $id;";
             command.Parameters.AddWithValue("$id", id);
-            return command.ExecuteNonQuery() > 0;
+            var removed = command.ExecuteNonQuery() > 0;
+            if (removed)
+            {
+                CountChanged();
+            }
+
+            return removed;
         }
     }
 
@@ -908,7 +975,13 @@ public sealed partial class EntryStore : IDisposable
                 """;
             command.Parameters.AddWithValue("$from", from.ToUnixTimeMilliseconds());
             command.Parameters.AddWithValue("$to", to.ToUnixTimeMilliseconds());
-            return command.ExecuteNonQuery();
+            var removed = command.ExecuteNonQuery();
+            if (removed > 0)
+            {
+                CountChanged();
+            }
+
+            return removed;
         }
     }
 
@@ -945,7 +1018,13 @@ public sealed partial class EntryStore : IDisposable
         {
             using var command = _connection.CreateCommand();
             command.CommandText = $"DELETE FROM entries WHERE NOT ({ProtectedConditionFor(keepFavorites, keepPinned)});";
-            return command.ExecuteNonQuery();
+            var removed = command.ExecuteNonQuery();
+            if (removed > 0)
+            {
+                CountChanged();
+            }
+
+            return removed;
         }
     }
 

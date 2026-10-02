@@ -30,19 +30,26 @@ public sealed partial class EntryStore
     {
         lock (_gate)
         {
+            // Classified here rather than left NULL for a backfill: the
+            // startup backfill is gone (O-22), so every text row arrives with
+            // its subtype, 'None' included.
+            var subtype = SubtypeClassifier.Detect(text);
+
             using var command = _connection.CreateCommand();
             command.CommandText = """
-                INSERT INTO entries (text, source_app, created_at, kind, translated_from)
-                VALUES ($text, $sourceApp, $createdAt, 0, $from)
+                INSERT INTO entries (text, source_app, created_at, kind, sub_type, translated_from)
+                VALUES ($text, $sourceApp, $createdAt, 0, $subtype, $from)
                 RETURNING id;
                 """;
             command.Parameters.AddWithValue("$text", text);
             command.Parameters.AddWithValue("$sourceApp", (object?)sourceApp ?? DBNull.Value);
             command.Parameters.AddWithValue("$createdAt", createdAt.ToUnixTimeMilliseconds());
+            command.Parameters.AddWithValue("$subtype", subtype.ToString());
             command.Parameters.AddWithValue("$from", (object?)translatedFrom ?? DBNull.Value);
 
             var id = (long)command.ExecuteScalar()!;
-            return new Entry(id, text, sourceApp, createdAt) { TranslatedFrom = translatedFrom };
+            CountChanged();
+            return new Entry(id, text, sourceApp, createdAt) { Subtype = subtype, TranslatedFrom = translatedFrom };
         }
     }
 }

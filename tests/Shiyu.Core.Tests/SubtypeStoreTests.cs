@@ -61,17 +61,20 @@ public class SubtypeStoreTests
     }
 
     [Fact]
-    public void Rows_recorded_before_subtypes_exist_are_backfilled_on_open()
+    public void Rows_recorded_before_subtypes_exist_are_backfilled_on_upgrade()
     {
         using var database = new TempDatabase();
 
         using (var store = EntryStore.Open(database.FilePath))
         {
-            // Written the way an older build would have: no subtype at all.
+            // Written the way an older build would have: no subtype at all,
+            // and a schema version to match — the backfill is a migration now
+            // (O-22), not something every open repeats.
             using var command = store.Connection.CreateCommand();
             command.CommandText = """
                 INSERT INTO entries (text, source_app, created_at, kind)
                 VALUES ('https://legacy.example.com', 'old', 0, 0);
+                PRAGMA user_version = 11;
                 """;
             command.ExecuteNonQuery();
         }

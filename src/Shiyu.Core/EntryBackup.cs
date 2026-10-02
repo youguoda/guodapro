@@ -17,6 +17,7 @@ public sealed partial class EntryStore
             ExecuteIn(write.Transaction, "DELETE FROM entries;");
             ExecuteIn(write.Transaction, "DELETE FROM groups;");
             write.Commit();
+            CountChanged();
         }
     }
 
@@ -82,6 +83,7 @@ public sealed partial class EntryStore
                 command.Parameters.AddWithValue("$h", height);
 
                 var id = (long)command.ExecuteScalar()!;
+                CountChanged();
 
                 foreach (var tag in entry.Tags)
                 {
@@ -107,8 +109,11 @@ public sealed partial class EntryStore
         }
     }
 
-    private static string? SubtypeOf(Entry entry)
-        => entry.Subtype == EntrySubtype.None ? null : entry.Subtype.ToString();
+    /// <summary>
+    /// Always a value, 'None' included: imports write classified rows, never
+    /// NULLs a future migration would have to sweep (O-22).
+    /// </summary>
+    private static string SubtypeOf(Entry entry) => entry.Subtype.ToString();
 
     private long ResolveGroupIdIn(SqliteTransaction transaction, string name)
     {
