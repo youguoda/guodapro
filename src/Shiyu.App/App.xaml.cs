@@ -54,6 +54,9 @@ public partial class App : Application
     /// <summary>加载设置时若发生了坏文件迁移，托盘起来后要说一次的话。</summary>
     private string? _settingsQuarantineNotice;
 
+    /// <summary>"前台在排除名单"的提示是否已经说过一次（O-17）。</summary>
+    private bool _captureExcludedNotified;
+
     /// <summary>
     /// 划词路径挂起的剪贴板还原：取词借走了用户剪贴板，还原被推迟到面板
     /// 显示之后（票 37）。非 null 即"当前徽标是一次划词，且债未还"。
@@ -1207,6 +1210,15 @@ public partial class App : Application
             return;
         }
 
+        // 排除名单是唯一闸口（ADR-0007），划词也必须过它（O-17）：向密码
+        // 管理器模拟 Ctrl+C 去"取选中内容"，取到的就是密码本身。被动遭遇，
+        // 安静地不出徽标就是全部该有的反应。
+        if (CaptureGate.BlocksForeground(
+                _exclusions ?? Settings.BuildExclusionPolicy(), ForegroundApplication.Current().Name))
+        {
+            return;
+        }
+
         // 新一次取词前先还上一笔——两次快速拖选时，第二笔会借走第一笔的
         // 选中文字，不还就永远找不回用户最初的剪贴板。
         FlushPendingSelection();
@@ -1321,6 +1333,21 @@ public partial class App : Application
     {
         if (_capture is null || _tray is null)
         {
+            return;
+        }
+
+        // 显式请求也要过闸口（O-17）：热键可以在任何前台应用按下，包括
+        // 排除名单里的。说一声但只说一次——用户多半是忘了规则，每次取词
+        // 都弹就成了骚扰。
+        if (CaptureGate.BlocksForeground(
+                _exclusions ?? Settings.BuildExclusionPolicy(), ForegroundApplication.Current().Name))
+        {
+            if (!_captureExcludedNotified)
+            {
+                _captureExcludedNotified = true;
+                _tray.ShowNotification("拾语", "前台应用在排除名单里，已跳过取词。");
+            }
+
             return;
         }
 

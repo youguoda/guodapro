@@ -375,51 +375,7 @@ public sealed class WindowsClipboardMonitor : IClipboardMonitor, IDisposable
     /// application's history should still show the icon it had.
     /// </summary>
     private static (string? Name, string? ExePath) ForegroundProcess()
-    {
-        var foreground = NativeMethods.GetForegroundWindow();
-        if (foreground == IntPtr.Zero)
-        {
-            return (null, null);
-        }
-
-        if (NativeMethods.GetWindowThreadProcessId(foreground, out var processId) == 0)
-        {
-            return (null, null);
-        }
-
-        try
-        {
-            using var process = Process.GetProcessById((int)processId);
-            return (process.ProcessName, TryExecutablePath(process));
-        }
-        catch (ArgumentException)
-        {
-            // The process ended between reading its id and opening it.
-            return (null, null);
-        }
-        catch (InvalidOperationException)
-        {
-            return (null, null);
-        }
-    }
-
-    private static string? TryExecutablePath(Process process)
-    {
-        try
-        {
-            return process.MainModule?.FileName;
-        }
-        catch (Win32Exception)
-        {
-            // Elevated or protected processes keep their modules to
-            // themselves; the entry is still recorded, the icon is not.
-            return null;
-        }
-        catch (InvalidOperationException)
-        {
-            return null;
-        }
-    }
+        => ForegroundApplication.Current();
 
     public void Dispose()
     {

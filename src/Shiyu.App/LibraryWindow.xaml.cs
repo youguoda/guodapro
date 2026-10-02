@@ -747,11 +747,26 @@ public partial class LibraryWindow : Window
             }
 
             var entries = selected
-                .Select(item => new Entry(item.Id, item.Text, null, DateTimeOffset.UtcNow))
+                .Select(item => new Entry(item.Id, item.Text, item.SourceApp, DateTimeOffset.UtcNow))
                 .ToList();
 
+            // 排除名单是唯一闸口，Agent 动作也过它（O-17）：规则是上周才加
+            // 的，也要拦得住上个月记下的密码被今天的总结送出去。批量翻译
+            // 在自己的 RunAsync 里做同一件事。
+            var (sendable, skipped) =
+                CaptureGate.SplitSendable(entries, _settings().BuildExclusionPolicy());
+            if (sendable.Count == 0)
+            {
+                Status("所选条目全部来自排除名单里的应用，已跳过。");
+                return;
+            }
+            if (skipped > 0)
+            {
+                Status($"已跳过 {skipped} 条来自排除名单应用的条目。");
+            }
+
             AgentPanel.Visibility = Visibility.Visible;
-            AgentTitle.Text = $"{AgentActions.Label(kind)} · {entries.Count} 条";
+            AgentTitle.Text = $"{AgentActions.Label(kind)} · {sendable.Count} 条";
             AgentOutput.Text = "正在处理…";
             SuggestedTags.ItemsSource = null;
 
@@ -777,7 +792,7 @@ public partial class LibraryWindow : Window
                 }
             });
 
-            await run.RunAsync(kind, entries);
+            await run.RunAsync(kind, sendable);
 
             if (kind == AgentActionKind.SuggestTags && run.State == TranslationState.Finished)
             {
@@ -920,6 +935,7 @@ public partial class LibraryWindow : Window
     private sealed record EntryItem(
         long Id,
         string Text,
+        string? SourceApp,
         string Preview,
         string Meta,
         ImageSource? Thumbnail,
@@ -962,6 +978,7 @@ public partial class LibraryWindow : Window
             return new EntryItem(
                 entry.Id,
                 entry.Text,
+                entry.SourceApp,
                 preview,
                 $"{entry.CreatedAt.ToLocalTime():yyyy-MM-dd HH:mm}  ·  {source}  ·  {tail}{tags}",
                 Decode(entry.ThumbnailPng, pixelWidth: 240),
