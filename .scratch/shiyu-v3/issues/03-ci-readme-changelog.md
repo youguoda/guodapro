@@ -2,8 +2,10 @@
 
 **来源：** 优化报告 O-08、O-12、O-13
 **Blocked by:** —
-**Branch:** `v3/ci-docs`（执行中）
-**Status:** ready-for-agent
+**Branch:** `v3/ci-docs`（已并 master，e6762c1）
+**Status:** done
+
+实施记录（2026-10-01/02）：CI（e5b1841，Node 22 依据 wrangler 4/miniflare 要求）、README（0003f7c）、CHANGELOG（374b0eb）。本地实跑：Core 676/676（SDK 10 与 9 各一遍）、server 37/37（Windows Node 26 + WSL Ubuntu Node 22.23.3）、actionlint 0 错误。剩余：LICENSE 待用户选定；真实截图待补；首个 CI 运行见 Actions。
 
 **What to build:**
 - `.github/workflows/ci.yml`：Windows 上构建 `Shiyu.sln`（Release）并跑 Core 测试；Ubuntu 上跑 `server/` 的 `npm ci && npm test`。
@@ -12,6 +14,6 @@
 - CI 第一次全绿后：开启 master 分支保护（必须通过 CI；管理员可直接推送）。
 
 **验收：**
-- [ ] 推送后 Actions 两个 job 均为绿
-- [ ] README 每条事实都能在仓库中找到依据；不含个人数据
-- [ ] 分支保护已开启，状态检查名与 workflow 一致
+- [ ] 推送后 Actions 两个 job 均为绿（本次推送即首次运行）
+- [x] README 每条事实都能在仓库中找到依据；不含个人数据
+- [ ] 分支保护已开启，状态检查名与 workflow 一致（CI 绿后执行）
