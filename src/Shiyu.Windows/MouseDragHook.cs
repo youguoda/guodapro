@@ -6,11 +6,17 @@ namespace Shiyu.Windows;
 /// <summary>
 /// 划词的拖选观察者（票 37）：WH_MOUSE_LL 低级鼠标钩子。
 ///
-/// 纪律照 <see cref="WinVHook"/>：回调只上报原始事件，一切工作 Post 到装钩
+/// 纪律照 <see cref="WinVHook"/>：回调只上报原始事件，一切工作 Post 到 UI
 /// 线程做——低级钩子回调里做重活或同步注入输入，系统会摘钩甚至杀进程
 /// （票 18 实锤）。这台钩子更进一步，连手势分类都不在回调里做：
 /// ≥5px 的位移判定只需要按下与抬起两个端点，所以移动事件——低级钩子里
 /// 最高频的流量——在回调里直接丢弃，一根结构体都不 Marshal。
+///
+/// 线程模型（O-16）：钩子装在专用泵线程上（<see cref="LowLevelHookThread"/>；
+/// 装在 UI 线程时，取词最长 600ms 的 Sleep 轮询会让全系统鼠标跟着卡）。
+/// 回调里的状态（<see cref="_leftDown"/>）只在钩子线程上读写——它的读者
+/// 从来只有回调一个；手势状态机 <see cref="_drag"/> 只被 Post 到 UI 线程
+/// 触碰。两侧互不相见，无需同步。
 ///
 /// 钩子是纯观察者：任何事件都放行（CallNextHookEx），从不吞鼠标输入——
 /// 拖选检测没有理由让用户的鼠标少动一毫米。
@@ -30,8 +36,7 @@ public sealed class MouseDragHook : IDisposable
     private const long WmXButtonDown = 0x020B;
 
     private readonly SelectionDrag _drag = new();
-    private readonly LowLevelHookProc _proc;
-    private readonly IntPtr _hook;
+    private readonly LowLevelHookThread _host;
     private readonly SynchronizationContext? _context;
 
     // 回调里的全部状态就这一位：左键是否按着。它是"哪些事件值得上报"的
@@ -42,18 +47,17 @@ public sealed class MouseDragHook : IDisposable
 
     public MouseDragHook()
     {
-        _proc = OnHook;
         _context = SynchronizationContext.Current;
         _drag.DragCompleted += () => DragCompleted?.Invoke();
 
-        _hook = NativeMethods.SetWindowsHookExW(
-            WhMouseLl, _proc, NativeMethods.GetModuleHandleW(null), 0);
+        // 装钩失败从构造抛 Win32Exception（此前返回 0 无人看，O-16）。
+        _host = new LowLevelHookThread(WhMouseLl, HookCallback, "Shiyu 鼠标钩子");
     }
 
-    /// <summary>一次拖选完成（≥5px 位移后左键抬起）。在装钩线程的上下文上触发。</summary>
+    /// <summary>一次拖选完成（≥5px 位移后左键抬起）。在构造线程捕获的上下文上触发。</summary>
     public event Action? DragCompleted;
 
-    private IntPtr OnHook(int code, IntPtr wParam, IntPtr lParam)
+    private IntPtr HookCallback(IntPtr hook, int code, IntPtr wParam, IntPtr lParam)
     {
         if (code >= 0)
         {
@@ -61,7 +65,7 @@ public sealed class MouseDragHook : IDisposable
         }
 
         // 永远放行：观察者不吞输入。
-        return NativeMethods.CallNextHookEx(_hook, code, wParam, lParam);
+        return NativeMethods.CallNextHookEx(hook, code, wParam, lParam);
     }
 
     private void Report(long message, IntPtr lParam)
@@ -110,10 +114,10 @@ public sealed class MouseDragHook : IDisposable
         }
 
         _disposed = true;
-        if (_hook != IntPtr.Zero)
-        {
-            NativeMethods.UnhookWindowsHookEx(_hook);
-        }
+
+        // 宿主在钩子线程上随泵退出卸钩并 Join（有超时）：返回后回调不可能
+        // 再执行。
+        _host.Dispose();
     }
 
     [StructLayout(LayoutKind.Sequential)]

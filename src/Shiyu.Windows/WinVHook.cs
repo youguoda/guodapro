@@ -13,24 +13,28 @@ namespace Shiyu.Windows;
 /// forget; and Dispose unhooks on the spot, so switching the setting off
 /// restores the system behaviour without a restart.
 ///
-/// The hook must be installed from a thread that pumps messages (the WPF UI
-/// thread does); the callback itself only feeds the filter and marshals the
-/// trigger onward.
+/// Threading (O-16): the hook is installed on and serviced by a dedicated
+/// pumped thread — see <see cref="LowLevelHookThread"/> for why the UI thread
+/// may not own a low-level hook. The callback and the filter state machine it
+/// feeds run on that hook thread and nowhere else (nothing else in this class
+/// touches the filter, so there is no cross-thread state to guard); the mask
+/// injection and the app trigger below stay POSTED to the context captured
+/// here at construction, exactly where they ran before the migration. The
+/// hook handle reaches the callback as its first argument (see
+/// <see cref="LowLevelHookThread"/> for why a field read-back would race).
 /// </summary>
 public sealed class WinVHook : IDisposable
 {
     private const int WhKeyboardLl = 13;
 
     private readonly WinVFilter _filter = new();
-    private readonly HookProc _proc;
-    private readonly IntPtr _hook;
+    private readonly LowLevelHookThread _host;
     private readonly SynchronizationContext? _context;
 
     private bool _disposed;
 
     public WinVHook()
     {
-        _proc = OnHook;
         _context = SynchronizationContext.Current;
 
         // The mask is the trick that lets the real Win release pass through
@@ -50,18 +54,20 @@ public sealed class WinVHook : IDisposable
             Triggered?.Invoke();
         }, null);
 
-        _hook = NativeMethods.SetWindowsHookExW(
-            WhKeyboardLl, _proc, NativeMethods.GetModuleHandleW(null), 0);
+        // Installing waits for the system's verdict: a refused hook throws
+        // Win32Exception out of this constructor instead of failing invisibly
+        // while the setting claims a takeover is in place (O-16).
+        _host = new LowLevelHookThread(WhKeyboardLl, HookCallback, "Shiyu 键盘钩子");
     }
 
     /// <summary>Raised on the installing thread's context when Win+V is taken.</summary>
     public event Action? Triggered;
 
-    private IntPtr OnHook(int code, IntPtr wParam, IntPtr lParam)
+    private IntPtr HookCallback(IntPtr hook, int code, IntPtr wParam, IntPtr lParam)
     {
         if (code < 0)
         {
-            return NativeMethods.CallNextHookEx(_hook, code, wParam, lParam);
+            return NativeMethods.CallNextHookEx(hook, code, wParam, lParam);
         }
 
         var info = Marshal.PtrToStructure<KbdLlHookStruct>(lParam);
@@ -88,12 +94,12 @@ public sealed class WinVHook : IDisposable
         if (key == SpecialKey.Other && direction == KeyDirection.Up)
         {
             // Nothing the filter decides on; skip the call for speed.
-            return NativeMethods.CallNextHookEx(_hook, code, wParam, lParam);
+            return NativeMethods.CallNextHookEx(hook, code, wParam, lParam);
         }
 
         return _filter.Feed(key, direction) == KeyFlow.Swallow
             ? new IntPtr(1)
-            : NativeMethods.CallNextHookEx(_hook, code, wParam, lParam);
+            : NativeMethods.CallNextHookEx(hook, code, wParam, lParam);
     }
 
     public void Dispose()
@@ -104,10 +110,11 @@ public sealed class WinVHook : IDisposable
         }
 
         _disposed = true;
-        if (_hook != IntPtr.Zero)
-        {
-            NativeMethods.UnhookWindowsHookEx(_hook);
-        }
+
+        // The host unhooks on the hook thread as its pump exits, then joins
+        // (bounded): once this returns, the callback can no longer run and the
+        // object is inert.
+        _host.Dispose();
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -118,27 +125,5 @@ public sealed class WinVHook : IDisposable
         public uint Flags;
         public uint Time;
         public IntPtr ExtraInfo;
-    }
-
-    private delegate IntPtr HookProc(int code, IntPtr wParam, IntPtr lParam);
-
-    private static partial class NativeMethods
-    {
-        [DllImport("user32.dll", SetLastError = true)]
-        public static extern IntPtr SetWindowsHookExW(
-            int idHook, HookProc lpfn, IntPtr hMod, uint dwThreadId);
-
-        [DllImport("user32.dll", SetLastError = true)]
-        public static extern bool UnhookWindowsHookEx(IntPtr hhk);
-
-        [DllImport("user32.dll")]
-        public static extern IntPtr CallNextHookEx(
-            IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
-
-        [DllImport("user32.dll")]
-        public static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
-
-        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
-        public static extern IntPtr GetModuleHandleW(string? lpModuleName);
     }
 }

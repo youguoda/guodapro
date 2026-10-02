@@ -28,6 +28,12 @@ internal static class NativeMethods
     internal const uint WmDestroy = 0x0002;
     internal const uint WmClipboardUpdate = 0x031D;
     internal const uint WmNull = 0x0000;
+
+    /// <summary>
+    /// The only way out of a GetMessage loop — and how the hook thread is told
+    /// its services are no longer needed (LowLevelHookThread, O-16).
+    /// </summary>
+    internal const uint WmQuit = 0x0012;
     internal const uint WmRightButtonUp = 0x0205;
     internal const uint WmLeftButtonUp = 0x0202;
 
@@ -120,6 +126,41 @@ internal static class NativeMethods
 
     [DllImport("user32.dll", SetLastError = true)]
     internal static extern bool PostMessageW(IntPtr hWnd, uint message, IntPtr wParam, IntPtr lParam);
+
+    // --- 专用钩子线程的泵与停机（LowLevelHookThread，O-16）---
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct Msg
+    {
+        public IntPtr hwnd;
+        public uint message;
+        public IntPtr wParam;
+        public IntPtr lParam;
+        public uint time;
+        public Point pt;
+    }
+
+    /// <summary>
+    /// Returns 0 on WM_QUIT and -1 on error; a low-level hook's callbacks are
+    /// delivered to the installing thread through this pump.
+    /// </summary>
+    [DllImport("user32.dll", SetLastError = true)]
+    internal static extern int GetMessageW(
+        out Msg message, IntPtr hWnd, uint minimum, uint maximum);
+
+    [DllImport("user32.dll")]
+    internal static extern bool TranslateMessage(ref Msg message);
+
+    [DllImport("user32.dll")]
+    internal static extern IntPtr DispatchMessageW(ref Msg message);
+
+    /// <summary>Thread-targeted, so the hook thread can be stopped without a window.</summary>
+    [DllImport("user32.dll", SetLastError = true)]
+    internal static extern bool PostThreadMessageW(
+        uint threadId, uint message, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("kernel32.dll")]
+    internal static extern uint GetCurrentThreadId();
 
     [DllImport("user32.dll", SetLastError = true)]
     internal static extern bool AddClipboardFormatListener(IntPtr hWnd);
@@ -263,6 +304,14 @@ internal static class NativeMethods
 
     [DllImport("user32.dll", SetLastError = true)]
     internal static extern uint SendInput(uint count, Input[] inputs, int size);
+
+    /// <summary>
+    /// Legacy input injection, kept for the Win+V mask keystroke: keybd_event
+    /// marks its output LLKHF_INJECTED exactly like SendInput, and for a
+    /// down/up pair of one key it is the shorter call.
+    /// </summary>
+    [DllImport("user32.dll")]
+    internal static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
 
     [DllImport("user32.dll")]
     internal static extern short GetAsyncKeyState(int key);
