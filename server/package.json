@@ -2,6 +2,7 @@
   "name": "shiyu-relay",
   "private": true,
   "type": "module",
+  "license": "MIT",
   "description": "拾语公共翻译通道：Cloudflare Worker + 四层配额 + 失败退款（票 36）",
   "scripts": {
     "test": "vitest run",
