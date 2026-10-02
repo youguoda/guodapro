@@ -5,7 +5,9 @@
         SizeChanged="OnWindowSizeChanged"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         WindowStartupLocation="CenterScreen"
-        FontSize="{DynamicResource Size.Body}">
+        FontSize="{DynamicResource Size.Body}"
+        TextElement.FontFamily="{DynamicResource Font.Ui}"
+        TextElement.Foreground="{DynamicResource Brush.Text}">
     <WindowChrome.WindowChrome>
         <!--
           Borderless but resizable: the chrome only provides the resize

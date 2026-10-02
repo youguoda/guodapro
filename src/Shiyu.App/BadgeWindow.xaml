@@ -4,7 +4,9 @@
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         ShowActivated="False" ShowInTaskbar="False" Topmost="True"
         ResizeMode="NoResize" SizeToContent="WidthAndHeight"
-        Focusable="False" Opacity="0">
+        Focusable="False" Opacity="0"
+        TextElement.FontFamily="{DynamicResource Font.Ui}"
+        TextElement.Foreground="{DynamicResource Brush.Text}">
     <Border x:Name="Pill" CornerRadius="{DynamicResource Radius.Pill}" Padding="12,6" Cursor="Hand"
             Background="{DynamicResource Brush.AccentFloating}" MouseLeftButtonUp="OnClicked">
         <Border.Effect>

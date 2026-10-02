@@ -2,7 +2,7 @@
 
 **来源：** UI 报告 §2（R1、R4、R6）、U-01；优化报告 O-28
 **Blocked by:** —
-**Status:** ready-for-agent
+**Status:** ready-for-human（代码与测试已落，余像素级探针验收）
 
 **What to build:**
 - 删除 App 级隐式 `TextBlock` 样式里的 `Foreground` 和 `FontFamily`（`Themes/Controls.xaml:16-19`），改在每个窗口根元素上设置 `TextElement.FontFamily / FontSize / Foreground`。这一条同时修好标题栏字形变豆腐块、删除钮危险色失效、分段选中文字只有 3.0:1、面板禁用按钮"灰盒子配黑字"。
@@ -10,7 +10,13 @@
 - 文字上的 `Opacity` 字面量全部去掉，改用颜色令牌（R6，说明文字现在只有约 3.5:1）。
 
 **验收：**
-- [ ] 管理窗、设置窗标题栏三个按钮显示为正确字形
-- [ ] 分段选中文字对比度 ≥ 4.5:1
-- [ ] 删除钮 hover 时呈 Danger 色（取样 #C0392B ±4）
-- [ ] 全仓 `Themes/` 以外，文字上没有 `Opacity` 字面量
+- [x] 形式：全仓 grep 不到隐式 TextBlock 样式里的 Foreground/FontFamily；设置窗根有字号（`TextElement.FontSize=Size.Secondary`，与标签同档，消灭"值比标签小"的倒置）；文字无 Opacity 字面量（`TextTokenHygieneTests` 白名单除外，现存三条均为装饰：连接曲线描边、深链水洗层、预览阴影）
+- [x] 构建实跑：Core 测试全绿 688/688（含新增对比度对与两条静态检查）；App Debug 构建 0 错误（仅既有 CS8629 警告）
+- [ ] 像素级：管理窗、设置窗标题栏三个按钮显示为正确字形；分段选中文字对比度 ≥ 4.5:1；删除钮 hover 时呈 Danger 色（取样 #C0392B ±4）——**待票 15 探针合入后执行**
+
+**完成记录（2026-10-01，v3/ui-root）：**
+- R1：`Themes/Controls.xaml` 的隐式 `TextBlock` 样式整体删除（留注释说明理由）；七个 XAML 窗（Bar/Settings/Library/Panel/Preview/QuickBar/Badge）根元素改设 `TextElement.FontFamily / FontSize / Foreground`；代码建窗（`OnboardingWindow`、`GroupManagerWindow`、`UpdateWindow`、`BackupUi` 三处对话框）补根级 `TextElement` 前景（UpdateWindow 连字体一并补齐）。
+- R4：设置窗根设 `TextElement.FontSize=Size.Secondary`（页签/输入值/底栏按钮从回落 12 提到与标签同档 15，层级不再倒置）；`OnboardingWindow` 手写 13/14/18 收敛为 `Size.Caption/Size.Hint/Size.BodyLarge` 引用；`ItemEditors` 两处手写 14 改 `Size.Hint`；`ActionTray` 字形 16 改 `Size.IconMedium`。
+- R6：删除所有作用于文字的 `Opacity` 字面量，分层改用令牌色——`ItemEditors`（两处 0.75）、`SettingsWindow.xaml.cs`（0.8/0.75/0.7/0.75，其中搜索结果面包屑补 `Brush.TextSecondary`）、`OnboardingWindow`（七处）、`GroupManagerWindow`（三处）、`BarWindow.xaml` 与 `PreviewWindow.xaml.cs` 的失效路径改 `Brush.TextTertiary`；`PanelWindow` 词典卡例句/同义词由 `TextTertiary` 改 `TextSecondary`（该组合实测 4.33:1）。
+- 测试：`ReadablePairs` 补 `(TextTertiary, SurfaceSubtle)`（先红 4.33 后修；`(TextSecondary, Surface)` 早已在表）与浅色 `TextTertiary` 由 `#FF62707B` 加深至 `#FF5E6C77`（4.59:1）；新增 `TextTokenHygieneTests` 两条静态检查（Themes/ 外禁文字 Opacity 小数字面量与数字 FontSize，装饰走按"路径+行内标记"匹配的白名单），已用注错探针验证会红。总数 686 → 688。
+- 目检受限：单实例互斥量仍是固定名 `Local\Shiyu`（票 15 的探针互斥尚未合入本分支），按票面纪律不启动 exe，目检待探针合入后补做。

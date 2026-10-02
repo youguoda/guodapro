@@ -9,6 +9,8 @@
         AllowsTransparency="True" Background="Transparent"
         WindowStartupLocation="Manual"
         FontSize="{DynamicResource Size.Body}"
+        TextElement.FontFamily="{DynamicResource Font.Ui}"
+        TextElement.Foreground="{DynamicResource Brush.Text}"
         MouseEnter="OnMouseEnter" MouseLeave="OnMouseLeave">
     <!--
       The full-content preview (ticket 17). Round, translucent over the theme's

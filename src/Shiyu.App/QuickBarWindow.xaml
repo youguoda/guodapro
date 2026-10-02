@@ -4,6 +4,9 @@
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         ShowInTaskbar="False" Topmost="True" ResizeMode="NoResize"
         SizeToContent="Height" Width="460"
+        TextElement.FontFamily="{DynamicResource Font.Ui}"
+        TextElement.FontSize="{DynamicResource Size.Body}"
+        TextElement.Foreground="{DynamicResource Brush.Text}"
         Deactivated="OnDeactivated" PreviewKeyDown="OnPreviewKeyDown">
     <Border x:Name="Shell" CornerRadius="{DynamicResource Radius.Window}" Background="{DynamicResource Brush.SurfaceMaterial}"
             BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1">

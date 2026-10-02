@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Security;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using Shiyu.Core;
@@ -137,6 +138,7 @@ public sealed class BackupUi(
             FontFamily = (FontFamily)Application.Current.FindResource("Font.Ui"),
             FontSize = (double)Application.Current.FindResource("Size.Body"),
         };
+        window.SetResourceReference(TextElement.ForegroundProperty, "Brush.Text");
 
         var root = new StackPanel { Margin = new Thickness(14) };
 
@@ -196,6 +198,7 @@ public sealed class BackupUi(
             FontFamily = (FontFamily)Application.Current.FindResource("Font.Ui"),
             FontSize = (double)Application.Current.FindResource("Size.Body"),
         };
+        window.SetResourceReference(TextElement.ForegroundProperty, "Brush.Text");
 
         var root = new StackPanel { Margin = new Thickness(14) };
 
@@ -321,6 +324,7 @@ public sealed class BackupUi(
             FontFamily = (FontFamily)Application.Current.FindResource("Font.Ui"),
             FontSize = (double)Application.Current.FindResource("Size.Body"),
         };
+        window.SetResourceReference(TextElement.ForegroundProperty, "Brush.Text");
 
         var root = new StackPanel { Margin = new Thickness(14) };
         var status = new TextBlock { Text = title, Margin = new Thickness(0, 0, 0, 8) };

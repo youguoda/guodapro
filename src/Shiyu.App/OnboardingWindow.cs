@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using Shiyu.Core;
@@ -49,11 +50,14 @@ internal sealed class OnboardingWindow : Window
         FontFamily = (FontFamily)Application.Current.FindResource("Font.Ui");
         FontSize = (double)Application.Current.FindResource("Size.Body");
 
+        // R1（票 18）：隐式 TextBlock 样式已删，文字默认值由窗口根继承下去。
+        SetResourceReference(TextElement.ForegroundProperty, "Brush.Text");
+
         BuildSteps();
 
         var root = new StackPanel { Margin = new Thickness(18) };
 
-        _heading.FontSize = 18;
+        _heading.SetResourceReference(TextElement.FontSizeProperty, "Size.BodyLarge");
         _heading.FontWeight = FontWeights.SemiBold;
         _heading.SetResourceReference(TextBlock.ForegroundProperty, "Brush.Text");
         root.Children.Add(_heading);
@@ -62,8 +66,8 @@ internal sealed class OnboardingWindow : Window
         {
             Text = "几步就绪，每一步都可跳过——跳过也完全可用。",
             Margin = new Thickness(0, 4, 0, 10),
-            Opacity = 0.8,
         };
+        intro.SetResourceReference(TextElement.FontSizeProperty, "Size.Caption");
         intro.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
         root.Children.Add(intro);
 
@@ -71,7 +75,7 @@ internal sealed class OnboardingWindow : Window
         root.Children.Add(_body);
 
         _stepLabel.Margin = new Thickness(0, 10, 0, 0);
-        _stepLabel.FontSize = 13;
+        _stepLabel.SetResourceReference(TextElement.FontSizeProperty, "Size.Caption");
         _stepLabel.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextTertiary");
         root.Children.Add(_stepLabel);
 
@@ -115,8 +119,8 @@ internal sealed class OnboardingWindow : Window
         {
             Text = item.Label,
             VerticalAlignment = VerticalAlignment.Center,
-            FontSize = 14,
         };
+        label.SetResourceReference(TextElement.FontSizeProperty, "Size.Caption");
         label.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
         Grid.SetColumn(label, 0);
         grid.Children.Add(label);
@@ -135,7 +139,6 @@ internal sealed class OnboardingWindow : Window
         {
             Text = "三个全局快捷键，现在确认或改成顺手的：",
             Margin = new Thickness(0, 0, 0, 8),
-            Opacity = 0.8,
         };
         note.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
         panel.Children.Add(note);
@@ -145,8 +148,8 @@ internal sealed class OnboardingWindow : Window
             Text = "⚠ 两个快捷键相同，第二个永远不会生效。",
             Visibility = Visibility.Collapsed,
             Margin = new Thickness(0, 4, 0, 0),
-            FontSize = 13,
         };
+        conflict.SetResourceReference(TextElement.FontSizeProperty, "Size.Hint");
         conflict.SetResourceReference(TextBlock.ForegroundProperty, "Brush.Danger");
 
         void RefreshConflict()
@@ -198,7 +201,6 @@ internal sealed class OnboardingWindow : Window
             Text = "密码管理器等敏感来源永远不记录。常见工具已内置排除；如果你装的不在下面，勾选或直接填名字：",
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 8),
-            Opacity = 0.8,
         };
         ask.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
         panel.Children.Add(ask);
@@ -270,13 +272,14 @@ internal sealed class OnboardingWindow : Window
         };
         addRow.Children.Add(add);
         panel.Children.Add(addRow);
-        panel.Children.Add(new TextBlock
+        var footnote = new TextBlock
         {
             Text = "勾选与手填的名字都会写进设置的排除规则，随时可改。",
-            FontSize = 13,
-            Opacity = 0.7,
             Margin = new Thickness(0, 6, 0, 0),
-        });
+        };
+        footnote.SetResourceReference(TextElement.FontSizeProperty, "Size.Hint");
+        footnote.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
+        panel.Children.Add(footnote);
 
         // The picks ride in the panel's tag, folded into the state on leave.
         panel.Tag = picks;
@@ -291,7 +294,6 @@ internal sealed class OnboardingWindow : Window
         {
             Text = "要记录哪些复制？文本始终记录——没有它拾语就不成立。",
             Margin = new Thickness(0, 0, 0, 8),
-            Opacity = 0.8,
         };
         note.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
         panel.Children.Add(note);
@@ -311,7 +313,6 @@ internal sealed class OnboardingWindow : Window
                 + "自备密钥是高级选项，想用自己的模型再切换。",
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 8),
-            Opacity = 0.8,
         };
         note.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
         panel.Children.Add(note);
@@ -321,9 +322,8 @@ internal sealed class OnboardingWindow : Window
             Text = "隐私：被翻译的文本会经我们的中转发给模型服务；剪贴板历史本身仍不出机器。",
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 10),
-            FontSize = 13,
-            Opacity = 0.75,
         };
+        disclosure.SetResourceReference(TextElement.FontSizeProperty, "Size.Hint");
         disclosure.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
         panel.Children.Add(disclosure);
 
