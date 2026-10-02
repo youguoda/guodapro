@@ -13,6 +13,38 @@ public static class PreviewConnector
     /// <summary>How far the curve bulges toward its destination, as a share of the gap.</summary>
     public const double ControlReach = 0.4;
 
+    /// <summary>
+    /// 错位阈值（DIP）：预览与卡片顶的竖直差超过它，连接线才值得解释
+    /// （§4.7）；对齐时曲线是多余的，画同色桥。
+    /// </summary>
+    public const double MisalignedDip = 24;
+
+    /// <summary>缝隙阈值（DIP）：预览与卡片的水平空隙超过它才画曲线；贴着放（8）时画同色桥。</summary>
+    public const double GapDip = 16;
+
+    /// <summary>
+    /// Whether this arrangement needs the curve at all (§4.7, ticket 20): a
+    /// panel sitting squarely beside its row explains itself — the bridge
+    /// edge line carries the tie — and only a real offset (clamped off the
+    /// screen bottom, squeezed by a narrow work area) is worth a line. The
+    /// scales are the TARGET monitor's, supplied by the caller; thresholds
+    /// are in DIPs.
+    /// </summary>
+    public static bool ShouldDrawCurve(ScreenRect card, ScreenRect panel, double scaleX, double scaleY)
+    {
+        scaleX = Math.Max(scaleX, 0.01);
+        scaleY = Math.Max(scaleY, 0.01);
+
+        var misaligned = Math.Abs(card.Top - panel.Top) / scaleY;
+        var gap = panel.Left >= card.Right
+            ? (panel.Left - card.Right) / scaleX
+            : panel.Right <= card.Left
+                ? (card.Left - panel.Right) / scaleX
+                : 0;
+
+        return misaligned > MisalignedDip || gap > GapDip;
+    }
+
     /// <summary>Endpoints and control points of the connector curve, in physical pixels.</summary>
     public sealed record Curve(ScreenPoint From, ScreenPoint To, ScreenPoint ControlFrom, ScreenPoint ControlTo);
 

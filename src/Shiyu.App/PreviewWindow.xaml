@@ -22,17 +22,29 @@
       already has, so the window opens at the size it keeps. Content that
       outgrows the box scrolls; the box never moves.
     -->
-    <Border x:Name="Root" CornerRadius="{DynamicResource Radius.Window}"
-            Background="#F2FFFFFF" BorderBrush="#99D0D7DE" BorderThickness="1"
+    <!--
+      外壳（§4.7，票 20）：只画 SurfaceMaterial 材质底；圆角 8、轮廓与
+      投影归 DWM（DwmEffects 在句柄上设，拒收时 OnSourceInitialized 落
+      Backdrop.DegradeShell 的自绘描边+阴影与 12 DIP 透明边距）。
+      同色桥（§3.3 P2）：与卡片对齐时的连接表达——面向窄条那条边上一
+      条 2 DIP accent 边线，由窄条按对齐条件决定显隐，不画曲线。
+    -->
+    <Border x:Name="Root" CornerRadius="{DynamicResource Radius.Overlay}"
+            Background="{DynamicResource Brush.SurfaceMaterial}"
+            BorderThickness="0"
             Padding="12,10">
-        <Border.Effect>
-            <DropShadowEffect BlurRadius="18" ShadowDepth="2" Opacity="0.25"/>
-        </Border.Effect>
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
+
+            <Border x:Name="BridgeLeft" Grid.RowSpan="2" Width="2" Margin="0,8"
+                    HorizontalAlignment="Left"
+                    Background="{DynamicResource Brush.Accent}" Visibility="Collapsed"/>
+            <Border x:Name="BridgeRight" Grid.RowSpan="2" Width="2" Margin="0,8"
+                    HorizontalAlignment="Right"
+                    Background="{DynamicResource Brush.Accent}" Visibility="Collapsed"/>
 
             <DockPanel Grid.Row="0" Margin="0,0,0,6">
                 <TextBlock x:Name="WhenText" DockPanel.Dock="Right"

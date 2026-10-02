@@ -7,11 +7,11 @@
         TextElement.FontFamily="{DynamicResource Font.Ui}"
         TextElement.FontSize="{DynamicResource Type.Body}"
         TextElement.Foreground="{DynamicResource Brush.Text}">
-    <Border x:Name="Shell" CornerRadius="{DynamicResource Radius.Window}" Background="{DynamicResource Brush.SurfaceMaterial}"
-            BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1">
-        <Border.Effect>
-            <StaticResource ResourceKey="Shadow.Floating"/>
-        </Border.Effect>
+    <!-- 外壳（§4.7，票 20）：只画材质底；圆角 8、轮廓与投影归 DWM
+         （Overlay 8 与 DWM 同心，ADR-0012 §5）。DWM 拒收时由
+         Backdrop.AttachShell 落自绘描边+阴影与 12 DIP 透明边距。 -->
+    <Border x:Name="Shell" CornerRadius="{DynamicResource Radius.Overlay}" Background="{DynamicResource Brush.SurfaceMaterial}"
+            BorderThickness="0">
 
         <StackPanel Margin="14,12">
             <DockPanel LastChildFill="False" Margin="0,0,0,8">

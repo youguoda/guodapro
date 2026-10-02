@@ -82,7 +82,7 @@ public partial class PanelWindow : Window
         _target = settings.TargetLanguage;
         _source = settings.SourceLanguage;
 
-        Backdrop.Attach(this, () => BackdropKind.Acrylic);
+        Backdrop.AttachShell(this, Shell, () => BackdropKind.Acrylic);
     }
 
     /// <summary>

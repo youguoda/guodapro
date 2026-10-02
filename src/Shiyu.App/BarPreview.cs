@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Media;
 using Shiyu.Core;
+using Shiyu.Windows;
 
 namespace Shiyu.App;
 
@@ -58,13 +59,13 @@ internal partial class BarWindow
         {
             case PreviewCommand.Open when CardById(_previewPolicy.Card) is { } opening:
                 _connectorAnchor = AnchorFor(opening) ?? WindowRect();
-                EnsurePreview().ShowFor(opening, _connectorAnchor.Value, slide: false,
+                EnsurePreview().ShowFor(opening, PlacementAnchor(_connectorAnchor.Value), slide: false,
                     scaleX: scale.M11, scaleY: scale.M22, band: ZBandPolicy.FollowsHost(Topmost));
                 break;
 
             case PreviewCommand.Retarget when CardById(_previewPolicy.Card) is { } moving:
                 _connectorAnchor = AnchorFor(moving) ?? WindowRect();
-                EnsurePreview().ShowFor(moving, _connectorAnchor.Value, slide: true,
+                EnsurePreview().ShowFor(moving, PlacementAnchor(_connectorAnchor.Value), slide: true,
                     scaleX: scale.M11, scaleY: scale.M22, band: ZBandPolicy.FollowsHost(Topmost));
                 break;
 
@@ -78,6 +79,19 @@ internal partial class BarWindow
         // changed; the timer follows the policy's answer, arming for the next
         // one or standing down.
         ArmPreviewTick();
+    }
+
+    /// <summary>
+    /// Where ShowFor anchors the panel (U-03): horizontally to the BAR's outer
+    /// edge — the card used to carry the anchor and the panel pressed ~8 DIP
+    /// into the bar's window — while the vertical half stays the card's, so
+    /// "top-aligned with the row" survives (§3.3). The connector keeps the
+    /// card rect itself: the curve points at the row, not at the window.
+    /// </summary>
+    private ScreenRect PlacementAnchor(ScreenRect card)
+    {
+        var bar = WindowRect();
+        return new ScreenRect(bar.Left, card.Top, bar.Right, card.Bottom);
     }
 
     private ConnectorWindow? _connector;
@@ -106,6 +120,10 @@ internal partial class BarWindow
     /// The connector redraws with every step the panel takes — first arrival
     /// included, which is the teleport the ticket asks for: a line flying in
     /// from the previous row's position would read as a glitch, not as craft.
+    ///
+    /// The curve is conditional now (§4.7, ticket 20): squarely-beside is the
+    /// common case and gets the 2 DIP accent bridge on the panel's card-facing
+    /// edge instead; only a real offset (clamped or squeezed) earns the curve.
     /// </summary>
     private void OnPreviewPanelMoved(ScreenRect panel)
     {
@@ -114,10 +132,21 @@ internal partial class BarWindow
             return;
         }
 
-        _connector ??= new ConnectorWindow();
-        _connector.ShowCurve(
-            anchor, panel, new System.Windows.Interop.WindowInteropHelper(_preview).Handle,
-            ZBandPolicy.FollowsHost(Topmost));
+        var (scaleX, scaleY) = ScreenGeometry.ScaleForRect(panel);
+
+        if (PreviewConnector.ShouldDrawCurve(anchor, panel, scaleX, scaleY))
+        {
+            _preview?.HideBridge();
+            _connector ??= new ConnectorWindow();
+            _connector.ShowCurve(
+                anchor, panel, new System.Windows.Interop.WindowInteropHelper(_preview).Handle,
+                ZBandPolicy.FollowsHost(Topmost));
+        }
+        else
+        {
+            _connector?.HideCurve();
+            _preview?.ShowBridge();
+        }
     }
 
     /// <summary>The panel follows the pointer only between realised cards; off-list the bar anchors it.</summary>

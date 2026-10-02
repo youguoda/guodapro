@@ -21,21 +21,29 @@ public static class DwmEffects
     private const int DwmwcpRound = 2;
     private const int DwmsbtTransientWindow = 3;
 
-    public static void TryApplyPanel(IntPtr handle)
+    /// <summary>
+    /// Applies the Win11 panel look and answers whether the system took it:
+    /// true means DWM is painting the contour and the material, false means
+    /// the caller is on its own — the overlay shells' cue (ticket 20) to
+    /// draw their fallback stroke and shadow.
+    /// </summary>
+    public static bool TryApplyPanel(IntPtr handle)
     {
-        TrySet(handle, DwmwaWindowCornerPreference, DwmwcpRound);
-        TrySet(handle, DwmwaSystemBackdropType, DwmsbtTransientWindow);
+        var rounded = TrySet(handle, DwmwaWindowCornerPreference, DwmwcpRound);
+        var material = TrySet(handle, DwmwaSystemBackdropType, DwmsbtTransientWindow);
+        return rounded && material;
     }
 
-    private static void TrySet(IntPtr handle, int attribute, int value)
+    private static bool TrySet(IntPtr handle, int attribute, int value)
     {
         try
         {
-            _ = DwmSetWindowAttribute(handle, attribute, ref value, sizeof(int));
+            return DwmSetWindowAttribute(handle, attribute, ref value, sizeof(int)) == 0;
         }
         catch (Exception)
         {
             // expected: 这台构建的 Dwmapi 拒了该属性——回退外观。
+            return false;
         }
     }
 

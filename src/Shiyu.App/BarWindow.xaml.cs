@@ -114,8 +114,10 @@ internal partial class BarWindow : Window
         _refreshPolicy = new BarRefreshPolicy(settings.LightweightWhenHidden);
 
         // Win11 material behind the sheet (ticket 30): the window went layered
-        // in XAML, which is the only surface the backdrop renders on.
-        Backdrop.Attach(this, () => BackdropKind.Acrylic);
+        // in XAML, which is the only surface the backdrop renders on. The
+        // shell contract rides along (ticket 20): DWM draws the contour, and
+        // a system that will not draws the fallback chrome instead.
+        Backdrop.AttachShell(this, Shell, () => BackdropKind.Acrylic);
 
         // Kind is a segmented control now: four chips, one index.
         _kindChips = [KindChipAll, KindChipText, KindChipImage, KindChipFiles];

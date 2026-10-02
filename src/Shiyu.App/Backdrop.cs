@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Interop;
 
 namespace Shiyu.App;
@@ -23,9 +24,14 @@ internal enum BackdropKind
 /// redirect surface paints black right over it), so callers attach kinds to
 /// the layered surfaces and the rest get rounding plus the dark-mode flag.
 ///
-/// Every DWM call is best-effort: a failure — an old system, a future change —
-/// leaves the window on its own translucent brush, which is exactly ticket 03's
-/// degradation path, and costs the product zero version branches.
+/// Every DWM call is best-effort — but no longer silently so (ticket 20):
+/// <see cref="Attach(Window, Func{BackdropKind}, Action{bool})"/> reports
+/// whether the system actually took the shell attributes, because the overlay
+/// family's XAML now draws nothing DWM was supposed to paint. A window that
+/// hears "no" falls back to drawing its own 1 DIP stroke and shadow inside a
+/// 12 DIP transparent margin (<see cref="DegradeShell"/>); on an old system
+/// that is exactly ticket 03's degradation path, and it costs the product
+/// zero version branches.
 /// </summary>
 internal static class Backdrop
 {
@@ -36,7 +42,14 @@ internal static class Backdrop
     private const int BACKDROP_MICA = 2;
     private const int BACKDROP_ACRYLIC = 3;
 
-    private static readonly List<(Window Window, Func<BackdropKind> Kind)> Attached = [];
+    /// <summary>
+    /// The transparent rim a shell keeps when it must paint its own shadow
+    /// (§4.7): <see cref="System.Windows.Media.Effects.DropShadowEffect"/>
+    /// bleeds outside the element, and an edge-to-edge shell would clip it.
+    /// </summary>
+    public const double FallbackMargin = 12;
+
+    private static readonly List<(Window Window, Func<BackdropKind> Kind, Action<bool>? Applied)> Attached = [];
 
     /// <summary>Whether the theme currently on is Dark — set by the ThemeManager.</summary>
     public static bool DarkTheme { get; set; }
@@ -47,15 +60,55 @@ internal static class Backdrop
     /// work waits for the handle to exist.
     /// </summary>
     public static void Attach(Window window, Func<BackdropKind> kind)
+        => Attach(window, kind, applied: null);
+
+    /// <summary>
+    /// <see cref="Attach(Window, Func{BackdropKind})"/> plus the verdict:
+    /// <paramref name="applied"/> fires with true once DWM has accepted the
+    /// shell attributes (rounding, and the material when one was asked for),
+    /// or with false when this system will not paint them and the window is
+    /// on its own — the overlay shells' cue to draw their fallback chrome.
+    /// </summary>
+    public static void Attach(Window window, Func<BackdropKind> kind, Action<bool>? applied)
     {
-        Attached.Add((window, kind));
+        Attached.Add((window, kind, applied));
         window.Closed += (_, _) => Attached.RemoveAll(a => a.Window == window || !a.Window.IsLoaded);
-        window.SourceInitialized += (_, _) => Apply(window, kind(), DarkTheme);
+        window.SourceInitialized += (_, _) => applied?.Invoke(Apply(window, kind(), DarkTheme));
 
         if (window.IsLoaded)
         {
-            Apply(window, kind(), DarkTheme);
+            applied?.Invoke(Apply(window, kind(), DarkTheme));
         }
+    }
+
+    /// <summary>
+    /// The overlay family's shell contract (§4.7, ticket 20): the XAML paints
+    /// surface and nothing else — no border, no shadow — because DWM owns the
+    /// rounding and the drop shadow. This attach wires the verdict to that
+    /// contract: a system that refuses the attributes gets the self-drawn
+    /// chrome instead (<see cref="DegradeShell"/>).
+    /// </summary>
+    public static void AttachShell(Window window, Border shell, Func<BackdropKind> kind)
+        => Attach(window, kind, systemPainted =>
+        {
+            if (!systemPainted)
+            {
+                DegradeShell(shell);
+            }
+        });
+
+    /// <summary>
+    /// The fallback a shell draws when DWM will not paint it: a 1 DIP
+    /// CardStroke outline, the shared floating shadow, and the 12 DIP
+    /// transparent margin the shadow needs to exist at all. Idempotent and
+    /// token-driven, so a theme swap re-resolves the colours on its own.
+    /// </summary>
+    public static void DegradeShell(Border shell)
+    {
+        shell.Margin = new Thickness(FallbackMargin);
+        shell.BorderThickness = new Thickness(1);
+        shell.SetResourceReference(Border.BorderBrushProperty, "Brush.CardStroke");
+        shell.SetResourceReference(Border.EffectProperty, "Shadow.Floating");
     }
 
     /// <summary>Called by the ThemeManager after every palette swap.</summary>
@@ -65,38 +118,41 @@ internal static class Backdrop
 
         for (var index = Attached.Count - 1; index >= 0; index--)
         {
-            var (window, kind) = Attached[index];
+            var (window, kind, applied) = Attached[index];
             if (!window.IsLoaded)
             {
                 Attached.RemoveAt(index);
                 continue;
             }
 
-            Apply(window, kind(), dark);
+            applied?.Invoke(Apply(window, kind(), dark));
         }
     }
 
-    private static void Apply(Window window, BackdropKind kind, bool dark)
+    /// <summary>
+    /// Whether the system took the shell attributes. The corner preference is
+    /// the load-bearing half: with it refused there is no system-drawn contour
+    /// at all, and a refused material leaves the shell's own translucent fill
+    /// exposed — both are the self-drawn-chrome case.
+    /// </summary>
+    private static bool Apply(Window window, BackdropKind kind, bool dark)
     {
         var handle = new WindowInteropHelper(window).Handle;
         if (handle == IntPtr.Zero)
         {
-            return;
+            return false;
         }
 
-        TrySet(handle, DWMWA_USE_IMMERSIVE_DARK_MODE, dark ? 1 : 0);
-        TrySet(handle, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND);
+        _ = TrySet(handle, DWMWA_USE_IMMERSIVE_DARK_MODE, dark ? 1 : 0);
+        var rounded = TrySet(handle, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND);
+        var material = kind == BackdropKind.None
+            || TrySet(handle, DWMWA_SYSTEMBACKDROP_TYPE, kind == BackdropKind.Mica ? BACKDROP_MICA : BACKDROP_ACRYLIC);
 
-        if (kind != BackdropKind.None)
-        {
-            TrySet(handle, DWMWA_SYSTEMBACKDROP_TYPE, kind == BackdropKind.Mica ? BACKDROP_MICA : BACKDROP_ACRYLIC);
-        }
+        return rounded && material;
     }
 
-    private static void TrySet(IntPtr handle, int attribute, int value)
-    {
-        DwmSetWindowAttribute(handle, attribute, ref value, sizeof(int));
-    }
+    private static bool TrySet(IntPtr handle, int attribute, int value)
+        => DwmSetWindowAttribute(handle, attribute, ref value, sizeof(int)) == 0;
 
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(IntPtr handle, int attribute, ref int value, int size);
