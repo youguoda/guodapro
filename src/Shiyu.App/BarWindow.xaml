@@ -117,7 +117,8 @@
                             <Border x:Name="Hover" Grid.Row="0" CornerRadius="{DynamicResource Radius.Control}"
                                     Margin="2" Background="{DynamicResource Brush.StateHover}" Opacity="0"/>
                             <ContentPresenter Grid.Row="0" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            <Border x:Name="Indicator" Grid.Row="1" Width="12" Height="3" CornerRadius="1.5"
+                            <Border x:Name="Indicator" Grid.Row="1" Width="12" Height="3"
+                                    CornerRadius="{DynamicResource Radius.Thumb}"
                                     HorizontalAlignment="Center" Background="Transparent"
                                     IsHitTestVisible="False"/>
                         </Grid>
