@@ -1,8 +1,10 @@
 # 15 — 探针进仓库与视觉回归
 
 **来源：** 优化报告 O-26
-**Blocked by:** —
-**Status:** ready-for-agent
+**Branch:** `v3/probes`（探针模式 b3ba14e + 脚本 63f6255，均已并 master；探针模式部分早先已并）
+**Status:** done
+
+实施+实跑记录（2026-10-02）：`tools/probes/` 九文件全 ASCII——seed.ps1（12 文本含链接/邮箱/颜色/路径子类型+3 张程序生成 PNG+2 文件列表+3 标签+2 分组+2 收藏+1 置顶，经临时编译工具直调 EntryStore 保证 schema 不漂移）、lib.ps1（Per-Monitor-V2 感知、找窗、PrintWindow(2)、只读 UIA、PostMessage 键、在场检测、LockBits 像素分析）、五窗口探针+run-all+README。**实跑 20 检查 50 秒：PASS 12 / FAIL 8 / SKIP 0——8 红即评审视觉 P0 全部复现**（双圆角 15.7 DIP、←→ 键帽墨迹 2.7 DIP 高、托盘删除钮同色 rgb(87,96,106)、面板英文异常泄漏、设置选中分段 2.98:1、快速条主文本小于元信息、选中行无 accent 像素；管理窗按钮相撞当前未复现为绿、留作回归护栏）。互斥量并存由脚本自证（握住 Local\Shiyu 再起探针 PASS；同目录双探针互斥 PASS；用户实例在跑时该检查 SKIP 避免广播唤起真窗口）。8 红随票 19–24 落地转绿，转绿即像素回归验收。
 
 **What to build:**
 - 调试构建在设置了 `SHIYU_DATA_DIR` 时，按数据目录区分单实例名（例如 `Shiyu-<目录哈希>`），让探针实例能和用户的日常实例并存；发布构建行为不变。
