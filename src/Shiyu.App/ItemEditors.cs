@@ -50,9 +50,7 @@ internal static class ItemEditors
     }
 
     /// <param name="changed">Raised on picks; settings uses it to collapse dependent rows.</param>
-    /// <param name="initialChoice">
-    /// 覆盖初选（如引导把未配置用户直接落在公共通道）；省略时读当前设置。
-    /// </param>
+    /// <param name="initialChoice">覆盖初选；省略时读当前设置。</param>
     /// <param name="choiceEnabled">
     /// 某个选项当前是否可选；返回 false 的按钮禁用（如公共通道未上线，
     /// 票 08/ADR-0009——"即将推出"要看得见、点不动）。

@@ -92,7 +92,35 @@ public partial class LibraryWindow : Window
         ClearAllButton.SetResourceReference(ForegroundProperty, "Brush.Danger");
         ApplyDetailLayout(ActualWidth >= DualPaneThreshold);
         RefreshTagChoices();
+        RefreshAgentActions();
         Reload();
+    }
+
+    /// <summary>
+    /// Activated 时刷新一次 Agent 动作可用性：设置可能在窗外被改好
+    /// （引导完成、导入备份），回到本窗就该跟着亮起来。
+    /// </summary>
+    protected override void OnActivated(EventArgs e)
+    {
+        base.OnActivated(e);
+        RefreshAgentActions();
+    }
+
+    /// <summary>
+    /// Agent 动作要的是通用对话模型，只有自备密钥供得起（ADR-0009/票 08）。
+    /// 没配就禁用并说明去哪——而不是点了才在结果框里报一次运行时失败。
+    /// </summary>
+    private void RefreshAgentActions()
+    {
+        var ready = _settings().Backend.IsConfigured;
+        foreach (var button in new[]
+                 {
+                     AgentSummariseButton, AgentMergeButton, AgentRewriteButton, AgentTagsButton,
+                 })
+        {
+            button.IsEnabled = ready;
+            button.ToolTip = ready ? null : "需要自备密钥 · 去设置 → 服务";
+        }
     }
 
     /// <summary>Reads the first page again, e.g. after the history changed underneath.</summary>
@@ -829,11 +857,15 @@ public partial class LibraryWindow : Window
                 settings.TargetLanguage, settings.SourceLanguage);
             var result = await batch.RunAsync(selected, progress, _translateBatch.Token);
 
+            // 报告带原因（票 08）：失败多少、为什么，一句话说完。
             Status(_translateBatch.IsCancellationRequested
-                ? $"已取消：翻译 {result.Translated} 条，已完成部分已保留。"
-                : $"批量翻译完成：入库 {result.Translated} 条"
+                ? $"已取消：成功 {result.Translated} 条，已完成部分已保留。"
+                : "批量翻译完成：成功 " + result.Translated + " 条"
                   + (result.Skipped > 0 ? $"，跳过 {result.Skipped} 条（排除规则或已是译文）" : string.Empty)
-                  + (result.Failed > 0 ? $"，失败 {result.Failed} 条" : string.Empty) + "。");
+                  + (result.Failed > 0
+                      ? $"，失败 {result.Failed} 条（{result.FailureReason ?? "原因未知"}）"
+                      : string.Empty)
+                  + "。");
             Reload();
         }
         catch (OperationCanceledException)

@@ -140,7 +140,7 @@ public static class ConnectionProbe
             {
                 return new ConnectionTestOutcome(
                     ConnectionTestVerdict.Success, elapsed,
-                    Message: "连接成功，密钥有效；但免费额度已用完——实名或充值后即可正常翻译。");
+                    Message: "密钥有效，但免费额度已用完——实名或充值后即可正常翻译。");
             }
 
             return new ConnectionTestOutcome(

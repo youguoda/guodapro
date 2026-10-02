@@ -192,6 +192,27 @@ public partial class App : Application
             _settingsQuarantineNotice = null;
         }
 
+        // 公共通道未上线的存量迁移（票 08/ADR-0009）：选中公共通道的用户
+        // 只提示这一次——有自备密钥就切过去；没有就保留选择（设置里显示为
+        // 「即将推出」），翻译时由面板给配置引导卡。走 store 增量写。
+        if (Settings.TranslationBackend == TranslationBackendKind.Relay
+            && !Settings.RelayUnavailableNoticed)
+        {
+            var hasOwnKey = Settings.Backend.IsConfigured;
+            if (TryUpdateSettings(s => s with
+                {
+                    TranslationBackend = hasOwnKey
+                        ? TranslationBackendKind.OwnKey
+                        : s.TranslationBackend,
+                    RelayUnavailableNoticed = true,
+                }))
+            {
+                _tray?.ShowNotification("拾语", hasOwnKey
+                    ? "公共翻译通道还未开放，已改用你自己的密钥翻译。"
+                    : "公共翻译通道还未开放；翻译前请在 设置 → 服务 配置自己的密钥（有免费的预设可选）。");
+            }
+        }
+
         _writer = new WindowsClipboardWriter(_messageWindow);
 
         _capturePlatform = new WindowsCapturePlatform(_messageWindow, _writer);
@@ -659,7 +680,12 @@ public partial class App : Application
             _hotkeys, _writer, () => Settings.BuildTranslationBackend(), Settings,
             SaveTranslationToHistory,
             dictionary: BuildDictionary,
-            speech: _speech);
+            speech: _speech,
+
+            // 未配置时三条路（复制徽标、划词热键、翻译剪贴板）都落进
+            // 面板的引导卡，而不是异常文本（票 08）。
+            backendReady: () => Settings.IsTranslationConfigured,
+            openSettings: () => OpenSettingsAt("service.preset"));
         await _panel.TranslateAsync(text, onDisplayed);
     }
 
@@ -681,6 +707,30 @@ public partial class App : Application
                 : null;
 
     /// <summary>
+    /// 自备密钥后端的唯一组装点（票 08）：预设解析出的附加字段与温度规则
+    /// 在这里生效——面板的词典、动作、批量翻译都从这一个门进，预设对
+    /// 所有模型路径一视同仁。
+    /// </summary>
+    private OpenAiCompatibleBackend BuildOwnKeyBackend()
+    {
+        var preset = ProviderPresets.ResolveFor(Settings);
+        return new OpenAiCompatibleBackend(
+            Settings.Backend,
+            extraBody: preset?.ExtraBody,
+            maxTemperature: preset?.MaxTemperature,
+            sendTemperature: preset?.SendTemperature ?? true);
+    }
+
+    /// <summary>
+    /// 动作与批量翻译的模型工厂，与面板共用同一条路（票 08）：公共通道
+    /// 未上线时它就是自备密钥后端；哪天通道上线而中转还不支持流式对话，
+    /// 这里回落自备密钥，而不是把窗口架在一条没有的路上。
+    /// </summary>
+    private IStreamingModel BuildStreamingModel()
+        => Settings.BuildTranslationBackend() as IStreamingModel
+            ?? BuildOwnKeyBackend();
+
+    /// <summary>
     /// 自备密钥的 LLM 词典路：有 key 才有路。8s 预算罩住流式取卡——比免费
     /// 路宽一个数量级，因为它是兜底，慢到也仍然胜过没有卡。
     /// </summary>
@@ -688,7 +738,7 @@ public partial class App : Application
         => string.IsNullOrWhiteSpace(Settings.BackendApiKey)
             ? null
             : new BudgetedDictionary(
-                new LlmDictionaryApi(new OpenAiCompatibleBackend(Settings.Backend)),
+                new LlmDictionaryApi(BuildOwnKeyBackend()),
                 TimeSpan.FromSeconds(8));
 
     /// <summary>
@@ -724,11 +774,11 @@ public partial class App : Application
 
         if (_library is null)
         {
-            // 动作（总结/合并笔记）要的是通用流式模型，公共通道只有
-            // /translate 一张脸——这里恒走自备密钥后端；没配密钥的用户点
-            // 动作时由面板如实报"还没有配置"，不影响翻译本身。
+            // 动作（总结/合并/改写/建议标签）与批量翻译要的是通用模型，
+            // 与面板共用同一个后端工厂（票 08）：预设的附加字段与温度
+            // 规则对它们一视同仁。没配密钥时按钮在管理窗侧禁用并说明。
             _library = new LibraryWindow(
-                _store, _writer, _images!, () => new OpenAiCompatibleBackend(Settings.Backend), _icons!,
+                _store, _writer, _images!, BuildStreamingModel, _icons!,
                 () => Settings, _pipeline);
             _library.Closed += (_, _) => _library = null;
             _library.Show();

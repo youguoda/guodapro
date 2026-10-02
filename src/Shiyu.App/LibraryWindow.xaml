@@ -248,10 +248,10 @@
             <TextBlock Text="对所选条目：" VerticalAlignment="Center"
                        Foreground="{DynamicResource Brush.TextSecondary}"
                        FontSize="{DynamicResource Size.Secondary}" />
-            <Button Content="总结" Tag="Summarise" Style="{StaticResource Toolbutton}" Click="OnRunAgentAction" />
-            <Button Content="合并成笔记" Tag="MergeIntoNote" Style="{StaticResource Toolbutton}" Click="OnRunAgentAction" />
-            <Button Content="改写" Tag="Rewrite" Style="{StaticResource Toolbutton}" Click="OnRunAgentAction" />
-            <Button Content="建议标签" Tag="SuggestTags" Style="{StaticResource Toolbutton}" Click="OnRunAgentAction" />
+            <Button x:Name="AgentSummariseButton" Content="总结" Tag="Summarise" Style="{StaticResource Toolbutton}" Click="OnRunAgentAction" />
+            <Button x:Name="AgentMergeButton" Content="合并成笔记" Tag="MergeIntoNote" Style="{StaticResource Toolbutton}" Click="OnRunAgentAction" />
+            <Button x:Name="AgentRewriteButton" Content="改写" Tag="Rewrite" Style="{StaticResource Toolbutton}" Click="OnRunAgentAction" />
+            <Button x:Name="AgentTagsButton" Content="建议标签" Tag="SuggestTags" Style="{StaticResource Toolbutton}" Click="OnRunAgentAction" />
             <Button x:Name="TranslateBatchButton" Content="批量翻译存入历史"
                     Style="{StaticResource Toolbutton}" Click="OnTranslateBatch"
                     ToolTip="把选中的条目逐条翻译成设置里的译文语言，结果存为带「译」标的关联条目"/>
