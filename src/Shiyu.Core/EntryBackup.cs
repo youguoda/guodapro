@@ -10,16 +10,17 @@ public sealed partial class EntryStore
     /// not history, and a restore should not blank icons it still shares.
     /// </summary>
     public void ClearAll()
-    {
-        lock (_gate)
+        => Write(() =>
         {
-            using var write = BeginWrite();
-            ExecuteIn(write.Transaction, "DELETE FROM entries;");
-            ExecuteIn(write.Transaction, "DELETE FROM groups;");
-            write.Commit();
-            CountChanged();
-        }
-    }
+            lock (_gate)
+            {
+                using var write = BeginWrite();
+                ExecuteIn(write.Transaction, "DELETE FROM entries;");
+                ExecuteIn(write.Transaction, "DELETE FROM groups;");
+                write.Commit();
+                CountChanged();
+            }
+        });
 
     /// <summary>
     /// Writes one entry with every field intact — the import path. The
@@ -28,9 +29,10 @@ public sealed partial class EntryStore
     /// can never fail because the other machine had one group more.
     /// </summary>
     public void ImportEntry(Entry entry, string? groupName)
-    {
-        lock (_gate)
+        => Write(() =>
         {
+            lock (_gate)
+            {
             using var write = BeginWrite();
             var transaction = write.Transaction;
 
@@ -107,8 +109,8 @@ public sealed partial class EntryStore
             }
 
             write.Commit();
-        }
-    }
+            }
+        });
 
     /// <summary>
     /// Always a value, 'None' included: imports write classified rows, never

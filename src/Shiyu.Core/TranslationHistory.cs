@@ -32,9 +32,10 @@ public sealed partial class EntryStore
     /// so through the link, and it deletes like anything else.
     /// </summary>
     public Entry AppendTranslation(string text, string? sourceApp, DateTimeOffset createdAt, long? translatedFrom)
-    {
-        lock (_gate)
+        => Write(() =>
         {
+            lock (_gate)
+            {
             // Classified here rather than left NULL for a backfill: the
             // startup backfill is gone (O-22), so every text row arrives with
             // its subtype, 'None' included.
@@ -55,8 +56,8 @@ public sealed partial class EntryStore
             var id = (long)command.ExecuteScalar()!;
             CountChanged();
             return new Entry(id, text, sourceApp, createdAt) { Subtype = subtype, TranslatedFrom = translatedFrom };
-        }
-    }
+            }
+        });
 }
 
 public sealed partial class ClipboardPipeline

@@ -22,7 +22,6 @@ namespace Shiyu.App;
 internal partial class BarWindow : Window
 {
     private static readonly TimeSpan SearchDelay = TimeSpan.FromMilliseconds(220);
-    private static readonly TimeSpan BehindCheck = TimeSpan.FromSeconds(2);
     private const string AnyTag = "全部";
 
     private readonly EntryStore _store;
@@ -34,7 +33,6 @@ internal partial class BarWindow : Window
     private readonly ObservableCollection<BarCard> _pinned = [];
     private readonly ObservableCollection<BarCard> _cards = [];
     private readonly System.Windows.Threading.DispatcherTimer _searchDebounce;
-    private readonly System.Windows.Threading.DispatcherTimer _behindCheck;
 
     // --- preview panel (ticket 17) ------------------------------------------------
     // The policy decides when the preview opens, follows, and closes; this
@@ -49,7 +47,6 @@ internal partial class BarWindow : Window
 
     private BarCard? _selected;
     private AppSettings _settings;
-    private int _seenCount = -1;
     private ForegroundWindow _returnTo;
 
     /// <summary>Raised when the window is moved or resized; the owner persists geometry, throttled its own way.</summary>
@@ -89,9 +86,10 @@ internal partial class BarWindow : Window
         };
 
         // A resident window goes stale: copies keep arriving while it sits
-        // open. A cheap count probe notices and reloads — only while visible.
-        _behindCheck = new System.Windows.Threading.DispatcherTimer { Interval = BehindCheck };
-        _behindCheck.Tick += (_, _) => ReloadIfBehind();
+        // open. The store says so now, the moment a write lands — the old
+        // two-second count probe could only see the count, so a re-copied
+        // entry Touching its way back to the top never showed (O-37).
+        _store.Changed += OnStoreChanged;
 
         _previewPolicy = new PreviewPolicy(settings.PreviewHoverDelayMs, () => Environment.TickCount64);
         _previewTick = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
@@ -242,8 +240,9 @@ internal partial class BarWindow : Window
         // to: pasting from a card has to land where the user was.
         _returnTo = ForegroundWindow.Current();
 
-        ReloadIfBehind(force: true);
-        _behindCheck.Start();
+        // Whatever changed while hidden was ignored for a reason: showing
+        // again reads the world as it is now, in one go.
+        ReloadData();
         _previewTick.Start();
         MoveBesideCursorIfWanted();
         Show();
@@ -308,7 +307,6 @@ internal partial class BarWindow : Window
     /// <summary>Hides with the standard fade, from a painted surface, and gives focus back.</summary>
     public void Dismiss()
     {
-        _behindCheck.Stop();
         _previewTick.Stop();
         RunPreviewCommand(_previewPolicy.BarHidden());
 

@@ -517,7 +517,7 @@ internal partial class BarWindow
         switch (id)
         {
             case "copy":
-                _store.BumpUse(card.Id);
+                SelfWrite(() => _store.BumpUse(card.Id));
                 if (CopyCard(card))
                 {
                     Confirm(feedback, true);
@@ -533,7 +533,7 @@ internal partial class BarWindow
                 // Strips every format: plain text and nothing else, so what
                 // lands carries no styling from where it came. Never offered
                 // for file entries — there is no plain form to strip.
-                _store.BumpUse(card.Id);
+                SelfWrite(() => _store.BumpUse(card.Id));
                 if (_clipboard.SetText(card.Text))
                 {
                     Confirm(feedback, true);
@@ -558,12 +558,12 @@ internal partial class BarWindow
                 break;
 
             case "pin":
-                _store.SetPinned(card.Id, !card.IsPinned);
+                SelfWrite(() => _store.SetPinned(card.Id, !card.IsPinned));
                 ReloadData();
                 break;
 
             case "favorite":
-                _store.SetFavorite(card.Id, !card.Favorite);
+                SelfWrite(() => _store.SetFavorite(card.Id, !card.Favorite));
 
                 // In place: a favourite joins a collection and never moves,
                 // so the list around it must not so much as blink.
@@ -591,7 +591,7 @@ internal partial class BarWindow
                 var snapshot = _store.Get(card.Id);
                 var groupName = snapshot is null ? null : _store.GroupOf(snapshot)?.Name;
 
-                _store.Delete(card.Id);
+                SelfWrite(() => _store.Delete(card.Id));
                 _browser.Forget(card.Id);
                 RemoveCard(card);
                 UpdateFooter();
@@ -757,7 +757,7 @@ internal partial class BarWindow
 
         save.Click += (_, _) =>
         {
-            _store.SetNote(card.Id, box.Text);
+            SelfWrite(() => _store.SetNote(card.Id, box.Text));
             card.Note = string.IsNullOrWhiteSpace(box.Text) ? null : box.Text.Trim();
             ApplyFace(card, hovered: false);
             editor.Close();
@@ -765,7 +765,7 @@ internal partial class BarWindow
 
         remove.Click += (_, _) =>
         {
-            _store.SetNote(card.Id, null);
+            SelfWrite(() => _store.SetNote(card.Id, null));
             card.Note = null;
             ApplyFace(card, hovered: false);
             editor.Close();

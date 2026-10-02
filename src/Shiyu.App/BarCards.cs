@@ -286,7 +286,7 @@ internal partial class BarWindow
         {
             // Re-filing by group name recreates the group if it went away
             // mid-window, which is the same promise delete made about entries.
-            _store.ImportEntry(entry, group);
+            SelfWrite(() => _store.ImportEntry(entry, group));
         }
 
         ClearFeedback();
@@ -321,19 +321,54 @@ internal partial class BarWindow
         UpdateFooter();
     }
 
-    private void ReloadIfBehind(bool force = false)
+    /// <summary>
+    /// The store changed underneath — a copy from anywhere, a retention sweep,
+    /// an import, an edit in the library window. Reload while visible; while
+    /// hidden there is nothing to refresh and Summon reads fresh anyway, which
+    /// is exactly the boundary the old two-second probe kept.
+    /// </summary>
+    private void OnStoreChanged()
     {
-        var count = _store.Count();
-
-        if (!force && (count == _seenCount || !IsVisible))
+        // This window's own writes already produced exactly the visual change
+        // they meant to — favourite and note update their card in place, pin
+        // reloads itself — so a reload here would only reset the scroll under
+        // the user (O-37). The depth is read on the writer's thread; a benign
+        // race with a background write costs one extra reload, never a miss.
+        if (_selfWrites > 0 || !IsVisible)
         {
             return;
         }
 
-        _seenCount = count;
-        _browser.Reset();
-        RefreshTagChoices();
-        Rebuild();
+        if (Dispatcher.CheckAccess())
+        {
+            ReloadData();
+        }
+        else
+        {
+            // External writes arrive on the pipeline's thread; the cards
+            // belong to the dispatcher's.
+            Dispatcher.BeginInvoke(ReloadData);
+        }
+    }
+
+    /// <summary>How many of this window's own writes are in flight.</summary>
+    private int _selfWrites;
+
+    /// <summary>
+    /// Runs one of this window's own writes, whose Changed event it intends
+    /// to ignore because it handles the visual itself.
+    /// </summary>
+    private void SelfWrite(Action write)
+    {
+        _selfWrites++;
+        try
+        {
+            write();
+        }
+        finally
+        {
+            _selfWrites--;
+        }
     }
 
     private void OnCardsScrolled(object sender, ScrollChangedEventArgs e)

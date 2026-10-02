@@ -47,6 +47,66 @@ public sealed partial class EntryStore : IDisposable
     /// </summary>
     private int? _countCache;
 
+    /// <summary>
+    /// Raised once after the outermost write of a call — or of a whole
+    /// <see cref="RunInTransaction"/> batch — has committed. The narrow bar
+    /// subscribes instead of polling a count every two seconds: a count probe
+    /// cannot see a re-copied entry Touch its way back to the top, or a note
+    /// edited in another window (O-37).
+    ///
+    /// The event fires <em>outside</em> the gate, deliberately. A handler that
+    /// hops to a UI thread with Dispatcher.Invoke would deadlock against the
+    /// gate if it were held (the UI thread may be the one waiting on it), and
+    /// handlers are free to call back into the store — every public member
+    /// takes the gate cleanly.
+    /// </summary>
+    public event Action? Changed;
+
+    /// <summary>How many write frames are nested on this thread. Touched only under the gate.</summary>
+    private int _writeDepth;
+
+    /// <summary>
+    /// Runs one public write. Every write funnels through here so the event
+    /// discipline cannot drift: the outermost frame reports, inner frames do
+    /// not — an import inside a batch is the batch's to report, and a
+    /// mid-transaction broadcast would describe a state a rollback then
+    /// un-happens. A write that throws reports nothing, because it landed
+    /// nothing.
+    /// </summary>
+    private TResult Write<TResult>(Func<TResult> work)
+    {
+        TResult result;
+        bool report;
+
+        lock (_gate)
+        {
+            _writeDepth++;
+            try
+            {
+                result = work();
+            }
+            finally
+            {
+                _writeDepth--;
+            }
+
+            report = _writeDepth == 0;
+        }
+
+        if (report)
+        {
+            Changed?.Invoke();
+        }
+
+        return result;
+    }
+
+    private void Write(Action work) => Write<object?>(() =>
+    {
+        work();
+        return null;
+    });
+
     /// <summary>Internal for tests: writing rows the way an older build would have.</summary>
     internal SqliteConnection Connection => _connection;
 
@@ -581,8 +641,9 @@ public sealed partial class EntryStore : IDisposable
         DateTimeOffset createdAt,
         string? html = null,
         string? rtf = null)
-    {
-        lock (_gate)
+        => Write(() =>
+        {
+            lock (_gate)
         {
             var subtype = SubtypeClassifier.Detect(text);
 
@@ -618,7 +679,7 @@ public sealed partial class EntryStore : IDisposable
                 Rtf = rtf,
             };
         }
-    }
+        });
 
     /// <summary>
     /// Records a file copy: the label is what the list shows, the paths are
@@ -628,8 +689,9 @@ public sealed partial class EntryStore : IDisposable
         IReadOnlyList<string> paths,
         string? sourceApp,
         DateTimeOffset createdAt)
-    {
-        lock (_gate)
+        => Write(() =>
+        {
+            lock (_gate)
         {
             var capped = paths.Count > FileEntries.Cap;
             var kept = FileEntries.WithinCap(paths, out _);
@@ -654,7 +716,7 @@ public sealed partial class EntryStore : IDisposable
                 Files = kept,
             };
         }
-    }
+        });
 
     /// <summary>
     /// Whether the application has a row in the icon store — including a
@@ -715,8 +777,9 @@ public sealed partial class EntryStore : IDisposable
         DateTimeOffset createdAt,
         int width = 0,
         int height = 0)
-    {
-        lock (_gate)
+        => Write(() =>
+        {
+            lock (_gate)
         {
             using var write = BeginWrite();
 
@@ -753,7 +816,7 @@ public sealed partial class EntryStore : IDisposable
                 ImageHeight = height,
             };
         }
-    }
+        });
 
     /// <summary>
     /// Writes an entry's payload row, when there is one. Callers pass the
@@ -786,15 +849,16 @@ public sealed partial class EntryStore : IDisposable
     /// The entry and its thumbnail are untouched.
     /// </summary>
     public void ClearOriginal(long id)
-    {
-        lock (_gate)
+        => Write(() =>
         {
-            using var command = _connection.CreateCommand();
-            command.CommandText = "UPDATE entries SET original_path = NULL WHERE id = $id;";
-            command.Parameters.AddWithValue("$id", id);
-            command.ExecuteNonQuery();
-        }
-    }
+            lock (_gate)
+            {
+                using var command = _connection.CreateCommand();
+                command.CommandText = "UPDATE entries SET original_path = NULL WHERE id = $id;";
+                command.Parameters.AddWithValue("$id", id);
+                command.ExecuteNonQuery();
+            }
+        });
 
     /// <summary>Every image entry that still has an original on disk.</summary>
     public IReadOnlyList<Entry> ImagesWithOriginals(bool keepFavorites = false, bool keepPinned = false)
@@ -871,8 +935,9 @@ public sealed partial class EntryStore : IDisposable
     /// a commit each, which turns a bulk write into a wait measured in minutes.
     /// </summary>
     public void AppendMany(IEnumerable<NewEntry> entries)
-    {
-        lock (_gate)
+        => Write(() =>
+        {
+            lock (_gate)
         {
             using var write = BeginWrite();
             using var command = _connection.CreateCommand();
@@ -902,7 +967,7 @@ public sealed partial class EntryStore : IDisposable
             write.Commit();
             CountChanged();
         }
-    }
+        });
 
     /// <summary>
     /// The last thing copied, or null when the history is empty. Ordered by
@@ -1279,21 +1344,22 @@ public sealed partial class EntryStore : IDisposable
 
     /// <summary>Returns whether there was anything to delete.</summary>
     public bool Delete(long id)
-    {
-        lock (_gate)
+        => Write(() =>
         {
-            using var command = _connection.CreateCommand();
-            command.CommandText = "DELETE FROM entries WHERE id = $id;";
-            command.Parameters.AddWithValue("$id", id);
-            var removed = command.ExecuteNonQuery() > 0;
-            if (removed)
+            lock (_gate)
             {
-                CountChanged();
-            }
+                using var command = _connection.CreateCommand();
+                command.CommandText = "DELETE FROM entries WHERE id = $id;";
+                command.Parameters.AddWithValue("$id", id);
+                var removed = command.ExecuteNonQuery() > 0;
+                if (removed)
+                {
+                    CountChanged();
+                }
 
-            return removed;
-        }
-    }
+                return removed;
+            }
+        });
 
     /// <summary>
     /// Deletes entries created within the range, both ends included.
@@ -1304,26 +1370,27 @@ public sealed partial class EntryStore : IDisposable
     /// </summary>
     public int DeleteCreatedBetween(
         DateTimeOffset from, DateTimeOffset to, bool keepFavorites = false, bool keepPinned = false)
-    {
-        lock (_gate)
+        => Write(() =>
         {
-            using var command = _connection.CreateCommand();
-            command.CommandText = $"""
-                DELETE FROM entries
-                WHERE created_at BETWEEN $from AND $to
-                  AND NOT ({ProtectedConditionFor(keepFavorites, keepPinned)});
-                """;
-            command.Parameters.AddWithValue("$from", from.ToUnixTimeMilliseconds());
-            command.Parameters.AddWithValue("$to", to.ToUnixTimeMilliseconds());
-            var removed = command.ExecuteNonQuery();
-            if (removed > 0)
+            lock (_gate)
             {
-                CountChanged();
-            }
+                using var command = _connection.CreateCommand();
+                command.CommandText = $"""
+                    DELETE FROM entries
+                    WHERE created_at BETWEEN $from AND $to
+                      AND NOT ({ProtectedConditionFor(keepFavorites, keepPinned)});
+                    """;
+                command.Parameters.AddWithValue("$from", from.ToUnixTimeMilliseconds());
+                command.Parameters.AddWithValue("$to", to.ToUnixTimeMilliseconds());
+                var removed = command.ExecuteNonQuery();
+                if (removed > 0)
+                {
+                    CountChanged();
+                }
 
-            return removed;
-        }
-    }
+                return removed;
+            }
+        });
 
     /// <summary>
     /// The SQL that says an entry is protected — literally, so any caller can
@@ -1353,20 +1420,21 @@ public sealed partial class EntryStore : IDisposable
     /// pile they so carefully starred — and the confirmation copy says so.
     /// </summary>
     public int DeleteAll(bool keepFavorites = false, bool keepPinned = false)
-    {
-        lock (_gate)
+        => Write(() =>
         {
-            using var command = _connection.CreateCommand();
-            command.CommandText = $"DELETE FROM entries WHERE NOT ({ProtectedConditionFor(keepFavorites, keepPinned)});";
-            var removed = command.ExecuteNonQuery();
-            if (removed > 0)
+            lock (_gate)
             {
-                CountChanged();
-            }
+                using var command = _connection.CreateCommand();
+                command.CommandText = $"DELETE FROM entries WHERE NOT ({ProtectedConditionFor(keepFavorites, keepPinned)});";
+                var removed = command.ExecuteNonQuery();
+                if (removed > 0)
+                {
+                    CountChanged();
+                }
 
-            return removed;
-        }
-    }
+                return removed;
+            }
+        });
 
     /// <summary>
     /// Neutralises the wildcards LIKE would otherwise read in a user's query —
@@ -1401,16 +1469,17 @@ public sealed partial class EntryStore : IDisposable
     /// second copy of it.
     /// </summary>
     public void Touch(long id, DateTimeOffset at)
-    {
-        lock (_gate)
+        => Write(() =>
         {
-            using var command = _connection.CreateCommand();
-            command.CommandText = "UPDATE entries SET created_at = $createdAt WHERE id = $id;";
-            command.Parameters.AddWithValue("$createdAt", at.ToUnixTimeMilliseconds());
-            command.Parameters.AddWithValue("$id", id);
-            command.ExecuteNonQuery();
-        }
-    }
+            lock (_gate)
+            {
+                using var command = _connection.CreateCommand();
+                command.CommandText = "UPDATE entries SET created_at = $createdAt WHERE id = $id;";
+                command.Parameters.AddWithValue("$createdAt", at.ToUnixTimeMilliseconds());
+                command.Parameters.AddWithValue("$id", id);
+                command.ExecuteNonQuery();
+            }
+        });
 
     public IReadOnlyList<Entry> Recent(int limit)
     {
@@ -1520,30 +1589,34 @@ public sealed partial class EntryStore : IDisposable
     /// cannot nest them. The gate is held throughout and every other caller
     /// waits, so the work should be writes already prepared — never reading
     /// files or waiting on anything.
+    ///
+    /// The batch reports one <see cref="Changed"/> after it commits, however
+    /// many writes are inside it; one that throws reports nothing.
     /// </summary>
     internal void RunInTransaction(Action work)
-    {
-        lock (_gate)
+        => Write(() =>
         {
-            if (_batch is not null)
+            lock (_gate)
             {
-                work();
-                return;
-            }
+                if (_batch is not null)
+                {
+                    work();
+                    return;
+                }
 
-            using var transaction = _connection.BeginTransaction();
-            _batch = transaction;
-            try
-            {
-                work();
-                transaction.Commit();
+                using var transaction = _connection.BeginTransaction();
+                _batch = transaction;
+                try
+                {
+                    work();
+                    transaction.Commit();
+                }
+                finally
+                {
+                    _batch = null;
+                }
             }
-            finally
-            {
-                _batch = null;
-            }
-        }
-    }
+        });
 
     /// <summary>A write that spans statements: inside the open batch when there is one, else in its own transaction.</summary>
     private WriteScope BeginWrite()

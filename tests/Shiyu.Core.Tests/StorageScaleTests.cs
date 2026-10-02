@@ -465,4 +465,84 @@ public class StorageScaleTests
         Assert.Single(store.Search("普通文本", limit: 10));
         Assert.Single(store.Search("富文本", limit: 10));
     }
+
+    // --- the Changed event (O-37, ticket 12 M) ---------------------------------
+
+    [Fact]
+    public void Each_write_raises_Changed_once_and_reads_raise_nothing()
+    {
+        using var database = new TempDatabase();
+        using var store = EntryStore.Open(database.FilePath);
+
+        var raised = 0;
+        store.Changed += () => raised++;
+
+        // Reads are not news.
+        _ = store.Count();
+        _ = store.Page(10);
+        _ = store.Recent(10);
+        _ = store.Search("nothing", 10);
+        Assert.Equal(0, raised);
+
+        store.Append("one", "test", Noon);
+        store.AppendTranslation("译文", "test", Noon.AddSeconds(1), null);
+        store.AppendImage("图片", [1], "C:\\x.png", "test", Noon.AddSeconds(2));
+        store.AppendFiles(["C:\\a"], "test", Noon.AddSeconds(3));
+        store.SetPinned(1, true);
+        store.SetFavorite(1, true);
+        store.SetNote(1, "note");
+        store.BumpUse(1);
+        store.Touch(1, Noon.AddSeconds(9));
+        store.AddTag(1, "tag");
+        store.RemoveTag(1, "tag");
+        var group = store.CreateGroup("组");
+        store.SetEntryGroup(1, group);
+        store.Delete(1);
+
+        Assert.Equal(14, raised);
+    }
+
+    [Fact]
+    public void A_batch_reports_once_and_a_rolled_back_batch_reports_nothing()
+    {
+        using var database = new TempDatabase();
+        using var store = EntryStore.Open(database.FilePath);
+
+        var raised = 0;
+        store.Changed += () => raised++;
+
+        // Three writes inside one transaction are one piece of news: an
+        // importer's hundred rows must not reload a subscriber a hundred
+        // times, and mid-transaction broadcasts describe states a rollback
+        // then un-happens.
+        store.RunInTransaction(() =>
+        {
+            store.ImportEntry(new Entry(0, "甲", "test", Noon), groupName: null);
+            store.ImportEntry(new Entry(0, "乙", "test", Noon.AddSeconds(1)), groupName: null);
+            store.ImportEntry(new Entry(0, "丙", "test", Noon.AddSeconds(2)), groupName: null);
+        });
+        Assert.Equal(1, raised);
+
+        Assert.Throws<InvalidOperationException>(() => store.RunInTransaction(() =>
+        {
+            store.Append("这句不会留下", "test", Noon.AddSeconds(3));
+            throw new InvalidOperationException("boom");
+        }));
+
+        Assert.Equal(1, raised);
+        Assert.Equal(3, store.Count());
+    }
+
+    [Fact]
+    public void A_handler_may_call_back_into_the_store_without_deadlocking()
+    {
+        using var database = new TempDatabase();
+        using var store = EntryStore.Open(database.FilePath);
+
+        // The event is raised outside the gate precisely so this works — a
+        // handler reading the store it was told about is the normal shape
+        // (the narrow bar reloads on it).
+        store.Changed += () => Assert.Equal(1, store.Count());
+        store.Append("the only entry", "test", Noon);
+    }
 }
