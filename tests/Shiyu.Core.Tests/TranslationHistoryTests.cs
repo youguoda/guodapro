@@ -122,6 +122,9 @@ public class TranslationHistoryTests
         Assert.Equal("alpha text", batch.SentRequests[0].UserContent);
         Assert.Equal("beta text", batch.SentRequests[1].UserContent);
         Assert.All(batch.SentRequests, request => Assert.DoesNotContain("not selected", request.UserContent));
+
+        // 全部成功就没有"原因"可报。
+        Assert.Null(result.FailureReason);
     }
 
     [Fact]
@@ -163,6 +166,9 @@ public class TranslationHistoryTests
         Assert.Equal(0, result.Translated);
         Assert.Equal(2, result.Failed);
         Assert.Equal(2, bench.Store.Count());
+
+        // 报告带上第一条失败的人话原因（票 08）：光说"失败 2 条"是死胡同。
+        Assert.Equal("后端无法连接", result.FailureReason);
     }
 
     [Fact]

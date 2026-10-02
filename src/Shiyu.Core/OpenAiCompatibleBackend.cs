@@ -25,11 +25,20 @@ public sealed record TranslationBackendOptions(string BaseUrl, string Model, str
 /// Chosen over a provider-specific client so that swapping backends is a
 /// settings change rather than a code change — the port exists precisely so
 /// this class can be replaced without anything else noticing.
+///
+/// 三个可选参数是服务商预设（票 08）落在传输层的形状：各家"关思考"的
+/// 扩展字段、温度上限或不发温度。全部缺省时行为与从前一字不差。
 /// </summary>
+/// <param name="extraBody">附加到请求体顶层的字段（如 DeepSeek 的 thinking.type=disabled）。</param>
+/// <param name="maxTemperature">温度上限：实际发送 Min(请求值, 该值)。</param>
+/// <param name="sendTemperature">false 时整个 temperature 字段不发（Kimi 的温度是固定值，传错报错）。</param>
 public sealed class OpenAiCompatibleBackend(
     TranslationBackendOptions options,
     HttpClient? httpClient = null,
-    Func<TimeSpan>? transientBackoff = null) : ITranslationBackend, IStreamingModel, IDisposable
+    Func<TimeSpan>? transientBackoff = null,
+    JsonObject? extraBody = null,
+    double? maxTemperature = null,
+    bool sendTemperature = true) : ITranslationBackend, IStreamingModel, IDisposable
 {
     /// <summary>瞬态失败最多退避重试两次（即整发三次）。</summary>
     private const int MaxAttempts = 3;
@@ -157,7 +166,10 @@ public sealed class OpenAiCompatibleBackend(
             ["stream"] = true,
 
             // Translation wants the likeliest rendering, not an interesting one.
-            ["temperature"] = request.Temperature,
+            // Presets may clamp the value to the provider's legal range, or
+            // forbid sending it at all — Kimi's is a fixed number and rejects
+            // anything else.
+            ["temperature"] = Math.Min(request.Temperature, maxTemperature ?? request.Temperature),
             ["messages"] = new JsonArray
             {
                 new JsonObject
@@ -172,6 +184,21 @@ public sealed class OpenAiCompatibleBackend(
                 },
             },
         };
+
+        if (!sendTemperature)
+        {
+            body.Remove("temperature");
+        }
+
+        // The preset's provider-specific fields ride on top: deep-cloned so a
+        // shared preset object cannot be mutated through a request body.
+        if (extraBody is { Count: > 0 })
+        {
+            foreach (var (name, value) in extraBody)
+            {
+                body[name] = value?.DeepClone();
+            }
+        }
 
         var message = new HttpRequestMessage(
             HttpMethod.Post, $"{options.BaseUrl.TrimEnd('/')}/chat/completions")
@@ -206,6 +233,25 @@ public sealed class OpenAiCompatibleBackend(
 
         if (terminal)
         {
+            // 百炼的未实名账号免费额度耗尽会以 403 AllocationQuota.FreeTierOnly
+            // 回来：密钥是好的，拒绝的是额度——把它误报成"凭据无效"会把
+            // 用户支去改一个没问题的密钥。只认这一个错误码，其余终态错误
+            // 的响应体依旧不进文案。
+            string? terminalBody = null;
+            try
+            {
+                terminalBody = await response.Content.ReadAsStringAsync(cancellation);
+            }
+            catch (Exception)
+            {
+                // The status code alone is still worth reporting.
+            }
+
+            if (terminalBody?.Contains("AllocationQuota.FreeTierOnly", StringComparison.Ordinal) == true)
+            {
+                return "翻译失败：免费额度已用完，请实名或充值。";
+            }
+
             return $"翻译失败：{reason}。";
         }
 
