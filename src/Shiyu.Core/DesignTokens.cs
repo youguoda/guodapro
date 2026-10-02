@@ -88,6 +88,11 @@ public static class DesignTokens
         (Text, SurfaceInput),
         (TextSecondary, SurfaceSubtle),
 
+        // 票 18（评审 §3.6）：词典卡例句/同义词曾用 TextTertiary 压在
+        // SurfaceSubtle 上，实测 4.33:1——界面已改画次级色，这一对同时入表，
+        // 让调色板再也不能悄悄把它调回不足。
+        (TextTertiary, SurfaceSubtle),
+
         // The material tint is translucent: the test blends it over the theme's
         // Background, which is what the acrylic behind the window effectively is.
         (Text, SurfaceMaterial),
@@ -113,7 +118,9 @@ public static class DesignTokens
         [Border] = "#FFD0D7DE",
         [Text] = "#FF1F2328",
         [TextSecondary] = "#FF57606A",
-        [TextTertiary] = "#FF62707B",
+        // 票 18：原 #FF62707B 在 SurfaceSubtle 上只有 4.33:1；加深一档到
+        // 4.59:1，让上面新入表的 (TextTertiary, SurfaceSubtle) 过 AA。
+        [TextTertiary] = "#FF5E6C77",
         [Accent] = "#FF1A66DB",
         [AccentHover] = "#FF2A6FD8",
         [AccentPressed] = "#FF1557C4",
