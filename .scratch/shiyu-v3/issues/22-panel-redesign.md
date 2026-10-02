@@ -2,7 +2,7 @@
 
 **来源：** UI 报告 §3.6、§6.2（线框、规格、错误文案映射）、U-09、U-10、U-22 至 U-24；样稿 `docs/review/mockups/panel.png`
 **Blocked by:** 08、20
-**Status:** ready-for-agent
+**Status:** done（已并 master ecea1a2；票 17 的 Library/Update Attach 遗漏由主控修复并实证）
 
 **What to build:**
 - **头部：** 语言名统一中文显示，换方向按钮放在两者之间；"整段 / 逐句"做成模式分段（单词态隐藏）；关闭 32×32；全部用 Fluent 字形。

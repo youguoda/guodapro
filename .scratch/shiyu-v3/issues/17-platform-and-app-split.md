@@ -2,7 +2,7 @@
 
 **来源：** 优化报告 O-39、O-40、O-41、O-43（其余部分）
 **Blocked by:** 16
-**Status:** ready-for-agent
+**Status:** done（已并 master ecea1a2；票 17 的 Library/Update Attach 遗漏由主控修复并实证）
 
 **What to build:**
 - App 层的 7 个 `DllImport` 移到 `Shiyu.Windows`，合并 6 组重复声明。
