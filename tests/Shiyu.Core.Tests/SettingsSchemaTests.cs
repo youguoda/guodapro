@@ -61,13 +61,15 @@ public class SettingsSchemaTests
             ["hotkeys.selection-badge"] = "translate",
             ["translate.hotkey-ref"] = "translate",
 
-            // 快捷键：只放按键；Win+V 是快速粘贴的子项；管理窗键新增。
+            // 快捷键：只放按键；Win+V 是快速粘贴的子项；管理窗键新增；
+            // 窗口内按键速查（§5.2 键位即数据，票 25）。
             ["hotkey.bar"] = "hotkeys",
             ["hotkey.quickbar"] = "hotkeys",
             ["winv.takeover"] = "hotkeys",
             ["hotkey.capture"] = "hotkeys",
             ["hotkey.clipboard"] = "hotkeys",
             ["hotkey.library"] = "hotkeys",
+            ["hotkeys.cheatsheet"] = "hotkeys",
             ["hotkeys.reset"] = "hotkeys",
 
             // 关于：品牌、更新、帮助、隐私。

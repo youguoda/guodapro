@@ -318,6 +318,13 @@ public static class SettingsSchema
                     Hint: "打开历史管理窗口；默认不设。",
                     Keywords: ["管理", "管理窗", "历史", "快捷键"],
                     Icon: "E8B7")),
+            new SettingsSection("hotkeys.cheatsheet", "窗口内按键",
+                new SettingsItem(
+                    "hotkeys.cheatsheet", "按键速查", SettingsControl.Custom,
+                    Hint: "窄条与设置窗里的按键，全部来自同一张键位表——全局键在上面改，窗口键随版本定。",
+                    Keywords: ["速查", "键位", "按键", "键盘", "键帽", "快捷键", "口诀"],
+                    Icon: "E765",
+                    FullBleed: true)),
             new SettingsSection("hotkeys.defaults", "默认",
                 new SettingsItem(
                     "hotkeys.reset", "恢复全部默认", SettingsControl.Custom,

@@ -7,7 +7,8 @@
         TextElement.FontFamily="{DynamicResource Font.Ui}"
         TextElement.FontSize="{DynamicResource Type.Body}"
         TextElement.Foreground="{DynamicResource Brush.Text}"
-        PreviewKeyDown="OnWindowKeyDown">
+        PreviewKeyDown="OnWindowKeyDown"
+        PreviewKeyUp="OnWindowKeyUp">
     <!--
       票 23 / ADR-0012 §7：常规窗走系统窗框——SingleBorderWindow + 客户区
       透明（code-behind 把 CompositionTarget.BackgroundColor 置透明，票 19

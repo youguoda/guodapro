@@ -44,6 +44,11 @@ public partial class SettingsWindow : Window
     private readonly Dictionary<string, StackPanel> _pageBodies = [];
     private readonly List<(string PageId, ToggleButton Button, TextBlock Label)> _nav = [];
 
+    /// <summary>导航项右缘的 1–6 键帽，与 <see cref="_nav"/> 同序（含关于）——按住 Ctrl 浮出（§5.2 L1）。</summary>
+    private readonly List<ContentControl> _navCaps = [];
+
+    private bool _navHintsOn;
+
     // 外部变化的"跟随"要把新值推进控件，建行时把每种形状的控件记下来。
     private readonly Dictionary<string, TextBox> _textBoxes = [];
     private readonly Dictionary<string, CheckBox> _toggles = [];
@@ -110,6 +115,10 @@ public partial class SettingsWindow : Window
 
         Loaded += (_, _) => ReflowNav();
         SizeChanged += (_, _) => ReflowNav();
+
+        // 按住 Ctrl 时窗口失焦，KeyUp 不会再来：帽在这里收走，否则永远亮着。
+        Deactivated += (_, _) => SetNavKeyHints(false);
+        LostKeyboardFocus += (_, _) => SetNavKeyHints(false);
 
         SelectPage(SettingsSchema.ResolvePage(_lastPage)?.Id ?? "general");
     }
@@ -202,6 +211,19 @@ public partial class SettingsWindow : Window
         row.Children.Add(label);
         label.Margin = new Thickness(40, 0, 0, 0);
 
+        // 键位即数据（§5.2 L1）：按住 Ctrl，导航项右缘浮出页号键帽——页序
+        // 就是 Ctrl+1–6 的落点，帽与键同源同序。
+        var cap = new ContentControl
+        {
+            Content = (_nav.Count + 1).ToString(),
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Visibility = Visibility.Collapsed,
+            IsHitTestVisible = false,
+        };
+        cap.SetResourceReference(StyleProperty, "KeyCap");
+        row.Children.Add(cap);
+
         var button = new ToggleButton
         {
             Content = row,
@@ -218,8 +240,37 @@ public partial class SettingsWindow : Window
         indicator.IsHitTestVisible = false;
 
         _nav.Add((page.Id, button, label));
+        _navCaps.Add(cap);
         button.Click += (_, _) => SelectPage(page.Id);
         return host;
+    }
+
+    // --- L1 按需教学（§5.2：按住 Ctrl，或按 F1 打开速查） ------------------------
+
+    /// <summary>按住 Ctrl：导航项就地浮出 1–6；松开或失焦即收。窄导航条上不浮（盖不住图标）。</summary>
+    private void SetNavKeyHints(bool on)
+    {
+        if (_navHintsOn == on)
+        {
+            return;
+        }
+
+        _navHintsOn = on;
+        var roomForCaps = ActualWidth >= NavCollapseWidth;
+        foreach (var cap in _navCaps)
+        {
+            cap.Visibility = on && roomForCaps ? Visibility.Visible : Visibility.Collapsed;
+        }
+    }
+
+    private void OnWindowKeyUp(object sender, KeyEventArgs e)
+    {
+        // Ctrl 的释放必须接住：失去焦点时收帽由 Deactivated 兜底，这里管
+        // 正常的松手。
+        if (e.Key is Key.LeftCtrl or Key.RightCtrl)
+        {
+            SetNavKeyHints(false);
+        }
     }
 
     private void SelectPage(string pageId)
@@ -838,11 +889,110 @@ public partial class SettingsWindow : Window
         "about.logs" => LogsRow(),
         "about.privacy-note" => PrivacyNote(),
         "hotkeys.reset" => ResetHotkeysRow(),
+        "hotkeys.cheatsheet" => KeyMapCard(),
         "service.preset" => PresetRow(state),
         "exclusions" => ExclusionsRow(item, state),
         "bar.actions" => ActionsListRow(item, state),
         _ => new TextBlock(),
     };
+
+    // --- 键位速查（§5.2 键位即数据） ---------------------------------------------
+
+    /// <summary>
+    /// 窗口内按键速查区：整张卡从 <see cref="KeyMap"/> 渲染——这里不出现任何
+    /// 手写按键，改 Core 那张表，这卡、窄条键帽、托盘菜单、引导同步变。
+    /// 托盘菜单的「键位速查…」深链落在这。
+    /// </summary>
+    private FrameworkElement KeyMapCard()
+    {
+        var list = new StackPanel();
+
+        foreach (var row in KeyMap.Rows)
+        {
+            var grid = new Grid { Margin = new Thickness(0, 3, 0, 3) };
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(26) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(168) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            if (row.Glyph is { Length: > 0 })
+            {
+                var icon = new TextBlock
+                {
+                    Text = SettingsCardView.GlyphOf(row.Glyph),
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+                icon.SetResourceReference(TextElement.FontFamilyProperty, "Font.Icon");
+                icon.SetResourceReference(TextElement.FontSizeProperty, "Size.IconS");
+                icon.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
+                Grid.SetColumn(icon, 0);
+                grid.Children.Add(icon);
+            }
+
+            var name = new TextBlock
+            {
+                Text = row.Name,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            name.SetResourceReference(TextElement.FontSizeProperty, "Type.Body");
+            Grid.SetColumn(name, 1);
+            grid.Children.Add(name);
+
+            var keys = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            AppendSurfaceKeys(keys, "窄条", row.Bar);
+            AppendSurfaceKeys(keys, "设置", row.Settings);
+            Grid.SetColumn(keys, 2);
+            grid.Children.Add(keys);
+
+            if (row.Condition is { Length: > 0 })
+            {
+                var condition = new TextBlock
+                {
+                    Text = row.Condition,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    TextAlignment = TextAlignment.Right,
+                };
+                condition.SetResourceReference(TextElement.FontSizeProperty, "Type.Caption");
+                condition.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
+                Grid.SetColumn(condition, 3);
+                grid.Children.Add(condition);
+            }
+
+            list.Children.Add(grid);
+        }
+
+        return list;
+    }
+
+    /// <summary>一行速查的按键段：窗口名（窄条/设置）+ 该窗的键帽序列。</summary>
+    private static void AppendSurfaceKeys(StackPanel host, string surface, string? keys)
+    {
+        if (keys is not { Length: > 0 })
+        {
+            return;
+        }
+
+        var label = new TextBlock
+        {
+            Text = surface,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 4, 0),
+        };
+        label.SetResourceReference(TextElement.FontSizeProperty, "Type.Caption");
+        label.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
+        host.Children.Add(label);
+
+        foreach (var chip in KeyMap.Chips(keys))
+        {
+            var cap = new ContentControl { Content = chip, VerticalAlignment = VerticalAlignment.Center };
+            cap.SetResourceReference(StyleProperty, "KeyCap");
+            cap.Margin = new Thickness(0, 0, 2, 0);
+            host.Children.Add(cap);
+        }
+
+        // 与下一个窗口段留出呼吸。
+        host.Children.Add(new Border { Width = 8 });
+    }
 
     private FrameworkElement ExclusionsRow(SettingsItem item, ItemState state)
     {
@@ -1337,12 +1487,45 @@ public partial class SettingsWindow : Window
 
     private void OnWindowKeyDown(object sender, KeyEventArgs e)
     {
+        // 按住 Ctrl：导航项浮出页号键帽（§5.2 L1）。不吞事件——Ctrl 单按
+        // 不属于任何动作。
+        if (e.Key is Key.LeftCtrl or Key.RightCtrl)
+        {
+            SetNavKeyHints(true);
+            return;
+        }
+
         // Ctrl+F 聚焦搜索（§5.2：搜索的键位跨窗一致）；直接打字也进搜索。
         if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control)
         {
             ExpandNav();
             _searchBox.Focus();
             _searchBox.SelectAll();
+            e.Handled = true;
+            return;
+        }
+
+        // Ctrl+1–6 直达页（§5.2 L1：导航项的键帽编号即落点）。
+        if (Keyboard.Modifiers == ModifierKeys.Control
+            && (e.Key is >= Key.D1 and <= Key.D9 or >= Key.NumPad1 and <= Key.NumPad9))
+        {
+            var digit = e.Key is >= Key.D1 and <= Key.D9 ? e.Key - Key.D1 : e.Key - Key.NumPad1;
+            if (digit < _nav.Count)
+            {
+                SelectPage(_nav[digit].PageId);
+                e.Handled = true;
+            }
+
+            return;
+        }
+
+        // 键位速查（§5.2：? 或 F1）。? 在输入框里是字符，只在没有编辑焦点
+        // 时接管；F1 永远是帮助键。
+        if (e.Key == Key.F1
+            || (e.Key == Key.OemQuestion
+                && FocusManager.GetFocusedElement(this) is not (TextBox or PasswordBox or ComboBox)))
+        {
+            JumpToItem("hotkeys.cheatsheet");
             e.Handled = true;
             return;
         }
