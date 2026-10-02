@@ -47,6 +47,10 @@ internal sealed class BarModule
             _bar.DataSettingsRequested += itemId => shell.OpenSettingsAt?.Invoke(itemId);
             _bar.DeadDragNotice += notice => shell.TellUser(notice);
 
+            // 品牌钮打开管理窗（票 21 §6.1 第 1 行）：窄条管"拿回"，
+            // 整理归管理窗。
+            _bar.LibraryRequested += () => shell.ShowLibrary?.Invoke();
+
             // The header's pin reports only what it wants (票 39/O-20): this
             // side turns it into a one-field update through the store, and
             // the pin's visual state comes back via ApplySettings when the

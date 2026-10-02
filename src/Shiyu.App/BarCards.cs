@@ -395,9 +395,10 @@ internal partial class BarWindow
 
     /// <summary>
     /// The footer's three voices: the count (total, or "3 / 161" when a filter
-    /// is on — a paged list cannot count itself), the action feedback, and the
-    /// Esc hint, which follows the escape stack instead of asserting one
-    /// behaviour while another is in force.
+    /// is on — a paged list cannot count itself), the active filters read out
+    /// as tokens（§6.1：footer 读出全部生效筛选——哪些层在起作用，Esc 才
+    /// 有去处）, and the Esc hint, which follows the escape stack instead of
+    /// asserting one behaviour while another is in force.
     /// </summary>
     private void UpdateFooter()
     {
@@ -409,10 +410,64 @@ internal partial class BarWindow
         var total = _store.Count();
         var filtered = _store.CountMatching(_browser.Filter);
         var escHint = _browser.Filter.IsEmpty ? "Esc 隐藏" : "Esc 清除筛选";
+        var tokens = FilterTokens();
 
-        CountLabel.Text = filtered == total
-            ? $"共 {total} 条 · {escHint}"
-            : $"{filtered} / {total} 条 · {escHint}";
+        CountLabel.Text = tokens.Count == 0
+            ? (filtered == total
+                ? $"共 {total} 条 · {escHint}"
+                : $"{filtered} / {total} 条 · {escHint}")
+            : $"{filtered} / {total} 条 · {string.Join(" · ", tokens)} · {escHint}";
+    }
+
+    /// <summary>Every filter layer in force, as footer tokens. The query stays in its box; only its presence is named.</summary>
+    private List<string> FilterTokens()
+    {
+        var parts = new List<string>();
+
+        if (_kindIndex > 0)
+        {
+            parts.Add(_kindIndex switch
+            {
+                1 => "类型：文本",
+                2 => "类型：图片",
+                3 => "类型：文件",
+                _ => "类型",
+            });
+        }
+
+        if (_subtypeIndex > 0)
+        {
+            parts.Add(_subtypeIndex switch
+            {
+                1 => "子类型：链接",
+                2 => "子类型：邮箱",
+                3 => "子类型：颜色",
+                4 => "子类型：路径",
+                _ => "子类型",
+            });
+        }
+
+        if (_selectedTag != AnyTag)
+        {
+            parts.Add($"标签「{_selectedTag}」");
+        }
+
+        if (SearchBox.Text.Length > 0)
+        {
+            parts.Add("搜索");
+        }
+
+        if (FavoriteOnly.IsChecked == true)
+        {
+            parts.Add("只看收藏");
+        }
+
+        if (_selectedGroup is { } picked && _groupsById.TryGetValue(picked, out var pile))
+        {
+            parts.Add($"分组「{pile.Name}」");
+        }
+
+        return parts;
     }
 
     private void UpdateCount() => UpdateFooter();

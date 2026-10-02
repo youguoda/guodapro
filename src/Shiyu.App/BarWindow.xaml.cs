@@ -119,8 +119,10 @@ internal partial class BarWindow : Window
         // a system that will not draws the fallback chrome instead.
         Backdrop.AttachShell(this, Shell, () => BackdropKind.Acrylic);
 
-        // Kind is a segmented control now: four chips, one index.
+        // Kind is a segmented control now: four chips, one index. Each chip
+        // carries its own ←→ cap（就地替换选中字形，票 21/U-07）.
         _kindChips = [KindChipAll, KindChipText, KindChipImage, KindChipFiles];
+        _kindCaps = [KindCapAll, KindCapText, KindCapImage, KindCapFiles];
         SetKindIndex(0);
 
         PinnedList.ItemsSource = _pinned;
@@ -197,25 +199,37 @@ internal partial class BarWindow : Window
         SyncFloatingLayers();
     }
 
-    /// <summary>The pin button's face: filled and accented while pinned, quiet otherwise.</summary>
+    /// <summary>
+    /// The topmost button's face: accented while kept in front, quiet otherwise.
+    /// 字形是 E74A（上箭头，"置顶"的中文惯用形，非图钉）——经票 39 的双字体
+    /// cmap 探测选定：Segoe Fluent Icons 与 Segoe MDL2 Assets 的 cmap 都含
+    /// U+E74A，Windows 10 回退不断字。"保持在最前"与卡片的"条目置顶"
+    /// （E718/E77A）从此不再共用一个图钉（U-19）。
+    /// </summary>
     private void SyncTopmostChrome()
     {
         if (Topmost)
         {
-            // PinnedFill. The ticket's "E8417" is a five-digit slip — the
-            // icon fonts stop at U+F8CC and nothing beyond the BMP exists;
-            // E841 is the filled pin both Segoe icon fonts carry.
-            TopmostGlyph.Text = "\uE841";
+            TopmostGlyph.Text = "\uE74A";
             TopmostGlyph.SetResourceReference(ForegroundProperty, "Brush.Accent");
-            TopmostToggle.ToolTip = "窄条置顶中（点击后可被其他窗口遮挡）";
+            TopmostToggle.ToolTip = "保持在最前：已开启（点击后窄条可被其他窗口遮挡）";
         }
         else
         {
-            TopmostGlyph.Text = "\uE718";
+            TopmostGlyph.Text = "\uE74A";
             TopmostGlyph.SetResourceReference(ForegroundProperty, "Brush.TextSecondary");
-            TopmostToggle.ToolTip = "窄条未置顶（点击恢复保持在其他窗口之上）";
+            TopmostToggle.ToolTip = "保持在最前：已关闭（点击恢复位于其他窗口之上）";
         }
     }
+
+    /// <summary>
+    /// 品牌钮（§6.1 第 1 行）：单击打开管理窗——窄条是"拿回"的入口，整理
+    /// 归管理窗。窗口只上报意愿，打开由拥有者（BarModule → AppShell.
+    /// ShowLibrary）执行。
+    /// </summary>
+    public event Action? LibraryRequested;
+
+    private void OnBrandClicked(object sender, RoutedEventArgs e) => LibraryRequested?.Invoke();
 
     private void SyncFloatingLayers()
     {

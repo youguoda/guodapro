@@ -14,11 +14,16 @@ internal partial class BarWindow
     {
         _searchDebounce.Stop();
         _searchDebounce.Start();
+
+        // 有查询时搜索描边转 1 DIP Accent（§6.1 搜索框）；聚焦态的 Accent
+        // 由 SearchBox 模板自己的焦点触发器负责。
+        SearchBox.SetResourceReference(BorderBrushProperty,
+            SearchBox.Text.Length > 0 ? "Brush.Accent" : "Brush.StrokeStrong");
     }
 
     private void OnFilterChanged(object sender, RoutedEventArgs e)
     {
-        if (IsLoaded && !_refillingTags)
+        if (IsLoaded)
         {
             ApplyFilter();
         }
@@ -30,12 +35,16 @@ internal partial class BarWindow
         KindFilterChipClear();
         SetSubtype(0);
         FavoriteOnly.IsChecked = false;
+        SetTag(AnyTag);
         SelectGroup(null, apply: false);
         RefreshTagChoices();
         ApplyFilter();
     }
 
     private ToggleButton[] _kindChips = [];
+
+    /// <summary>Each chip's ←→ cap; shown on the checked chip only, while Ctrl is held.</summary>
+    private ContentControl[] _kindCaps = [];
 
     private int _kindIndex;
 
@@ -46,6 +55,8 @@ internal partial class BarWindow
         {
             _kindChips[i].IsChecked = i == _kindIndex;
         }
+
+        UpdateKindCaps();
     }
 
     private void KindFilterChipClear() => SetKindIndex(0);
@@ -60,17 +71,9 @@ internal partial class BarWindow
         _subtypeIndex = Math.Clamp(index, 0, 4);
 
         // The button speaks for a facet hidden inside it: accented while a
-        // subtype is active, quiet otherwise.
-        if (_subtypeIndex > 0)
-        {
-            SubtypeButton.SetResourceReference(BorderBrushProperty, "Brush.Accent");
-            SubtypeButton.SetResourceReference(ForegroundProperty, "Brush.Accent");
-        }
-        else
-        {
-            SubtypeButton.SetResourceReference(BorderBrushProperty, "Brush.Border");
-            SubtypeButton.SetResourceReference(ForegroundProperty, "Brush.TextSecondary");
-        }
+        // subtype is active, quiet otherwise（状态矩阵：漏斗 accent）。
+        SubtypeButton.SetResourceReference(ForegroundProperty,
+            _subtypeIndex > 0 ? "Brush.Accent" : "Brush.TextSecondary");
     }
 
     private void OnSubtypeButtonClicked(object sender, RoutedEventArgs e)
@@ -106,7 +109,7 @@ internal partial class BarWindow
 
         _subtypePopup = new Popup
         {
-            Child = WithPopupFont(host),
+            Child = WithPopupFont(MenuSurface(host)),
             PlacementTarget = SubtypeButton,
             Placement = PlacementMode.Bottom,
             StaysOpen = false,
@@ -130,7 +133,7 @@ internal partial class BarWindow
         _browser.Filter = new HistoryFilter
         {
             Query = SearchBox.Text,
-            Tag = TagFilter.SelectedItem as string is { } tag && tag != AnyTag ? tag : null,
+            Tag = _selectedTag != AnyTag ? _selectedTag : null,
             Kind = _kindIndex switch
             {
                 1 => EntryKind.Text,
@@ -150,25 +153,100 @@ internal partial class BarWindow
             Group = _selectedGroup,
         };
 
+        UpdateFilterChrome();
         Rebuild();
     }
 
-    private bool _refillingTags;
+    /// <summary>
+    /// ✕ 只在有筛选时出现（§6.1）：常驻的"清除筛选"在没有东西可清时只是一
+    /// 个会响的按钮。读全部筛选层，包括尚未落库的搜索框现值。
+    /// </summary>
+    private void UpdateFilterChrome()
+    {
+        var any = SearchBox.Text.Length > 0
+            || _subtypeIndex != 0
+            || _selectedTag != AnyTag
+            || _kindIndex != 0
+            || FavoriteOnly.IsChecked == true
+            || _selectedGroup is not null;
+
+        ClearFilters.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    // --- the tag filter（U-04：ghost 下拉替换 Aero2 ComboBox）---------------------
+    //
+    // 键盘（Tab 循环）与弹出列表读同一份 _tagChoices/_selectedTag；第 2 行
+    // 里从此没有 ComboBox。
+
+    private List<string> _tagChoices = [AnyTag];
+
+    private string _selectedTag = AnyTag;
+
+    private Popup? _tagPopup;
+
+    private void SetTag(string tag)
+    {
+        _selectedTag = _tagChoices.Contains(tag) ? tag : AnyTag;
+        UpdateTagFace();
+    }
+
+    /// <summary>The ghost button's face: quiet and narrow when off, accented with the name when filtering.</summary>
+    private void UpdateTagFace()
+    {
+        var filtered = _selectedTag != AnyTag;
+        TagName.Text = filtered ? _selectedTag : string.Empty;
+        TagFilter.SetResourceReference(ForegroundProperty,
+            filtered ? "Brush.Accent" : "Brush.TextSecondary");
+    }
+
+    private void OnTagFilterClicked(object sender, RoutedEventArgs e)
+    {
+        if (_tagPopup is { IsOpen: true })
+        {
+            _tagPopup.IsOpen = false;
+            return;
+        }
+
+        var host = new StackPanel { MinWidth = 120 };
+
+        foreach (var choice in _tagChoices)
+        {
+            var captured = choice;
+            var item = new Button
+            {
+                Content = (_selectedTag == captured ? "✓  " : "     ") + captured,
+                Padding = new Thickness(10, 5, 10, 5),
+                Margin = new Thickness(0, 0, 0, 1),
+                Cursor = Cursors.Hand,
+            };
+            item.SetResourceReference(BackgroundProperty, "Brush.Surface");
+            item.Click += (_, _) =>
+            {
+                _tagPopup!.IsOpen = false;
+                SetTag(captured);
+                ApplyFilter();
+            };
+            host.Children.Add(item);
+        }
+
+        _tagPopup = new Popup
+        {
+            Child = WithPopupFont(MenuSurface(host)),
+            PlacementTarget = TagFilter,
+            Placement = PlacementMode.Bottom,
+            StaysOpen = false,
+            AllowsTransparency = true,
+        };
+        _tagPopup.Opened += (_, _) => FlipIntoWorkArea(_tagPopup);
+        _tagPopup.IsOpen = true;
+    }
 
     private void RefreshTagChoices()
     {
-        var chosen = TagFilter.SelectedItem as string;
-
-        _refillingTags = true;
-        TagFilter.Items.Clear();
-        TagFilter.Items.Add(AnyTag);
-        foreach (var tag in _store.AllTags())
-        {
-            TagFilter.Items.Add(tag);
-        }
-
-        TagFilter.SelectedItem = chosen is { } name && TagFilter.Items.Contains(name) ? chosen : AnyTag;
-        _refillingTags = false;
+        var chosen = _selectedTag;
+        _tagChoices = [AnyTag, .. _store.AllTags()];
+        _selectedTag = _tagChoices.Contains(chosen) ? chosen : AnyTag;
+        UpdateTagFace();
     }
 
     /// <summary>Chips for each visible group, in row order; the overflow takes the rest.</summary>

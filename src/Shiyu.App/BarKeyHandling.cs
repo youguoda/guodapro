@@ -68,7 +68,8 @@ internal partial class BarWindow
 
         _keyHintsOn = on;
         SearchKeyBadge.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
-        KindKeyBadge.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+        UpdateKindCaps();
+        FavoriteKeyBadge.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
         TagKeyBadge.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
 
         foreach (var container in RealizedContainers())
@@ -112,6 +113,20 @@ internal partial class BarWindow
         }
 
         tray?.ShowHints(_keyHintsOn);
+    }
+
+    /// <summary>
+    /// The ←→ cap sits ON the checked chip, replacing its glyph（§6.1 键帽：
+    /// 追加到行尾正是它被裁成横线的原因，也推动第 2 行其余控件位移）。
+    /// Selection moves（←→ cycling while Ctrl is held）move the cap with it.
+    /// </summary>
+    private void UpdateKindCaps()
+    {
+        for (var i = 0; i < _kindChips.Length && i < _kindCaps.Length; i++)
+        {
+            _kindCaps[i].Visibility =
+                _keyHintsOn && _kindChips[i].IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+        }
     }
 
     private IEnumerable<BarCardContainer> RealizedContainers()
@@ -215,12 +230,12 @@ internal partial class BarWindow
                 CycleKind(+1);
                 break;
 
-            case Key.Up when Keyboard.FocusedElement is not ComboBox:
+            case Key.Up when !IsTyping:
                 e.Handled = true;
                 Move(-1);
                 break;
 
-            case Key.Down when Keyboard.FocusedElement is not ComboBox:
+            case Key.Down when !IsTyping:
                 e.Handled = true;
                 Move(+1);
                 break;
@@ -276,6 +291,13 @@ internal partial class BarWindow
                 if (_selected is { } pin) ExecuteAction("pin", pin, feedback: null);
                 break;
 
+            // Alt+S 只看收藏（ADR-0012 #10）：与托盘"收藏当前卡"的 S 分工，
+            // 修饰键令它对搜索框里的打字无害。键帽为 FavoriteKeyBadge。
+            case Key.S when Keyboard.Modifiers == ModifierKeys.Alt:
+                e.Handled = true;
+                FavoriteOnly.IsChecked = FavoriteOnly.IsChecked != true;
+                break;
+
             case Key.S when !IsTyping && Keyboard.Modifiers == ModifierKeys.None:
                 e.Handled = true;
                 if (_selected is { } favourite) ExecuteAction("favorite", favourite, feedback: null);
@@ -321,7 +343,7 @@ internal partial class BarWindow
     {
         var hasQuery = SearchBox.Text.Length > 0;
         var hasSubtype = _subtypeIndex != 0;
-        var hasTag = TagFilter.SelectedItem as string is { } tag && tag != AnyTag;
+        var hasTag = _selectedTag != AnyTag;
         var hasKind = _kindIndex != 0;
         var hasFavorite = FavoriteOnly.IsChecked == true;
         var hasGroup = _selectedGroup is not null;
@@ -351,7 +373,8 @@ internal partial class BarWindow
                 break;
 
             case BarKeyboard.EscapeAction.ClearTagFilter:
-                TagFilter.SelectedItem = AnyTag;
+                SetTag(AnyTag);
+                ApplyFilter();
                 break;
 
             case BarKeyboard.EscapeAction.ClearTypeFilter:
@@ -381,8 +404,8 @@ internal partial class BarWindow
 
     private void CycleTag(int delta)
     {
-        var index = TagFilter.Items.IndexOf(TagFilter.SelectedItem);
-        var next = BarKeyboard.Cycle(index < 0 ? 0 : index, delta, TagFilter.Items.Count);
-        TagFilter.SelectedIndex = next;
+        var index = _tagChoices.IndexOf(_selectedTag);
+        SetTag(_tagChoices[BarKeyboard.Cycle(index < 0 ? 0 : index, delta, _tagChoices.Count)]);
+        ApplyFilter();
     }
 }
