@@ -53,6 +53,16 @@ public static class DesignTokens
     public const string StatePressed = "StatePressed";
 
     public const string Border = "Border";
+
+    /// <summary>卡片与分区的低对比描边（票 19 / UI 报告 §4.5）：半透明墨色，浮在材质上也成立。</summary>
+    public const string CardStroke = "CardStroke";
+
+    /// <summary>承担"识别控件"的描边（输入框底边、开关关态），须过非文本 3:1。</summary>
+    public const string StrokeStrong = "StrokeStrong";
+
+    /// <summary>分隔线 = Border 的 50% 透明度——不需要新颜色，只需要一档轻。</summary>
+    public const string Divider = "Divider";
+
     public const string Text = "Text";
     public const string TextSecondary = "TextSecondary";
     public const string TextTertiary = "TextTertiary";
@@ -63,13 +73,49 @@ public static class DesignTokens
     public const string TextOnAccent = "TextOnAccent";
     public const string Danger = "Danger";
 
+    /// <summary>Danger 的 8% 叠层：危险钮 hover 的底，不引入第五种红色。</summary>
+    public const string DangerSubtle = "DangerSubtle";
+
+    /// <summary>文字压 Danger 实底时的颜色（深色主题必须用深字：白字只有 3.09:1）。</summary>
+    public const string TextOnDanger = "TextOnDanger";
+
+    /// <summary>列表/导航的选中底：Accent 的一成透明度，配 3×16 指示条（UI 报告 §4.7）。</summary>
+    public const string Selected = "Selected";
+
+    /// <summary>键盘焦点外环（双层焦点环的外层；内环用反色防花底）。</summary>
+    public const string FocusOuter = "FocusOuter";
+    public const string FocusInner = "FocusInner";
+
+    /// <summary>成功反馈（"连接成功""已保存"）。</summary>
+    public const string Success = "Success";
+
+    /// <summary>警示反馈（云同步目录、磁盘余量——此前误用 Danger 夸大了等级）。</summary>
+    public const string Caution = "Caution";
+
+    /// <summary>品牌色（标识、关于页、引导首屏）。只用于识别时刻，永不用于交互态——与 Danger 同属红系，按钮上会打架。</summary>
+    public const string Brand = "Brand";
+
     /// <summary>The slots every palette must define, and the only slots any window may use.</summary>
     public static readonly string[] Slots =
     [
         Background, Surface, SurfaceInput, SurfaceSubtle, SurfaceMaterial, LayerFlyout,
-        StateHover, StatePressed, Border,
+        StateHover, StatePressed, Border, CardStroke, StrokeStrong, Divider,
         Text, TextSecondary, TextTertiary,
-        Accent, AccentHover, AccentPressed, AccentFloating, TextOnAccent, Danger,
+        Accent, AccentHover, AccentPressed, AccentFloating, TextOnAccent,
+        AccentSubtle, Selected, Danger, DangerSubtle, TextOnDanger,
+        FocusOuter, FocusInner, Success, Caution, Brand,
+    ];
+
+    /// <summary>选中态的轻底（分段/列表选中用底色变体，UI 报告 §4.7）。</summary>
+    public const string AccentSubtle = "AccentSubtle";
+
+    /// <summary>
+    /// 半透明"墨色叠层"槽——alpha 不为 FF 是它们的契约（测试钉住）：
+    /// CardStroke/Divider/DangerSubtle/AccentSubtle/Selected 压在材质上才有意义。
+    /// </summary>
+    public static readonly string[] OverlaySlots =
+    [
+        CardStroke, Divider, DangerSubtle, AccentSubtle, Selected, StateHover, StatePressed,
     ];
 
     /// <summary>
@@ -103,6 +149,24 @@ public static class DesignTokens
         (TextOnAccent, AccentPressed),
         (Danger, Background),
         (Danger, Surface),
+
+        // 票 19：状态与反馈色上同样要读得出字（TextOnDanger 深浅两版由此各得其所）。
+        (TextOnDanger, Danger),
+        (Success, Background),
+        (Success, Surface),
+        (Caution, Background),
+        (Caution, Surface),
+        (TextSecondary, SurfaceInput),
+    ];
+
+    /// <summary>
+    /// 非文本对比（WCAG 1.4.11，≥3:1）：控件识别性描边与焦点环。Brand 是
+    /// 标识不是信息，刻意不入表。
+    /// </summary>
+    public static readonly (string Stroke, string Background)[] NonTextPairs =
+    [
+        (StrokeStrong, Surface),
+        (FocusOuter, Background),
     ];
 
     public static ThemePalette Light { get; } = new("Light", new Dictionary<string, string>
@@ -111,11 +175,14 @@ public static class DesignTokens
         [Surface] = "#FFFFFFFF",
         [SurfaceInput] = "#FFEAECEF",
         [SurfaceSubtle] = "#FFE9EDF1",
-        [SurfaceMaterial] = "#F0FCFCFD",
+        [SurfaceMaterial] = "#D9FCFCFD",
         [LayerFlyout] = "#FFFDFDFE",
         [StateHover] = "#0D1F2328",
         [StatePressed] = "#171F2328",
         [Border] = "#FFD0D7DE",
+        [CardStroke] = "#0F000000",
+        [StrokeStrong] = "#FF848D97",
+        [Divider] = "#80D0D7DE",
         [Text] = "#FF1F2328",
         [TextSecondary] = "#FF57606A",
         // 票 18：原 #FF62707B 在 SurfaceSubtle 上只有 4.33:1；加深一档到
@@ -127,6 +194,15 @@ public static class DesignTokens
         [AccentFloating] = "#EE1A66DB",
         [TextOnAccent] = "#FFFFFFFF",
         [Danger] = "#FFC0392B",
+        [DangerSubtle] = "#14C0392B",
+        [TextOnDanger] = "#FFFFFFFF",
+        [Selected] = "#1A1A66DB",
+        [AccentSubtle] = "#0F1A66DB",
+        [FocusOuter] = "#FF1F2328",
+        [FocusInner] = "#FFFFFFFF",
+        [Success] = "#FF1A7F37",
+        [Caution] = "#FF9A6700",
+        [Brand] = "#FFFF1A66",
     });
 
     public static ThemePalette Dark { get; } = new("Dark", new Dictionary<string, string>
@@ -135,11 +211,14 @@ public static class DesignTokens
         [Surface] = "#FF22272E",
         [SurfaceInput] = "#FF2A3038",
         [SurfaceSubtle] = "#FF262C34",
-        [SurfaceMaterial] = "#F01E242C",
+        [SurfaceMaterial] = "#E01E242C",
         [LayerFlyout] = "#FF252B33",
         [StateHover] = "#0DE6E8EB",
         [StatePressed] = "#17E6E8EB",
         [Border] = "#FF3D444D",
+        [CardStroke] = "#19FFFFFF",
+        [StrokeStrong] = "#FF768390",
+        [Divider] = "#803D444D",
         [Text] = "#FFE6E8EB",
         [TextSecondary] = "#FFB5BCC4",
         [TextTertiary] = "#FF9BA4AD",
@@ -149,6 +228,16 @@ public static class DesignTokens
         [AccentFloating] = "#EE4C8DFF",
         [TextOnAccent] = "#FF0B1220",
         [Danger] = "#FFF0675C",
+        [DangerSubtle] = "#14F0675C",
+        // 深色 Danger 上的白字只有 3.09:1——深字才有 6.1。
+        [TextOnDanger] = "#FF0B1220",
+        [Selected] = "#294C8DFF",
+        [AccentSubtle] = "#144C8DFF",
+        [FocusOuter] = "#FFE6E8EB",
+        [FocusInner] = "#FF0B1220",
+        [Success] = "#FF57AB5A",
+        [Caution] = "#FFC69026",
+        [Brand] = "#FFFF4C8D",
     });
 
     // --- typography -----------------------------------------------------------
@@ -173,6 +262,53 @@ public static class DesignTokens
     public const double FontBody = 16;
     public const double FontBodyLarge = 18;
 
+    // --- typography v2（票 19 / ADR-0012：控件回 14，内容字号交给用户）-----------
+    // 旧 Font* 档位在上、迁移期并存；票 19 的模板与窗口迁移完成后退役。
+    // 规则：行高落 4px 网格、多行中文≈1.7；SemiBold 只给拉丁词头与键帽；
+    // "再大一号"只走 TypeContent 的设置项与系统文本缩放，不再动控件档。
+
+    /// <summary>元信息、时间、计数、键帽、设置说明。</summary>
+    public const double TypeCaption = 12;
+
+    /// <summary>一切控件文字：标签、按钮、输入值、导航。</summary>
+    public const double TypeBody = 14;
+
+    /// <summary>设置分组标题、当前导航项——唯一允许加粗的 14。</summary>
+    public const double TypeBodyStrong = 14;
+
+    /// <summary>被阅读的剪贴板正文/译文，默认 18，可在设置里调 16/18/20。</summary>
+    public const double TypeContent = 18;
+
+    /// <summary>代码/路径/颜色子类型专用。</summary>
+    public const double TypeContentMono = 15;
+
+    /// <summary>设置页标题、对话框标题、空态标题。</summary>
+    public const double TypeSubtitle = 20;
+
+    /// <summary>关于页、引导首屏。</summary>
+    public const double TypeTitle = 28;
+
+    /// <summary>键帽专用（只出现拉丁字母/数字/箭头，中文最小字号规则豁免）。</summary>
+    public const double TypeKeyCap = 12;
+
+    /// <summary>词头（拉丁 SemiBold）专用档。</summary>
+    public const double TypeHeadword = 20;
+
+    public static double LineForCaption => 16;       // 单行紧行高
+    public static double LineForCaptionMulti => 20;  // 多行中文
+    public static double LineForBody => 20;
+    public static double LineForBodyMulti => 24;
+    public static double LineForContent => 31;
+    public static double LineForContentMono => 26;
+
+    // --- 图标尺寸 v2：只取 Segoe Fluent 的设计尺寸（官方 16/20/24/48），14/19 是
+    // 跟着旧字号被推出来的、小尺寸发虚，迁移后退役。 ------------------------------
+    public const double IconXs = 12;
+    public const double IconS = 16;
+    public const double IconM = 20;
+    public const double IconL = 24;
+    public const double IconXl = 48;
+
     /// <summary>Sizes for the symbol font: inline with text, standard, feature.</summary>
     public const double IconSmall = 14;
     public const double IconMedium = 16;
@@ -188,18 +324,52 @@ public static class DesignTokens
 
     /// <summary>
     /// Corner radii, named by where they belong rather than by pixel value.
-    /// The 4/8 pair is Windows 11's ControlCornerRadius / OverlayCornerRadius;
-    /// 12 is the floating-window tier the tickets settled on.
+    /// Control 4 / Overlay 8 是 Windows 11 的 ControlCornerRadius /
+    /// OverlayCornerRadius（ADR-0012）：窗口级交还 DWM 画 8，页内元素 4。
+    /// Window 12 与 Pill 13 是旧分层窗口时代的值，票 19/20 迁移后退役；
+    /// 胶囊一律按"高度的一半"推导，不再取常量。
     /// </summary>
     public static readonly IReadOnlyDictionary<string, double> Radius = new Dictionary<string, double>
     {
         ["Thumb"] = 3,
         ["Small"] = 4,
+        ["Control"] = 4,
         ["Card"] = 8,
         ["Overlay"] = 8,
         ["Window"] = 12,
         ["Pill"] = 13,
     };
+
+    // --- 控件尺寸（UI 报告 §4.2）------------------------------------------------
+    /// <summary>按钮/输入/下拉/数值/开关行的标准高。</summary>
+    public const double ControlHeight = 32;
+    /// <summary>命令栏图标钮（紧凑档）。</summary>
+    public const double ControlHeightCompact = 28;
+    /// <summary>窄条头部（现状密度，保持）。</summary>
+    public const double ControlHeightDense = 24;
+    public const double TitleBarHeight = 32;
+    public const double NavItemHeight = 36;
+    /// <summary>两行列表行 / 单行列表行。</summary>
+    public const double ListRowHeight = 56;
+    public const double ListRowHeightSingle = 40;
+    public const double SettingsCardMinHeight = 64;
+
+    // --- 语义间距（4px 网格，UI 报告 §4.2；SpacingScale 迁移后退役）------------
+    /// <summary>图标↔文字、键帽内边距、设置卡之间。</summary>
+    public const double Space1 = 4;
+    /// <summary>相关控件之间、按钮组间距、浮层外壳内边距（列表型）。</summary>
+    public const double Space2 = 8;
+    /// <summary>卡片纵向内边距、浮层外壳内边距（内容型）。</summary>
+    public const double Space3 = 12;
+    /// <summary>卡片横向内边距、对话框内边距。</summary>
+    public const double Space4 = 16;
+    public const double Space5 = 20;
+    /// <summary>分组之间、页标题上方。</summary>
+    public const double Space6 = 24;
+    /// <summary>设置内容区左右边距。</summary>
+    public const double Space8 = 32;
+    /// <summary>空态上下留白。</summary>
+    public const double Space12 = 48;
 
     /// <summary>
     /// Drop shadows: (blur radius, depth, opacity). Two strengths, no more —

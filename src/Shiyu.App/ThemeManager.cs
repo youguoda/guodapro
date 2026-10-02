@@ -129,6 +129,46 @@ internal sealed class ThemeManager : IDisposable
         values["Size.IconMedium"] = DesignTokens.IconMedium;
         values["Size.IconLarge"] = DesignTokens.IconLarge;
 
+        // 票 19 字阶 v2（迁移期与旧档并存；模板迁移完成后旧键退役）。
+        values["Type.Caption"] = DesignTokens.TypeCaption;
+        values["Type.Body"] = DesignTokens.TypeBody;
+        values["Type.BodyStrong"] = DesignTokens.TypeBodyStrong;
+        values["Type.Content"] = DesignTokens.TypeContent;
+        values["Type.ContentMono"] = DesignTokens.TypeContentMono;
+        values["Type.Subtitle"] = DesignTokens.TypeSubtitle;
+        values["Type.Title"] = DesignTokens.TypeTitle;
+        values["Type.KeyCap"] = DesignTokens.TypeKeyCap;
+        values["Type.Headword"] = DesignTokens.TypeHeadword;
+        values["Line.Caption"] = DesignTokens.LineForCaption;
+        values["Line.CaptionMulti"] = DesignTokens.LineForCaptionMulti;
+        values["Line.BodyV2"] = DesignTokens.LineForBody;
+        values["Line.BodyMulti"] = DesignTokens.LineForBodyMulti;
+        values["Line.Content"] = DesignTokens.LineForContent;
+        values["Line.ContentMono"] = DesignTokens.LineForContentMono;
+        values["Size.IconXs"] = DesignTokens.IconXs;
+        values["Size.IconS"] = DesignTokens.IconS;
+        values["Size.IconM"] = DesignTokens.IconM;
+        values["Size.IconL"] = DesignTokens.IconL;
+        values["Size.IconXl"] = DesignTokens.IconXl;
+
+        // 控件尺寸与语义间距（票 19，UI 报告 §4.2）。
+        values["Control.Height"] = DesignTokens.ControlHeight;
+        values["Control.HeightCompact"] = DesignTokens.ControlHeightCompact;
+        values["Control.HeightDense"] = DesignTokens.ControlHeightDense;
+        values["TitleBar.Height"] = DesignTokens.TitleBarHeight;
+        values["NavItem.Height"] = DesignTokens.NavItemHeight;
+        values["ListRow.Height"] = DesignTokens.ListRowHeight;
+        values["ListRow.HeightSingle"] = DesignTokens.ListRowHeightSingle;
+        values["SettingsCard.MinHeight"] = DesignTokens.SettingsCardMinHeight;
+        values["Space.1"] = new Thickness(DesignTokens.Space1);
+        values["Space.2"] = new Thickness(DesignTokens.Space2);
+        values["Space.3"] = new Thickness(DesignTokens.Space3);
+        values["Space.4"] = new Thickness(DesignTokens.Space4);
+        values["Space.5"] = new Thickness(DesignTokens.Space5);
+        values["Space.6"] = new Thickness(DesignTokens.Space6);
+        values["Space.8"] = new Thickness(DesignTokens.Space8);
+        values["Space.12"] = new Thickness(DesignTokens.Space12);
+
         values["Line.Secondary"] = DesignTokens.LineHeightFor(DesignTokens.FontSecondary);
         values["Line.Body"] = DesignTokens.LineHeightFor(DesignTokens.FontBody);
         values["Line.BodyLarge"] = DesignTokens.LineHeightFor(DesignTokens.FontBodyLarge);
