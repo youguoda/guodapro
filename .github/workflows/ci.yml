@@ -41,6 +41,10 @@ jobs:
         id: test
         run: dotnet test tests/Shiyu.Core.Tests/Shiyu.Core.Tests.csproj -c Release --no-build --logger "trx;LogFileName=core-tests.trx" --results-directory TestResults
 
+      # O-24：catch (Exception) 块必须接日志或声明 expected——静默即失败。
+      - name: 静默 catch 检查
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tools/checks/no-silent-catch.ps1
+
       - name: 单测失败时上传结果
         if: failure() && steps.test.outcome == 'failure'
         uses: actions/upload-artifact@v4
