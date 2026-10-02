@@ -331,6 +331,34 @@ describe("/translate：IPv6 /64 聚合", () => {
   });
 });
 
+describe("/translate：盐 fail-closed", () => {
+  it("缺盐时一律 503，不进配额也不进上游", async () => {
+    const { upstream, calls } = fakeUpstream();
+    const { services } = open(upstream);
+    const env = {} as unknown as Env;
+
+    const response = await call(env, services, body());
+
+    expect(response.status).toBe(503);
+    const error = await errorOf(response);
+    expect(error.code).toBe("SERVICE_MISCONFIGURED");
+    expect(error.message).toContain("服务未正确配置");
+    expect(calls).toEqual([]);
+  });
+
+  it("空白盐同样 503——绝不回退默认盐", async () => {
+    const { upstream, calls } = fakeUpstream();
+    const { services } = open(upstream);
+    const env = { IP_HASH_SALT: "   " } as unknown as Env;
+
+    const response = await call(env, services, body());
+
+    expect(response.status).toBe(503);
+    expect((await errorOf(response)).code).toBe("SERVICE_MISCONFIGURED");
+    expect(calls).toEqual([]);
+  });
+});
+
 describe("路由", () => {
   it("不存在的路径 404", async () => {
     const response = await worker.fetch(
@@ -340,5 +368,28 @@ describe("路由", () => {
 
     expect(response.status).toBe(404);
     expect((await errorOf(response)).code).toBe("NOT_FOUND");
+  });
+
+  it("/health 在配置齐全时 200 ok", async () => {
+    const env = { IP_HASH_SALT: "a-salt", ZHIPU_API_KEY: "a-key", QUOTA: {} } as unknown as Env;
+
+    const response = await worker.fetch(new Request("https://relay.example.com/health"), env);
+
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as { status: string };
+    expect(payload.status).toBe("ok");
+  });
+
+  it("/health 报告缺失的配置项（含盐），503", async () => {
+    const response = await worker.fetch(
+      new Request("https://relay.example.com/health"),
+      {} as Env,
+    );
+
+    expect(response.status).toBe(503);
+    const payload = (await response.json()) as { status: string; problems: string[] };
+    expect(payload.status).toBe("error");
+    expect(payload.problems).toContain("IP_HASH_SALT 未设置");
+    expect(payload.problems).toContain("ZHIPU_API_KEY 未设置");
   });
 });

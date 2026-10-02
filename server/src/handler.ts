@@ -22,6 +22,13 @@ export async function handleTranslate(
     return jsonError(405, "METHOD_NOT_ALLOWED", "只接受 POST。");
   }
 
+  // 盐缺失宁可全拒也不回退默认盐（fail closed，O-19）：默认盐人人可得，
+  // 等于 IP 哈希裸奔——拖库者能跨部署链接全部用户。
+  const salt = env.IP_HASH_SALT;
+  if (typeof salt !== "string" || salt.trim().length === 0) {
+    return jsonError(503, "SERVICE_MISCONFIGURED", "服务未正确配置，请稍后再试。");
+  }
+
   const limits = injected.limits ?? readLimits(env);
   const now = injected.now ?? (() => new Date());
   const quota = injected.quota ?? new Quota(new KvStore(env.QUOTA), limits, now);
@@ -71,7 +78,7 @@ export async function handleTranslate(
 
   // IP 先规范化（IPv6 折叠到 /64）再哈希：IP 层按网段而不是按单个地址记账（O-19）。
   const ip = normalizeIp(request.headers.get("CF-Connecting-IP") ?? "unknown");
-  const identity: Identity = { clientId, ipHash: await saltedHash(env.IP_HASH_SALT, ip) };
+  const identity: Identity = { clientId, ipHash: await saltedHash(salt, ip) };
 
   const denial = await quota.reserve(identity, chars);
   if (denial) {
