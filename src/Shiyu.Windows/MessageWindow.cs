@@ -16,6 +16,14 @@ public sealed class MessageWindow : IDisposable
     private bool _disposed;
 
     /// <summary>
+    /// <c>WM_SETTINGCHANGE</c>: Windows broadcasts it to every top-level
+    /// window when a system setting moves — the theme among them (O-37).
+    /// Published here because the constants NativeMethods carries are this
+    /// assembly's own business.
+    /// </summary>
+    public const uint SettingChangeMessage = NativeMethods.WmSettingChange;
+
+    /// <summary>
     /// Raised for every message. A handler that sets <c>Handled</c> stops the
     /// message reaching the default window procedure.
     /// </summary>

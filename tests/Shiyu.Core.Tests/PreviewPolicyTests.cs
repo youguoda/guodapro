@@ -67,9 +67,7 @@ public class PreviewPolicyTests
         time.Advance(1);
         Assert.Equal(PreviewCommand.Open, policy.Tick());
         Assert.Equal(1, policy.Card);
-    }
-
-    [Fact]
+    }    [Fact]
     public void A_pointer_that_passes_through_opens_nothing()
     {
         var (policy, time) = Make();
@@ -263,5 +261,97 @@ public class PreviewPolicyTests
         policy.SpaceDown(2);
         Assert.Equal(PreviewCommand.Close, policy.BarHidden());
         Assert.False(policy.IsOpen);
+    }
+
+    // --- the on-demand deadline (O-37) ------------------------------------------
+
+    // One single-shot timer replaces the old always-on 50 ms tick; these pin
+    // the policy's answer to "how long until something actually happens?" to
+    // the same instants Tick() would have acted on.
+
+    [Fact]
+    public void An_idle_bar_has_no_deadline_and_arms_no_timer()
+    {
+        var (policy, _) = Make();
+
+        Assert.Null(policy.TimeUntilDecision());
+    }
+
+    [Fact]
+    public void A_dwelling_hover_names_the_exact_moment_it_opens()
+    {
+        var (policy, time) = Make();
+
+        policy.HoverEnter(1);
+        time.Advance(100);
+
+        var wait = policy.TimeUntilDecision();
+        Assert.NotNull(wait);
+        Assert.Equal(HoverDelay - 100, wait.Value.TotalMilliseconds);
+    }
+
+    [Fact]
+    public void A_deadline_that_has_already_passed_reports_zero_not_negative()
+    {
+        var (policy, time) = Make();
+
+        policy.HoverEnter(1);
+        time.Advance(HoverDelay + 500);
+
+        Assert.Equal(0, policy.TimeUntilDecision()?.TotalMilliseconds);
+    }
+
+    [Fact]
+    public void A_crossed_card_buffers_and_names_the_buffers_expiry()
+    {
+        var (policy, time) = Make();
+
+        policy.SpaceDown(1);
+        policy.HoverEnter(1);
+        time.Advance(200);
+        policy.SpaceUp();
+
+        // The panel is standing open under the pointer — no deadline of its
+        // own — until the pointer leaves the card.
+        Assert.Null(policy.TimeUntilDecision());
+
+        policy.HoverLeave();
+        time.Advance(100);
+
+        var wait = policy.TimeUntilDecision();
+        Assert.NotNull(wait);
+        Assert.Equal(PreviewPolicy.HoverBufferMs - 100, wait.Value.TotalMilliseconds);
+    }
+
+    [Fact]
+    public void A_moving_keyboard_selection_names_the_settle_deadline()
+    {
+        var (policy, time) = Make();
+
+        policy.SpaceDown(1);
+        policy.SelectionMoved(2);
+        time.Advance(50);
+
+        var wait = policy.TimeUntilDecision();
+        Assert.NotNull(wait);
+        Assert.Equal(PreviewPolicy.KeyboardSettleMs - 50, wait.Value.TotalMilliseconds);
+
+        // The settle elapses, the panel follows, and nothing is pending
+        // again — selection and panel agree.
+        time.Advance(PreviewPolicy.KeyboardSettleMs - 50);
+        Assert.Equal(PreviewCommand.Retarget, policy.Tick());
+        Assert.Null(policy.TimeUntilDecision());
+    }
+
+    [Fact]
+    public void A_closed_panel_arms_nothing()
+    {
+        var (policy, time) = Make();
+
+        policy.HoverEnter(1);
+        Assert.NotNull(policy.TimeUntilDecision());
+
+        policy.Scrolled();
+        Assert.Null(policy.TimeUntilDecision());
     }
 }

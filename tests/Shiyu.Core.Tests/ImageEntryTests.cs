@@ -28,7 +28,12 @@ public class ImageEntryTests
 
     private sealed class FakeImage(int width, int height) : IClipboardImage
     {
+        private static long _next;
+
         public Exception? Fails { get; init; }
+
+        /// <summary>Distinct per instance: two fakes are two copies.</summary>
+        public long Fingerprint { get; } = System.Threading.Interlocked.Increment(ref _next);
 
         public Task<RenderedImage> RenderAsync(CancellationToken cancellation = default)
             => Fails is not null
@@ -37,7 +42,8 @@ public class ImageEntryTests
                     FullPng: [1, 2, 3, 4, 5, 6, 7, 8],
                     ThumbnailPng: [9, 9, 9],
                     width,
-                    height));
+                    height,
+                    Fingerprint));
     }
 
     [Fact]
@@ -106,6 +112,73 @@ public class ImageEntryTests
         Assert.Equal(2, entries.Count);
         Assert.Contains("200×200", entries[0].Text);
         Assert.Contains("100×100", entries[1].Text);
+    }
+
+    // --- duplicate publication collapse (O-36) -----------------------------------
+    // The collapse moved from the monitor to the pipeline: the fingerprint
+    // only exists after the decode, and the decode now runs off the message
+    // thread.
+
+    private sealed class RepeatImage(long fingerprint) : IClipboardImage
+    {
+        public Task<RenderedImage> RenderAsync(CancellationToken cancellation = default)
+            => Task.FromResult(new RenderedImage([1], [1], 800, 600, fingerprint));
+    }
+
+    [Fact]
+    public async Task The_same_image_published_twice_is_recorded_once()
+    {
+        using var database = new TempDatabase();
+        using var folder = new TempFolder();
+        var clipboard = new FakeClipboardMonitor();
+        using var store = EntryStore.Open(database.FilePath);
+        using var pipeline = new ClipboardPipeline(
+            clipboard, store, new TestClock(Noon), new ExclusionPolicy(), new ImageArchive(folder.Path_));
+
+        clipboard.EmitImage(new RepeatImage(0xABCDEF));
+        clipboard.EmitImage(new RepeatImage(0xABCDEF));
+        await pipeline.Idle;
+
+        Assert.Single(store.Recent(limit: 10));
+    }
+
+    [Fact]
+    public async Task The_same_image_returned_after_text_in_between_is_recorded_again()
+    {
+        using var database = new TempDatabase();
+        using var folder = new TempFolder();
+        var clipboard = new FakeClipboardMonitor();
+        using var store = EntryStore.Open(database.FilePath);
+        using var pipeline = new ClipboardPipeline(
+            clipboard, store, new TestClock(Noon), new ExclusionPolicy(), new ImageArchive(folder.Path_));
+
+        clipboard.EmitImage(new RepeatImage(0xABCDEF));
+        clipboard.Emit("text in between");
+        clipboard.EmitImage(new RepeatImage(0xABCDEF));
+        await pipeline.Idle;
+
+        // Text supersedes: the repeat is a fresh copy, not a phantom
+        // republication of the last one.
+        Assert.Equal(3, store.Count());
+    }
+
+    [Fact]
+    public async Task An_image_without_a_fingerprint_is_never_collapsed()
+    {
+        using var database = new TempDatabase();
+        using var folder = new TempFolder();
+        var clipboard = new FakeClipboardMonitor();
+        using var store = EntryStore.Open(database.FilePath);
+        using var pipeline = new ClipboardPipeline(
+            clipboard, store, new TestClock(Noon), new ExclusionPolicy(), new ImageArchive(folder.Path_));
+
+        // Zero is the explicit "cannot hash" marker; two of them must both
+        // land rather than the second being mistaken for the first.
+        clipboard.EmitImage(new RepeatImage(0));
+        clipboard.EmitImage(new RepeatImage(0));
+        await pipeline.Idle;
+
+        Assert.Equal(2, store.Count());
     }
 
     [Fact]

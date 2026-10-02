@@ -297,4 +297,35 @@ public sealed class PreviewPolicy
 
         return PreviewCommand.None;
     }
+
+    /// <summary>
+    /// How much longer the next time-based decision is waiting for, or null
+    /// when nothing is pending and no timer need run (O-37).
+    ///
+    /// The window arms one single-shot timer for exactly this long after
+    /// every event; a bar that is merely visible — no hover dwelling, no
+    /// buffer running, no key held — asks for no wake-ups at all, where the
+    /// old fixed 50 ms tick spun for the whole time the bar was on screen.
+    /// The deadline is the same instant <see cref="Tick"/> would have acted
+    /// on, so arming and firing land identically to polling did.
+    /// </summary>
+    public TimeSpan? TimeUntilDecision()
+    {
+        var now = Clock();
+
+        var wait = _state switch
+        {
+            State.PendingHover => _hoverDelayMs - (now - _hoverEnteredAt),
+            State.Buffering => HoverBufferMs - (now - _bufferLeftAt),
+            State.Open when _trigger == PreviewTrigger.Keyboard
+                && _keyboardTarget is { } target
+                && target != Card
+                => KeyboardSettleMs - (now - _keyboardTargetAt),
+            _ => (long?)null,
+        };
+
+        // A deadline already reached reports zero: the caller fires the
+        // decision now rather than sleeping a negative span.
+        return wait is null ? null : TimeSpan.FromMilliseconds(Math.Max(0, wait.Value));
+    }
 }

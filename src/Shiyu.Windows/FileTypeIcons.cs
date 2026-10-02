@@ -22,17 +22,27 @@ public sealed class FileTypeIcons
     private readonly Dictionary<string, ImageSource?> _cache = [];
 
     /// <summary>The 16-unit icon for a path's type — its extension, or a folder.</summary>
-    public ImageSource? For(string path)
+    public ImageSource? For(string path) => For(path, Directory.Exists(path));
+
+    /// <summary>
+    /// The same icon, with the caller answering the one question that used to
+    /// cost a disk round-trip: whether the path names a directory. A path on
+    /// an offline network drive makes <see cref="Directory.Exists"/> wait out
+    /// an SMB timeout, so renderers that keep a cache (O-36) pass its verdict
+    /// and stay off the disk; the answer changes the icon's shape, nothing
+    /// else, so a stale verdict costs a wrong glyph until the probe corrects
+    /// it — never a frozen list.
+    /// </summary>
+    public ImageSource? For(string path, bool isDirectory)
     {
-        var directory = Directory.Exists(path);
-        var key = directory ? "\\dir" : Path.GetExtension(path).ToLowerInvariant();
+        var key = isDirectory ? "\\dir" : Path.GetExtension(path).ToLowerInvariant();
 
         if (_cache.TryGetValue(key, out var cached))
         {
             return cached;
         }
 
-        var icon = Extract(directory, key);
+        var icon = Extract(isDirectory, key);
         _cache[key] = icon;
         return icon;
     }
