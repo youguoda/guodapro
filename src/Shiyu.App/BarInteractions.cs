@@ -365,8 +365,10 @@ internal partial class BarWindow
 
                 // Rich destinations get the RTF form; plain ones quietly use
                 // the text above — one payload, both worlds. (HTML is left
-                // out: WPF writes it header-less and targets mangle it.)
-                if (card.Rtf is { Length: > 0 } rtf)
+                // out: WPF writes it header-less and targets mangle it.) The
+                // formats are fetched here, at the moment of the drag: listed
+                // cards are narrow by design (O-22).
+                if (_store.Get(card.Id) is { Rtf: { Length: > 0 } rtf })
                 {
                     data.SetText(rtf, TextDataFormat.Rtf);
                 }
@@ -518,7 +520,7 @@ internal partial class BarWindow
         switch (id)
         {
             case "copy":
-                _store.BumpUse(card.Id);
+                SelfWrite(() => _store.BumpUse(card.Id));
                 if (CopyCard(card))
                 {
                     Confirm(feedback, true);
@@ -534,7 +536,7 @@ internal partial class BarWindow
                 // Strips every format: plain text and nothing else, so what
                 // lands carries no styling from where it came. Never offered
                 // for file entries — there is no plain form to strip.
-                _store.BumpUse(card.Id);
+                SelfWrite(() => _store.BumpUse(card.Id));
                 if (_clipboard.SetText(card.Text))
                 {
                     Confirm(feedback, true);
@@ -559,12 +561,12 @@ internal partial class BarWindow
                 break;
 
             case "pin":
-                _store.SetPinned(card.Id, !card.IsPinned);
+                SelfWrite(() => _store.SetPinned(card.Id, !card.IsPinned));
                 ReloadData();
                 break;
 
             case "favorite":
-                _store.SetFavorite(card.Id, !card.Favorite);
+                SelfWrite(() => _store.SetFavorite(card.Id, !card.Favorite));
 
                 // In place: a favourite joins a collection and never moves,
                 // so the list around it must not so much as blink.
@@ -592,7 +594,7 @@ internal partial class BarWindow
                 var snapshot = _store.Get(card.Id);
                 var groupName = snapshot is null ? null : _store.GroupOf(snapshot)?.Name;
 
-                _store.Delete(card.Id);
+                SelfWrite(() => _store.Delete(card.Id));
                 _browser.Forget(card.Id);
                 RemoveCard(card);
                 UpdateFooter();
@@ -618,13 +620,14 @@ internal partial class BarWindow
     /// <summary>
     /// Copies an entry as itself: plain text always, the HTML and RTF forms
     /// when the entry has them, so a rich destination receives the formatting
-    /// and a plain one receives readable text.
+    /// and a plain one receives readable text. The formats come from the
+    /// payload table on the spot — a listed card does not carry them (O-22).
     /// </summary>
     private bool CopyCard(BarCard card)
         => card.Files.Count > 0
             ? _clipboard.SetFiles(card.Files)
-            : card.Html is { Length: > 0 } || card.Rtf is { Length: > 0 }
-                ? _clipboard.SetRich(card.Text, card.Html, card.Rtf)
+            : _store.Get(card.Id) is { } full && (full.Html is { Length: > 0 } || full.Rtf is { Length: > 0 })
+                ? _clipboard.SetRich(card.Text, full.Html, full.Rtf)
                 : _clipboard.SetText(card.Text);
 
     /// <summary>
@@ -655,9 +658,12 @@ internal partial class BarWindow
                 _capture.PasteCurrentClipboard();
             }
         }
-        else if (card.Html is { Length: > 0 } || card.Rtf is { Length: > 0 })
+        else if (_store.Get(card.Id) is { } full
+            && (full.Html is { Length: > 0 } || full.Rtf is { Length: > 0 }))
         {
-            if (_clipboard.SetRich(card.Text, card.Html, card.Rtf))
+            // The formats join the paste at the moment it happens; the card
+            // itself never carried them (O-22).
+            if (_clipboard.SetRich(card.Text, full.Html, full.Rtf))
             {
                 _capture.PasteCurrentClipboard();
             }
@@ -758,7 +764,7 @@ internal partial class BarWindow
 
         save.Click += (_, _) =>
         {
-            _store.SetNote(card.Id, box.Text);
+            SelfWrite(() => _store.SetNote(card.Id, box.Text));
             card.Note = string.IsNullOrWhiteSpace(box.Text) ? null : box.Text.Trim();
             ApplyFace(card, hovered: false);
             editor.Close();
@@ -766,7 +772,7 @@ internal partial class BarWindow
 
         remove.Click += (_, _) =>
         {
-            _store.SetNote(card.Id, null);
+            SelfWrite(() => _store.SetNote(card.Id, null));
             card.Note = null;
             ApplyFace(card, hovered: false);
             editor.Close();

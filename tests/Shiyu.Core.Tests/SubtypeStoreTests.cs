@@ -18,7 +18,7 @@ public class SubtypeStoreTests
         store.Append("#1F6FEB", "paint", DateTimeOffset.UnixEpoch);
         store.Append("普通文本", "notepad", DateTimeOffset.UnixEpoch);
 
-        var entries = store.Page(10, 0);
+        var entries = store.Page(10);
 
         Assert.Equal(EntrySubtype.Link, entries.First(e => e.Text.StartsWith("https")).Subtype);
         Assert.Equal(EntrySubtype.Color, entries.First(e => e.Text == "#1F6FEB").Subtype);
@@ -61,24 +61,27 @@ public class SubtypeStoreTests
     }
 
     [Fact]
-    public void Rows_recorded_before_subtypes_exist_are_backfilled_on_open()
+    public void Rows_recorded_before_subtypes_exist_are_backfilled_on_upgrade()
     {
         using var database = new TempDatabase();
 
         using (var store = EntryStore.Open(database.FilePath))
         {
-            // Written the way an older build would have: no subtype at all.
+            // Written the way an older build would have: no subtype at all,
+            // and a schema version to match — the backfill is a migration now
+            // (O-22), not something every open repeats.
             using var command = store.Connection.CreateCommand();
             command.CommandText = """
                 INSERT INTO entries (text, source_app, created_at, kind)
                 VALUES ('https://legacy.example.com', 'old', 0, 0);
+                PRAGMA user_version = 11;
                 """;
             command.ExecuteNonQuery();
         }
 
         using (var reopened = EntryStore.Open(database.FilePath))
         {
-            var entry = Assert.Single(reopened.Page(10, 0));
+            var entry = Assert.Single(reopened.Page(10));
             Assert.Equal(EntrySubtype.Link, entry.Subtype);
         }
     }

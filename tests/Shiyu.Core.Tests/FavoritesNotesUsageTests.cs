@@ -26,8 +26,8 @@ public class FavoritesNotesUsageTests
         // Newest first both before and after: a favourite belongs to a
         // collection, it does not claim the top of the list — that is the
         // pin's job.
-        Assert.Equal(["newer", "older"], store.Page(10, 0).Select(e => e.Text));
-        Assert.True(store.Page(10, 0).Single(e => e.Text == "older").Favorite);
+        Assert.Equal(["newer", "older"], store.Page(10).Select(e => e.Text));
+        Assert.True(store.Page(10).Single(e => e.Text == "older").Favorite);
     }
 
     [Fact]
@@ -56,13 +56,13 @@ public class FavoritesNotesUsageTests
         var entry = store.Append("0x1F6FEB", null, Monday);
 
         store.SetNote(entry.Id, "给客户的品牌蓝");
-        Assert.Equal("给客户的品牌蓝", store.Page(10, 0)[0].Note);
+        Assert.Equal("给客户的品牌蓝", store.Page(10)[0].Note);
 
         store.SetNote(entry.Id, "品牌主色");
-        Assert.Equal("品牌主色", store.Page(10, 0)[0].Note);
+        Assert.Equal("品牌主色", store.Page(10)[0].Note);
 
         store.SetNote(entry.Id, null);
-        Assert.Null(store.Page(10, 0)[0].Note);
+        Assert.Null(store.Page(10)[0].Note);
     }
 
     [Fact]
@@ -91,7 +91,7 @@ public class FavoritesNotesUsageTests
         store.BumpUse(entry.Id);
         store.BumpUse(entry.Id);
 
-        Assert.Equal(2, store.Page(10, 0)[0].UseCount);
+        Assert.Equal(2, store.Page(10)[0].UseCount);
     }
 
     [Fact]
@@ -105,7 +105,7 @@ public class FavoritesNotesUsageTests
         store.SetFavorite(pinned.Id, true);
         store.SetNote(pinned.Id, "全都要");
 
-        var entry = store.Page(10, 0)[0];
+        var entry = store.Page(10)[0];
         Assert.True(entry.IsPinned);
         Assert.True(entry.Favorite);
         Assert.Equal("全都要", entry.Note);

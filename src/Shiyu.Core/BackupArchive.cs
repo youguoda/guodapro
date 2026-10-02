@@ -143,13 +143,20 @@ public static class BackupArchive
         var imageNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var done = 0;
 
+        // Walked by id cursor: OFFSET paging would re-read the whole table once
+        // per page, which at export sizes is the difference between reading the
+        // library and re-reading it a thousand times. Payloads ride along — an
+        // export is exactly the read that wants them.
+        long afterId = 0;
         while (true)
         {
-            var page = store.Page(200, dtos.Count);
+            var page = store.EntriesWithBlobsAfter(afterId, 200);
             if (page.Count == 0)
             {
                 break;
             }
+
+            afterId = page[^1].Id;
 
             foreach (var entry in page)
             {
@@ -507,10 +514,13 @@ public static class BackupArchive
                 var existing = new HashSet<string>();
                 if (!overwrite)
                 {
-                    var offset = 0;
+                    // The fingerprints compare payloads too (a thumbnail is
+                    // content), so the scan reads them — by id cursor, same as
+                    // the export walk.
+                    long afterId = 0;
                     while (true)
                     {
-                        var page = store.Page(500, offset);
+                        var page = store.EntriesWithBlobsAfter(afterId, 500);
                         if (page.Count == 0)
                         {
                             break;
@@ -521,7 +531,7 @@ public static class BackupArchive
                             existing.Add(ContentFingerprint.Of(entry));
                         }
 
-                        offset += page.Count;
+                        afterId = page[^1].Id;
                     }
                 }
 

@@ -44,69 +44,74 @@ public sealed partial class EntryStore
 
     /// <summary>Creates a group, appended at the end of the order. Returns its id.</summary>
     public long CreateGroup(string name, string? icon = null)
-    {
-        lock (_gate)
+        => Write(() =>
         {
-            using var command = _connection.CreateCommand();
-            command.CommandText = """
-                INSERT INTO groups (name, icon, position)
-                VALUES ($name, $icon, (SELECT COALESCE(MAX(position), 0) + 1 FROM groups))
-                RETURNING id;
-                """;
-            command.Parameters.AddWithValue("$name", name);
-            command.Parameters.AddWithValue("$icon", (object?)icon ?? DBNull.Value);
-            return (long)command.ExecuteScalar()!;
-        }
-    }
+            lock (_gate)
+            {
+                using var command = _connection.CreateCommand();
+                command.CommandText = """
+                    INSERT INTO groups (name, icon, position)
+                    VALUES ($name, $icon, (SELECT COALESCE(MAX(position), 0) + 1 FROM groups))
+                    RETURNING id;
+                    """;
+                command.Parameters.AddWithValue("$name", name);
+                command.Parameters.AddWithValue("$icon", (object?)icon ?? DBNull.Value);
+                return (long)command.ExecuteScalar()!;
+            }
+        });
 
     public void RenameGroup(long id, string name)
-    {
-        lock (_gate)
+        => Write(() =>
         {
-            using var command = _connection.CreateCommand();
-            command.CommandText = "UPDATE groups SET name = $name WHERE id = $id;";
-            command.Parameters.AddWithValue("$name", name);
-            command.Parameters.AddWithValue("$id", id);
-            command.ExecuteNonQuery();
-        }
-    }
+            lock (_gate)
+            {
+                using var command = _connection.CreateCommand();
+                command.CommandText = "UPDATE groups SET name = $name WHERE id = $id;";
+                command.Parameters.AddWithValue("$name", name);
+                command.Parameters.AddWithValue("$id", id);
+                command.ExecuteNonQuery();
+            }
+        });
 
     public void SetGroupIcon(long id, string? icon)
-    {
-        lock (_gate)
+        => Write(() =>
         {
-            using var command = _connection.CreateCommand();
-            command.CommandText = "UPDATE groups SET icon = $icon WHERE id = $id;";
-            command.Parameters.AddWithValue("$icon", (object?)icon ?? DBNull.Value);
-            command.Parameters.AddWithValue("$id", id);
-            command.ExecuteNonQuery();
-        }
-    }
+            lock (_gate)
+            {
+                using var command = _connection.CreateCommand();
+                command.CommandText = "UPDATE groups SET icon = $icon WHERE id = $id;";
+                command.Parameters.AddWithValue("$icon", (object?)icon ?? DBNull.Value);
+                command.Parameters.AddWithValue("$id", id);
+                command.ExecuteNonQuery();
+            }
+        });
 
     /// <summary>
     /// A hidden group keeps its entries and stays assignable, but leaves the
     /// switcher row — for the pile the user is not switching to right now.
     /// </summary>
     public void SetGroupHidden(long id, bool hidden)
-    {
-        lock (_gate)
+        => Write(() =>
         {
-            using var command = _connection.CreateCommand();
-            command.CommandText = "UPDATE groups SET hidden = $hidden WHERE id = $id;";
-            command.Parameters.AddWithValue("$hidden", hidden ? 1 : 0);
-            command.Parameters.AddWithValue("$id", id);
-            command.ExecuteNonQuery();
-        }
-    }
+            lock (_gate)
+            {
+                using var command = _connection.CreateCommand();
+                command.CommandText = "UPDATE groups SET hidden = $hidden WHERE id = $id;";
+                command.Parameters.AddWithValue("$hidden", hidden ? 1 : 0);
+                command.Parameters.AddWithValue("$id", id);
+                command.ExecuteNonQuery();
+            }
+        });
 
     /// <summary>
     /// Swaps a group with its neighbour in the ordering. Moving past either
     /// end is a no-op: the row is a short list, not a free-form canvas.
     /// </summary>
     public void MoveGroup(long id, int delta)
-    {
-        lock (_gate)
+        => Write(() =>
         {
+            lock (_gate)
+            {
             var groups = Groups();
             var index = 0;
             while (index < groups.Count && groups[index].Id != id)
@@ -140,8 +145,8 @@ public sealed partial class EntryStore
             }
 
             write.Commit();
-        }
-    }
+            }
+        });
 
     /// <summary>The group an entry is filed into, or null. Export reads it to carry group membership by name.</summary>
     public EntryGroup? GroupOf(Entry entry)
@@ -194,26 +199,28 @@ public sealed partial class EntryStore
     /// their column and they return to ungrouped, exactly as promised.
     /// </summary>
     public void DeleteGroup(long id)
-    {
-        lock (_gate)
+        => Write(() =>
         {
-            using var command = _connection.CreateCommand();
-            command.CommandText = "DELETE FROM groups WHERE id = $id;";
-            command.Parameters.AddWithValue("$id", id);
-            command.ExecuteNonQuery();
-        }
-    }
+            lock (_gate)
+            {
+                using var command = _connection.CreateCommand();
+                command.CommandText = "DELETE FROM groups WHERE id = $id;";
+                command.Parameters.AddWithValue("$id", id);
+                command.ExecuteNonQuery();
+            }
+        });
 
     /// <summary>Files an entry into a group, or removes it with a null group.</summary>
     public void SetEntryGroup(long entryId, long? groupId)
-    {
-        lock (_gate)
+        => Write(() =>
         {
-            using var command = _connection.CreateCommand();
-            command.CommandText = "UPDATE entries SET group_id = $group WHERE id = $id;";
-            command.Parameters.AddWithValue("$group", (object?)groupId ?? DBNull.Value);
-            command.Parameters.AddWithValue("$id", entryId);
-            command.ExecuteNonQuery();
-        }
-    }
+            lock (_gate)
+            {
+                using var command = _connection.CreateCommand();
+                command.CommandText = "UPDATE entries SET group_id = $group WHERE id = $id;";
+                command.Parameters.AddWithValue("$group", (object?)groupId ?? DBNull.Value);
+                command.Parameters.AddWithValue("$id", entryId);
+                command.ExecuteNonQuery();
+            }
+        });
 }

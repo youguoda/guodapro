@@ -12,7 +12,7 @@ internal partial class BarWindow
 {
     // --- cards ----------------------------------------------------------------
 
-    private BarCard CardFor(Entry entry)
+    private BarCard CardFor(Entry entry, IReadOnlyDictionary<long, EntryBlobs>? blobs = null)
     {
         var collapsed = string.Join(' ', entry.Text.Split(
             ['\r', '\n', '\t'],
@@ -28,6 +28,11 @@ internal partial class BarWindow
                     !File.Exists(path)))
                 .ToList()
             : [];
+
+        // List rows are narrow by design (O-22); the thumbnail a card shows
+        // comes from the page's one BlobsOf batch, and the formatted forms are
+        // fetched at the moment an action needs them.
+        var payload = blobs?.GetValueOrDefault(entry.Id);
 
         var card = new BarCard
         {
@@ -57,13 +62,11 @@ internal partial class BarWindow
             WhenToolTip = $"{entry.CreatedAt.ToLocalTime():yyyy-MM-dd HH:mm}",
             Icon = _icons.For(entry.SourceApp),
             Thumbnail = entry.Kind == EntryKind.Image
-                ? AppIconCache.Decode(entry.ThumbnailPng, 320)
+                ? AppIconCache.Decode(payload?.ThumbnailPng, 320)
                 : null,
             OriginalPath = entry.OriginalPath,
             HasOriginal = entry.HasOriginal,
             Subtype = entry.Subtype,
-            Html = entry.Html,
-            Rtf = entry.Rtf,
             Files = entry.Files,
             Favorite = entry.Favorite,
             Note = entry.Note,
@@ -182,18 +185,26 @@ internal partial class BarWindow
 
     private void Append(IEnumerable<Entry> entries)
     {
+        var batch = entries.ToList();
+
+        // The one payload read per page: only image cards want a thumbnail,
+        // so the batch asks for those ids alone rather than dragging payloads
+        // through the list query (O-22).
+        var blobs = _store.BlobsOf(
+            [.. batch.Where(entry => entry.Kind == EntryKind.Image).Select(entry => entry.Id)]);
+
         // The store orders pinned first, so the partition is one pass: once
         // the first unpinned entry arrives, everything after it is too.
         var pastPinned = _cards.Count > 0;
 
-        foreach (var entry in entries)
+        foreach (var entry in batch)
         {
             if (!entry.IsPinned)
             {
                 pastPinned = true;
             }
 
-            var card = CardFor(entry);
+            var card = CardFor(entry, blobs);
             card.RowKeyText = BarKeys.RowKey(_pinned.Count + _cards.Count + 1);
             (pastPinned ? _cards : _pinned).Add(card);
         }
@@ -277,7 +288,7 @@ internal partial class BarWindow
         {
             // Re-filing by group name recreates the group if it went away
             // mid-window, which is the same promise delete made about entries.
-            _store.ImportEntry(entry, group);
+            SelfWrite(() => _store.ImportEntry(entry, group));
         }
 
         ClearFeedback();
@@ -312,19 +323,54 @@ internal partial class BarWindow
         UpdateFooter();
     }
 
-    private void ReloadIfBehind(bool force = false)
+    /// <summary>
+    /// The store changed underneath — a copy from anywhere, a retention sweep,
+    /// an import, an edit in the library window. Reload while visible; while
+    /// hidden there is nothing to refresh and Summon reads fresh anyway, which
+    /// is exactly the boundary the old two-second probe kept.
+    /// </summary>
+    private void OnStoreChanged()
     {
-        var count = _store.Count();
-
-        if (!force && (count == _seenCount || !IsVisible))
+        // This window's own writes already produced exactly the visual change
+        // they meant to — favourite and note update their card in place, pin
+        // reloads itself — so a reload here would only reset the scroll under
+        // the user (O-37). The depth is read on the writer's thread; a benign
+        // race with a background write costs one extra reload, never a miss.
+        if (_selfWrites > 0 || !IsVisible)
         {
             return;
         }
 
-        _seenCount = count;
-        _browser.Reset();
-        RefreshTagChoices();
-        Rebuild();
+        if (Dispatcher.CheckAccess())
+        {
+            ReloadData();
+        }
+        else
+        {
+            // External writes arrive on the pipeline's thread; the cards
+            // belong to the dispatcher's.
+            Dispatcher.BeginInvoke(ReloadData);
+        }
+    }
+
+    /// <summary>How many of this window's own writes are in flight.</summary>
+    private int _selfWrites;
+
+    /// <summary>
+    /// Runs one of this window's own writes, whose Changed event it intends
+    /// to ignore because it handles the visual itself.
+    /// </summary>
+    private void SelfWrite(Action write)
+    {
+        _selfWrites++;
+        try
+        {
+            write();
+        }
+        finally
+        {
+            _selfWrites--;
+        }
     }
 
     private void OnCardsScrolled(object sender, ScrollChangedEventArgs e)

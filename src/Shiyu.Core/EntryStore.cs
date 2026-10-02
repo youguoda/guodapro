@@ -3,6 +3,19 @@
 namespace Shiyu.Core;
 
 /// <summary>
+/// Where a paged read left off: the sort key of the last row a page returned.
+/// The next page asks for everything strictly after it, which reads the same
+/// no matter how many rows have been added above it in the meantime — the
+/// failure mode OFFSET paging has at depth, where every appended row shifts
+/// the window and either repeats or skips history.
+/// </summary>
+public readonly record struct PageCursor(int Pinned, long CreatedAtMs, long Id)
+{
+    public static PageCursor Of(Entry entry)
+        => new(entry.IsPinned ? 1 : 0, entry.CreatedAt.ToUnixTimeMilliseconds(), entry.Id);
+}
+
+/// <summary>
 /// The clipboard history, stored in SQLite. Deliberately concrete rather than
 /// behind a port: search, filtering and retention are exactly the logic a fake
 /// store would stop testing.
@@ -24,6 +37,75 @@ public sealed partial class EntryStore : IDisposable
 
     /// <summary>The transaction <see cref="RunInTransaction"/> holds open, if any. Touched only under the gate.</summary>
     private SqliteTransaction? _batch;
+
+    /// <summary>
+    /// The last known row count, or null when a write has invalidated it. Read
+    /// by <see cref="Count"/> on every narrow-bar paint; a history of a hundred
+    /// thousand entries should not be COUNTed that often. Touched only under
+    /// the gate, so the invalidation a write performs cannot race the read
+    /// another thread is making.
+    /// </summary>
+    private int? _countCache;
+
+    /// <summary>
+    /// Raised once after the outermost write of a call — or of a whole
+    /// <see cref="RunInTransaction"/> batch — has committed. The narrow bar
+    /// subscribes instead of polling a count every two seconds: a count probe
+    /// cannot see a re-copied entry Touch its way back to the top, or a note
+    /// edited in another window (O-37).
+    ///
+    /// The event fires <em>outside</em> the gate, deliberately. A handler that
+    /// hops to a UI thread with Dispatcher.Invoke would deadlock against the
+    /// gate if it were held (the UI thread may be the one waiting on it), and
+    /// handlers are free to call back into the store — every public member
+    /// takes the gate cleanly.
+    /// </summary>
+    public event Action? Changed;
+
+    /// <summary>How many write frames are nested on this thread. Touched only under the gate.</summary>
+    private int _writeDepth;
+
+    /// <summary>
+    /// Runs one public write. Every write funnels through here so the event
+    /// discipline cannot drift: the outermost frame reports, inner frames do
+    /// not — an import inside a batch is the batch's to report, and a
+    /// mid-transaction broadcast would describe a state a rollback then
+    /// un-happens. A write that throws reports nothing, because it landed
+    /// nothing.
+    /// </summary>
+    private TResult Write<TResult>(Func<TResult> work)
+    {
+        TResult result;
+        bool report;
+
+        lock (_gate)
+        {
+            _writeDepth++;
+            try
+            {
+                result = work();
+            }
+            finally
+            {
+                _writeDepth--;
+            }
+
+            report = _writeDepth == 0;
+        }
+
+        if (report)
+        {
+            Changed?.Invoke();
+        }
+
+        return result;
+    }
+
+    private void Write(Action work) => Write<object?>(() =>
+    {
+        work();
+        return null;
+    });
 
     /// <summary>Internal for tests: writing rows the way an older build would have.</summary>
     internal SqliteConnection Connection => _connection;
@@ -53,7 +135,37 @@ public sealed partial class EntryStore : IDisposable
     /// <summary>
     /// The shape the code expects. Bumped whenever a migration is added below.
     /// </summary>
-    private const int SchemaVersion = 11;
+    private const int SchemaVersion = 14;
+
+    /// <summary>
+    /// The columns every list path reads: everything except the payloads that
+    /// live in <c>entry_blobs</c>. Reading a column that physically sits after
+    /// a thumbnail or an HTML blob walks that blob's overflow pages first —
+    /// the cost the side table exists to remove — so a list query must not
+    /// name those columns at all, not even as ones it ignores.
+    /// </summary>
+    private const string NarrowColumns = """
+        id, text, source_app, created_at, kind, original_path, pinned, sub_type,
+        files, favorite, note, use_count, group_id, translated_from, image_width, image_height
+        """;
+
+    /// <summary>
+    /// The entry's tags joined into the eleventh column position — one query
+    /// per page rather than one per row.
+    /// </summary>
+    private const string TagsColumn = """
+        (SELECT group_concat(t.name, char(31)) FROM tags t
+           JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
+        """;
+
+    /// <summary>
+    /// What <see cref="EntrySubtype.None"/> is stored as. A value rather than
+    /// NULL, so "classified, nothing specific" and "not yet classified" are
+    /// different rows: the NULLs are exactly the ones an older build left
+    /// behind, and once the migration has filled them, plain text is never
+    /// rescanned on startup again (O-22).
+    /// </summary>
+    private const string SubtypeSentinel = "None";
 
     /// <summary>
     /// Joins tag names into one column. A unit separator, because it cannot
@@ -210,12 +322,52 @@ public sealed partial class EntryStore : IDisposable
             BackfillImageSizes();
         }
 
+        if (from < 12)
+        {
+            // Every list path — Recent, Page, Find, Search — orders by this
+            // exact triple. Without the index each of those is a full scan
+            // plus a sort; with it, a page is an index walk that stops at the
+            // limit (O-22). It lives here rather than in CreateSchema because
+            // the last column of the triple only exists from version 9 on.
+            Execute("""
+                CREATE INDEX IF NOT EXISTS idx_entries_order
+                ON entries (pinned DESC, created_at DESC, id DESC);
+                """);
+
+            // One-time version of the subtype backfill that used to run on
+            // every open. Rows written since subtypes existed store a value at
+            // write time — 'None' when there is nothing more specific — so the
+            // only rows with a NULL are ones an older build left behind. This
+            // pass classifies those and stamps the rest, after which NULL never
+            // recurs and the every-startup rescan is gone (O-22).
+            BackfillSubtypesOnce();
+        }
+
+        if (from < 13)
+        {
+            // The wide payloads — thumbnails, HTML, RTF — leave the entries
+            // table for a side table keyed by the same id. In the old layout
+            // they sat before pinned and note in every record, so listing a
+            // page walked each row's overflow pages even though the list
+            // never wanted the payloads (O-22).
+            SplitBlobsIntoSideTable();
+        }
+
+        if (from < 14)
+        {
+            // The trigram full-text index that finally makes Chinese search
+            // indexable (O-22): the default tokeniser refuses to segment
+            // Chinese, which is why search was a LIKE scan for so long. A
+            // trigram index keeps substring semantics — every three-character
+            // window of the text is a token — so 剪贴板 finds 剪贴板历史
+            // exactly as LIKE did, without walking the table.
+            CreateFullTextIndex();
+        }
+
         if (from != SchemaVersion)
         {
             Execute($"PRAGMA user_version = {SchemaVersion};");
         }
-
-        BackfillSubtypes();
     }
 
     /// <summary>
@@ -270,11 +422,17 @@ public sealed partial class EntryStore : IDisposable
     }
 
     /// <summary>
-    /// Classifies any rows recorded before subtypes existed. Idempotent and
-    /// run on every open: it selects only NULL rows, so a clean database
-    /// costs one indexed query and the work happens exactly once per row.
+    /// Classifies any rows recorded before subtypes existed, and stamps the
+    /// rest with the 'None' sentinel — see <see cref="SubtypeSentinel"/>.
+    ///
+    /// Runs once, from the migration that owns it, not on every open: the
+    /// every-open version re-selected all plain text forever because plain
+    /// text was stored as NULL and NULL was exactly what it looked for.
+    /// Interrupted mid-run it simply runs again — version 12 is only stamped
+    /// after the last row is non-NULL — so a killed upgrade finishes itself on
+    /// the next open.
     /// </summary>
-    private void BackfillSubtypes()
+    private void BackfillSubtypesOnce()
     {
         var updates = new List<(long id, string subtype)>();
 
@@ -288,11 +446,7 @@ public sealed partial class EntryStore : IDisposable
             using var reader = read.ExecuteReader();
             while (reader.Read())
             {
-                var subtype = SubtypeClassifier.Detect(reader.GetString(1));
-                if (subtype != EntrySubtype.None)
-                {
-                    updates.Add((reader.GetInt64(0), subtype.ToString()));
-                }
+                updates.Add((reader.GetInt64(0), SubtypeClassifier.Detect(reader.GetString(1)).ToString()));
             }
         }
 
@@ -301,8 +455,6 @@ public sealed partial class EntryStore : IDisposable
             return;
         }
 
-        // None-valued rows stay NULL: they are the common case, and writing
-        // millions of no-ops is not free on a big history.
         using var transaction = _connection.BeginTransaction();
 
         using var update = _connection.CreateCommand();
@@ -323,6 +475,145 @@ public sealed partial class EntryStore : IDisposable
         }
 
         transaction.Commit();
+    }
+
+    /// <summary>
+    /// Copies thumbnail/html/rtf from the entries table into
+    /// <c>entry_blobs</c>, then drops the old columns.
+    ///
+    /// The copy runs in batches, each its own transaction, so an upgrade of a
+    /// large history never holds one unbounded transaction open. Both
+    /// statements of a batch are keyed on "has a payload AND already has a
+    /// side-table row", which makes the whole pass idempotent: interrupted at
+    /// any point, the next open simply continues with the rows that still
+    /// carry payloads — version 13 is stamped only after the last one moved.
+    ///
+    /// The copy is pure SQL (INSERT…SELECT) rather than read-into-memory:
+    /// a batch of five hundred rich entries can be half a gigabyte, and the
+    /// per-batch payload never needs to exist in the process at all.
+    /// </summary>
+    private void SplitBlobsIntoSideTable()
+    {
+        Execute("""
+            CREATE TABLE IF NOT EXISTS entry_blobs (
+                entry_id  INTEGER PRIMARY KEY REFERENCES entries(id) ON DELETE CASCADE,
+                thumbnail BLOB NULL,
+                html      TEXT NULL,
+                rtf       TEXT NULL
+            );
+            """);
+
+        // A database arriving here through the version ladder always has the
+        // three columns — version 2 added them long before this step runs. The
+        // guard is for the one shape that can arrive without them: a database
+        // whose version was set back by hand (tests simulate old versions that
+        // way), where there is simply nothing to move.
+        if (!HasColumn("thumbnail"))
+        {
+            return;
+        }
+
+        const int batch = 500;
+
+        while (true)
+        {
+            using var write = _connection.BeginTransaction();
+
+            long copied;
+            using (var copy = _connection.CreateCommand())
+            {
+                copy.Transaction = write;
+                copy.CommandText = $"""
+                    INSERT INTO entry_blobs (entry_id, thumbnail, html, rtf)
+                    SELECT id, thumbnail, html, rtf FROM entries
+                    WHERE (thumbnail IS NOT NULL OR html IS NOT NULL OR rtf IS NOT NULL)
+                      AND NOT EXISTS (SELECT 1 FROM entry_blobs b WHERE b.entry_id = entries.id)
+                    LIMIT {batch}
+                    RETURNING entry_id;
+                    """;
+                using var reader = copy.ExecuteReader();
+                copied = 0;
+                while (reader.Read())
+                {
+                    copied++;
+                }
+            }
+
+            using (var clear = _connection.CreateCommand())
+            {
+                clear.Transaction = write;
+                clear.CommandText = """
+                    UPDATE entries SET thumbnail = NULL, html = NULL, rtf = NULL
+                    WHERE (thumbnail IS NOT NULL OR html IS NOT NULL OR rtf IS NOT NULL)
+                      AND EXISTS (SELECT 1 FROM entry_blobs b WHERE b.entry_id = entries.id);
+                    """;
+                clear.ExecuteNonQuery();
+            }
+
+            write.Commit();
+
+            if (copied < batch)
+            {
+                break;
+            }
+        }
+
+        // Drop rather than abandon: a column left in the schema would keep
+        // collecting writes. DROP COLUMN hides the column but leaves its bytes
+        // in the file, so old rows would still pay the overflow-page walk —
+        // VACUUM rewrites every row through the new schema, which is what
+        // turns "narrow rows" from an aspiration into a property of the file.
+        // It runs once, here, outside any transaction, as VACUUM requires.
+        Execute("ALTER TABLE entries DROP COLUMN thumbnail;");
+        Execute("ALTER TABLE entries DROP COLUMN html;");
+        Execute("ALTER TABLE entries DROP COLUMN rtf;");
+        Execute("VACUUM;");
+    }
+
+    /// <summary>
+    /// The trigram full-text index over the entries' text, and the triggers
+    /// that keep it in step with every write path — including the ones inside
+    /// an import transaction, which is exactly why sync lives in triggers
+    /// rather than at call sites: a rollback rolls the index back with the
+    /// rows, and no future write path can forget it.
+    ///
+    /// External content (<c>content='entries'</c>): the text is stored once,
+    /// in the table that owns it; the index holds only the trigrams. The
+    /// 'delete' commands in the triggers hand FTS the old text because with
+    /// external content it cannot re-read what is already gone.
+    ///
+    /// The rebuild command repopulates from the content table in one atomic
+    /// statement, so a database that arrives mid-upgrade either has the whole
+    /// index or none of it, and the migration simply runs again.
+    /// </summary>
+    private void CreateFullTextIndex()
+    {
+        Execute("""
+            CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts USING fts5(
+                text,
+                tokenize = 'trigram',
+                content = 'entries',
+                content_rowid = 'id');
+            """);
+
+        Execute("""
+            CREATE TRIGGER IF NOT EXISTS entries_fts_insert AFTER INSERT ON entries BEGIN
+                INSERT INTO entries_fts (rowid, text) VALUES (new.id, new.text);
+            END;
+            """);
+        Execute("""
+            CREATE TRIGGER IF NOT EXISTS entries_fts_delete AFTER DELETE ON entries BEGIN
+                INSERT INTO entries_fts (entries_fts, rowid, text) VALUES ('delete', old.id, old.text);
+            END;
+            """);
+        Execute("""
+            CREATE TRIGGER IF NOT EXISTS entries_fts_update AFTER UPDATE OF text ON entries BEGIN
+                INSERT INTO entries_fts (entries_fts, rowid, text) VALUES ('delete', old.id, old.text);
+                INSERT INTO entries_fts (rowid, text) VALUES (new.id, new.text);
+            END;
+            """);
+
+        Execute("INSERT INTO entries_fts (entries_fts) VALUES ('rebuild');");
     }
 
     private int ReadSchemaVersion()
@@ -350,26 +641,37 @@ public sealed partial class EntryStore : IDisposable
         DateTimeOffset createdAt,
         string? html = null,
         string? rtf = null)
-    {
-        lock (_gate)
+        => Write(() =>
+        {
+            lock (_gate)
         {
             var subtype = SubtypeClassifier.Detect(text);
 
-            using var command = _connection.CreateCommand();
-            command.CommandText = """
-                INSERT INTO entries (text, source_app, created_at, sub_type, html, rtf)
-                VALUES ($text, $sourceApp, $createdAt, $subtype, $html, $rtf)
-                RETURNING id;
-                """;
-            command.Parameters.AddWithValue("$text", text);
-            command.Parameters.AddWithValue("$sourceApp", (object?)sourceApp ?? DBNull.Value);
-            command.Parameters.AddWithValue("$createdAt", createdAt.ToUnixTimeMilliseconds());
-            command.Parameters.AddWithValue("$subtype",
-                subtype == EntrySubtype.None ? DBNull.Value : (object)subtype.ToString());
-            command.Parameters.AddWithValue("$html", (object?)html ?? DBNull.Value);
-            command.Parameters.AddWithValue("$rtf", (object?)rtf ?? DBNull.Value);
+            // One transaction: the row and its payloads (when there are any)
+            // land together or not at all.
+            using var write = BeginWrite();
 
-            var id = (long)command.ExecuteScalar()!;
+            long id;
+            using (var command = _connection.CreateCommand())
+            {
+                command.Transaction = write.Transaction;
+                command.CommandText = """
+                    INSERT INTO entries (text, source_app, created_at, sub_type)
+                    VALUES ($text, $sourceApp, $createdAt, $subtype)
+                    RETURNING id;
+                    """;
+                command.Parameters.AddWithValue("$text", text);
+                command.Parameters.AddWithValue("$sourceApp", (object?)sourceApp ?? DBNull.Value);
+                command.Parameters.AddWithValue("$createdAt", createdAt.ToUnixTimeMilliseconds());
+                command.Parameters.AddWithValue("$subtype", subtype.ToString());
+
+                id = (long)command.ExecuteScalar()!;
+            }
+
+            InsertBlobsIn(write.Transaction, id, thumbnail: null, html, rtf);
+
+            write.Commit();
+            CountChanged();
             return new Entry(id, text, sourceApp, createdAt)
             {
                 Subtype = subtype,
@@ -377,7 +679,7 @@ public sealed partial class EntryStore : IDisposable
                 Rtf = rtf,
             };
         }
-    }
+        });
 
     /// <summary>
     /// Records a file copy: the label is what the list shows, the paths are
@@ -387,8 +689,9 @@ public sealed partial class EntryStore : IDisposable
         IReadOnlyList<string> paths,
         string? sourceApp,
         DateTimeOffset createdAt)
-    {
-        lock (_gate)
+        => Write(() =>
+        {
+            lock (_gate)
         {
             var capped = paths.Count > FileEntries.Cap;
             var kept = FileEntries.WithinCap(paths, out _);
@@ -406,13 +709,14 @@ public sealed partial class EntryStore : IDisposable
             command.Parameters.AddWithValue("$files", string.Join("\n", kept));
 
             var id = (long)command.ExecuteScalar()!;
+            CountChanged();
             return new Entry(id, label, sourceApp, createdAt)
             {
                 Kind = EntryKind.Files,
                 Files = kept,
             };
         }
-    }
+        });
 
     /// <summary>
     /// Whether the application has a row in the icon store — including a
@@ -473,25 +777,36 @@ public sealed partial class EntryStore : IDisposable
         DateTimeOffset createdAt,
         int width = 0,
         int height = 0)
-    {
-        lock (_gate)
+        => Write(() =>
         {
-            using var command = _connection.CreateCommand();
-            command.CommandText = """
-                INSERT INTO entries (text, source_app, created_at, kind, thumbnail, original_path, image_width, image_height)
-                VALUES ($text, $sourceApp, $createdAt, $kind, $thumbnail, $originalPath, $w, $h)
-                RETURNING id;
-                """;
-            command.Parameters.AddWithValue("$text", label);
-            command.Parameters.AddWithValue("$sourceApp", (object?)sourceApp ?? DBNull.Value);
-            command.Parameters.AddWithValue("$createdAt", createdAt.ToUnixTimeMilliseconds());
-            command.Parameters.AddWithValue("$kind", (int)EntryKind.Image);
-            command.Parameters.AddWithValue("$thumbnail", thumbnailPng);
-            command.Parameters.AddWithValue("$originalPath", originalPath);
-            command.Parameters.AddWithValue("$w", width);
-            command.Parameters.AddWithValue("$h", height);
+            lock (_gate)
+        {
+            using var write = BeginWrite();
 
-            var id = (long)command.ExecuteScalar()!;
+            long id;
+            using (var command = _connection.CreateCommand())
+            {
+                command.Transaction = write.Transaction;
+                command.CommandText = """
+                    INSERT INTO entries (text, source_app, created_at, kind, original_path, image_width, image_height)
+                    VALUES ($text, $sourceApp, $createdAt, $kind, $originalPath, $w, $h)
+                    RETURNING id;
+                    """;
+                command.Parameters.AddWithValue("$text", label);
+                command.Parameters.AddWithValue("$sourceApp", (object?)sourceApp ?? DBNull.Value);
+                command.Parameters.AddWithValue("$createdAt", createdAt.ToUnixTimeMilliseconds());
+                command.Parameters.AddWithValue("$kind", (int)EntryKind.Image);
+                command.Parameters.AddWithValue("$originalPath", originalPath);
+                command.Parameters.AddWithValue("$w", width);
+                command.Parameters.AddWithValue("$h", height);
+
+                id = (long)command.ExecuteScalar()!;
+            }
+
+            InsertBlobsIn(write.Transaction, id, thumbnailPng, html: null, rtf: null);
+
+            write.Commit();
+            CountChanged();
             return new Entry(id, label, sourceApp, createdAt)
             {
                 Kind = EntryKind.Image,
@@ -501,6 +816,32 @@ public sealed partial class EntryStore : IDisposable
                 ImageHeight = height,
             };
         }
+        });
+
+    /// <summary>
+    /// Writes an entry's payload row, when there is one. Callers pass the
+    /// transaction they already hold so the row and its payloads commit
+    /// together; a NULL-only row is skipped — the side table has no row for
+    /// the entries that never had anything to store.
+    /// </summary>
+    private void InsertBlobsIn(SqliteTransaction transaction, long id, byte[]? thumbnail, string? html, string? rtf)
+    {
+        if (thumbnail is null && html is null && rtf is null)
+        {
+            return;
+        }
+
+        using var command = _connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            INSERT INTO entry_blobs (entry_id, thumbnail, html, rtf)
+            VALUES ($id, $thumbnail, $html, $rtf);
+            """;
+        command.Parameters.AddWithValue("$id", id);
+        command.Parameters.AddWithValue("$thumbnail", (object?)thumbnail ?? DBNull.Value);
+        command.Parameters.AddWithValue("$html", (object?)html ?? DBNull.Value);
+        command.Parameters.AddWithValue("$rtf", (object?)rtf ?? DBNull.Value);
+        command.ExecuteNonQuery();
     }
 
     /// <summary>
@@ -508,15 +849,16 @@ public sealed partial class EntryStore : IDisposable
     /// The entry and its thumbnail are untouched.
     /// </summary>
     public void ClearOriginal(long id)
-    {
-        lock (_gate)
+        => Write(() =>
         {
-            using var command = _connection.CreateCommand();
-            command.CommandText = "UPDATE entries SET original_path = NULL WHERE id = $id;";
-            command.Parameters.AddWithValue("$id", id);
-            command.ExecuteNonQuery();
-        }
-    }
+            lock (_gate)
+            {
+                using var command = _connection.CreateCommand();
+                command.CommandText = "UPDATE entries SET original_path = NULL WHERE id = $id;";
+                command.Parameters.AddWithValue("$id", id);
+                command.ExecuteNonQuery();
+            }
+        });
 
     /// <summary>Every image entry that still has an original on disk.</summary>
     public IReadOnlyList<Entry> ImagesWithOriginals(bool keepFavorites = false, bool keepPinned = false)
@@ -535,9 +877,8 @@ public sealed partial class EntryStore : IDisposable
         {
             using var command = _connection.CreateCommand();
             command.CommandText = $"""
-                SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from, image_width, image_height,
-                       (SELECT group_concat(t.name, char(31)) FROM tags t
-                          JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
+                SELECT {NarrowColumns},
+                       {TagsColumn}
                 FROM entries
                 WHERE kind = $kind AND original_path IS NOT NULL
                   AND created_at BETWEEN $from AND $to
@@ -555,9 +896,8 @@ public sealed partial class EntryStore : IDisposable
     {
         using var command = _connection.CreateCommand();
         command.CommandText = $"""
-            SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from, image_width, image_height,
-                   (SELECT group_concat(t.name, char(31)) FROM tags t
-                      JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
+            SELECT {NarrowColumns},
+                   {TagsColumn}
             FROM entries
             WHERE kind = $kind AND {condition};
             """;
@@ -574,9 +914,8 @@ public sealed partial class EntryStore : IDisposable
         {
             using var command = _connection.CreateCommand();
             command.CommandText = $"""
-                SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from, image_width, image_height,
-                       (SELECT group_concat(t.name, char(31)) FROM tags t
-                          JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
+                SELECT {NarrowColumns},
+                       {TagsColumn}
                 FROM entries
                 WHERE kind = $kind AND original_path IS NOT NULL AND created_at < $cutoff
                   AND NOT ({ProtectedConditionFor(keepFavorites, keepPinned)})
@@ -596,32 +935,39 @@ public sealed partial class EntryStore : IDisposable
     /// a commit each, which turns a bulk write into a wait measured in minutes.
     /// </summary>
     public void AppendMany(IEnumerable<NewEntry> entries)
-    {
-        lock (_gate)
+        => Write(() =>
+        {
+            lock (_gate)
         {
             using var write = BeginWrite();
             using var command = _connection.CreateCommand();
             command.Transaction = write.Transaction;
             command.CommandText = """
-                INSERT INTO entries (text, source_app, created_at)
-                VALUES ($text, $sourceApp, $createdAt);
+                INSERT INTO entries (text, source_app, created_at, sub_type)
+                VALUES ($text, $sourceApp, $createdAt, $subtype);
                 """;
 
             var text = command.Parameters.Add("$text", SqliteType.Text);
             var sourceApp = command.Parameters.Add("$sourceApp", SqliteType.Text);
             var createdAt = command.Parameters.Add("$createdAt", SqliteType.Integer);
+            var subtype = command.Parameters.Add("$subtype", SqliteType.Text);
 
             foreach (var entry in entries)
             {
                 text.Value = entry.Text;
                 sourceApp.Value = (object?)entry.SourceApp ?? DBNull.Value;
                 createdAt.Value = entry.CreatedAt.ToUnixTimeMilliseconds();
+
+                // Classified at write time like every other path — the startup
+                // backfill that used to sweep NULLs afterwards is gone (O-22).
+                subtype.Value = SubtypeClassifier.Detect(entry.Text).ToString();
                 command.ExecuteNonQuery();
             }
 
             write.Commit();
+            CountChanged();
         }
-    }
+        });
 
     /// <summary>
     /// The last thing copied, or null when the history is empty. Ordered by
@@ -633,10 +979,9 @@ public sealed partial class EntryStore : IDisposable
         lock (_gate)
         {
             using var command = _connection.CreateCommand();
-            command.CommandText = """
-                SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from, image_width, image_height,
-                       (SELECT group_concat(t.name, char(31)) FROM tags t
-                          JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
+            command.CommandText = $"""
+                SELECT {NarrowColumns},
+                       {TagsColumn}
                 FROM entries
                 ORDER BY created_at DESC, id DESC
                 LIMIT 1;
@@ -649,11 +994,12 @@ public sealed partial class EntryStore : IDisposable
     /// <summary>
     /// Finds entries whose text contains <paramref name="query"/>, newest first.
     ///
-    /// Substring matching rather than a full-text index: SQLite's full-text
-    /// tokenisers do not segment Chinese, so "剪贴板历史" indexes as a single
-    /// token and searching for "剪贴板" would find nothing — useless for a
-    /// tool whose user writes Chinese. A scan stays well inside the time a
-    /// keystroke can hide at the sizes a personal clipboard history reaches.
+    /// The trigram index answers three characters and up — Chinese included,
+    /// which the default tokeniser cannot segment — with exact substring
+    /// semantics. Shorter queries fall back to a LIKE scan of the narrow
+    /// table: no trigram exists below three characters, so the index has
+    /// nothing to say, and one or two characters over a narrow row is a cheap
+    /// question.
     /// </summary>
     public IReadOnlyList<Entry> Search(string query, int limit, int offset = 0)
     {
@@ -665,16 +1011,14 @@ public sealed partial class EntryStore : IDisposable
             }
 
             using var command = _connection.CreateCommand();
-            command.CommandText = """
-                SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from, image_width, image_height,
-                       (SELECT group_concat(t.name, char(31)) FROM tags t
-                          JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
+            command.CommandText = $"""
+                SELECT {NarrowColumns},
+                       {TagsColumn}
                 FROM entries
-                WHERE text LIKE $pattern ESCAPE '\'
+                WHERE {TextContains(query, command)}
                 ORDER BY pinned DESC, created_at DESC, id DESC
                 LIMIT $limit OFFSET $offset;
                 """;
-            command.Parameters.AddWithValue("$pattern", $"%{EscapeForLike(query)}%");
             command.Parameters.AddWithValue("$limit", limit);
             command.Parameters.AddWithValue("$offset", offset);
 
@@ -687,9 +1031,10 @@ public sealed partial class EntryStore : IDisposable
     ///
     /// One query rather than filtering a search in memory: combining a keyword
     /// with a date range has to narrow the whole history, not just whatever
-    /// the keyword happened to return first.
+    /// the keyword happened to return first. Paged by cursor, like
+    /// <see cref="Page(int, PageCursor?)"/>.
     /// </summary>
-    public IReadOnlyList<Entry> Find(HistoryFilter filter, int limit, int offset = 0)
+    public IReadOnlyList<Entry> Find(HistoryFilter filter, int limit, PageCursor? after = null)
     {
         lock (_gate)
         {
@@ -698,20 +1043,19 @@ public sealed partial class EntryStore : IDisposable
             using var command = _connection.CreateCommand();
 
             BuildFilterConditions(filter, command, conditions);
+            AddCursorCondition(command, conditions, after);
 
             var where = conditions.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", conditions);
 
             command.CommandText = $"""
-                SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from, image_width, image_height,
-                       (SELECT group_concat(t.name, char(31)) FROM tags t
-                          JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
+                SELECT {NarrowColumns},
+                       {TagsColumn}
                 FROM entries
                 {where}
                 ORDER BY pinned DESC, created_at DESC, id DESC
-                LIMIT $limit OFFSET $offset;
+                LIMIT $limit;
                 """;
             command.Parameters.AddWithValue("$limit", limit);
-            command.Parameters.AddWithValue("$offset", offset);
 
             return ReadEntries(command);
         }
@@ -749,9 +1093,11 @@ public sealed partial class EntryStore : IDisposable
         if (!string.IsNullOrWhiteSpace(filter.Query))
         {
             // The note is searchable alongside the text: "the brand blue one"
-            // has to find the entry whose content is a bare hex code.
-            conditions.Add("(text LIKE $pattern ESCAPE '\\' OR note LIKE $pattern ESCAPE '\\')");
-            command.Parameters.AddWithValue("$pattern", $"%{EscapeForLike(filter.Query)}%");
+            // has to find the entry whose content is a bare hex code. The
+            // note is short and unindexed, so it stays a LIKE either way —
+            // only the text has a trigram index worth consulting.
+            conditions.Add($"({TextContains(filter.Query, command)} OR note LIKE $notePattern ESCAPE '\\')");
+            command.Parameters.AddWithValue("$notePattern", $"%{EscapeForLike(filter.Query)}%");
         }
 
         if (filter.Favorite is { } favoriteOnly && favoriteOnly)
@@ -814,33 +1160,153 @@ public sealed partial class EntryStore : IDisposable
     /// the history is never loaded into memory in one piece, however large it
     /// grows.
     /// </summary>
-    public IReadOnlyList<Entry> Page(int limit, int offset)
+    /// <summary>
+    /// A window onto the history, newest first. Every read path takes a limit:
+    /// the history is never loaded into memory in one piece, however large it
+    /// grows. The window is positioned by cursor — the sort key of the last
+    /// row read — so a history that grows while the user scrolls neither
+    /// repeats nor skips rows the way deep OFFSETs do.
+    /// </summary>
+    public IReadOnlyList<Entry> Page(int limit, PageCursor? after = null)
     {
         lock (_gate)
         {
+            var conditions = new List<string>();
+
             using var command = _connection.CreateCommand();
-            command.CommandText = """
-                SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from, image_width, image_height,
-                       (SELECT group_concat(t.name, char(31)) FROM tags t
-                          JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
+            AddCursorCondition(command, conditions, after);
+
+            var where = conditions.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", conditions);
+
+            command.CommandText = $"""
+                SELECT {NarrowColumns},
+                       {TagsColumn}
                 FROM entries
+                {where}
                 ORDER BY pinned DESC, created_at DESC, id DESC
-                LIMIT $limit OFFSET $offset;
+                LIMIT $limit;
                 """;
             command.Parameters.AddWithValue("$limit", limit);
-            command.Parameters.AddWithValue("$offset", offset);
 
             return ReadEntries(command);
         }
+    }
+
+    /// <summary>
+    /// The condition that continues a paged read after <paramref name="after"/>:
+    /// row values compared against the index's own ordering, so the page is an
+    /// index walk down from the cursor rather than a walk over everything
+    /// above it — which is what OFFSET does, every page, again. Nothing is
+    /// added for the first page.
+    /// </summary>
+    private static void AddCursorCondition(SqliteCommand command, List<string> conditions, PageCursor? after)
+    {
+        if (after is not { } cursor)
+        {
+            return;
+        }
+
+        command.Parameters.AddWithValue("$cursorPinned", cursor.Pinned);
+        command.Parameters.AddWithValue("$cursorCreatedAt", cursor.CreatedAtMs);
+        command.Parameters.AddWithValue("$cursorId", cursor.Id);
+        conditions.Add("(pinned, created_at, id) < ($cursorPinned, $cursorCreatedAt, $cursorId)");
     }
 
     public int Count()
     {
         lock (_gate)
         {
+            // The narrow bar and library footer ask on every refresh; the
+            // answer changes only when a write lands, and every write drops
+            // the cache inside this same gate.
+            if (_countCache is { } cached)
+            {
+                return cached;
+            }
+
             using var command = _connection.CreateCommand();
             command.CommandText = "SELECT COUNT(*) FROM entries;";
-            return Convert.ToInt32(command.ExecuteScalar());
+            _countCache = Convert.ToInt32(command.ExecuteScalar());
+            return _countCache.Value;
+        }
+    }
+
+    /// <summary>
+    /// Called inside the gate by every write that can add or remove rows, so
+    /// <see cref="Count"/>'s cache can never answer with a number the table
+    /// has moved on from.
+    /// </summary>
+    private void CountChanged() => _countCache = null;
+
+    /// <summary>
+    /// The payloads for a page of entries, keyed by id. Lists deliberately
+    /// read the narrow table; the window showing a page of thumbnails asks
+    /// this once per page — a handful of primary-key lookups — instead of
+    /// carrying every thumbnail through every list query.
+    /// </summary>
+    public IReadOnlyDictionary<long, EntryBlobs> BlobsOf(IReadOnlyCollection<long> ids)
+    {
+        lock (_gate)
+        {
+            if (ids.Count == 0)
+            {
+                return new Dictionary<long, EntryBlobs>();
+            }
+
+            var names = string.Join(", ", Enumerable.Range(0, ids.Count).Select(index => $"$id{index}"));
+            using var command = _connection.CreateCommand();
+            command.CommandText = $"""
+                SELECT entry_id, thumbnail, html, rtf
+                FROM entry_blobs
+                WHERE entry_id IN ({names});
+                """;
+
+            var index = 0;
+            foreach (var id in ids)
+            {
+                command.Parameters.AddWithValue($"$id{index++}", id);
+            }
+
+            var blobs = new Dictionary<long, EntryBlobs>();
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                blobs[reader.GetInt64(0)] = new EntryBlobs(
+                    reader.GetInt64(0),
+                    reader.IsDBNull(1) ? null : (byte[])reader[1],
+                    reader.IsDBNull(2) ? null : reader.GetString(2),
+                    reader.IsDBNull(3) ? null : reader.GetString(3));
+            }
+
+            return blobs;
+        }
+    }
+
+    /// <summary>
+    /// Entries with their payloads attached, oldest id first, walking by id
+    /// cursor — the export and merge-scan read. OFFSET paging would re-walk
+    /// the whole table once per page at exactly the sizes that need exporting;
+    /// a cursor reads each row once.
+    /// </summary>
+    public IReadOnlyList<Entry> EntriesWithBlobsAfter(long afterId, int limit)
+    {
+        lock (_gate)
+        {
+            using var command = _connection.CreateCommand();
+            command.CommandText = $"""
+                SELECT {NarrowColumns},
+                       b.thumbnail, b.html, b.rtf,
+                       {TagsColumn}
+                FROM entries
+                LEFT JOIN entry_blobs b ON b.entry_id = entries.id
+                WHERE entries.id > $after
+                ORDER BY entries.id
+                LIMIT $limit;
+                """;
+            command.Parameters.AddWithValue("$after", afterId);
+            command.Parameters.AddWithValue("$limit", limit);
+
+            return ReadEntriesWithBlobs(command);
         }
     }
 
@@ -878,15 +1344,22 @@ public sealed partial class EntryStore : IDisposable
 
     /// <summary>Returns whether there was anything to delete.</summary>
     public bool Delete(long id)
-    {
-        lock (_gate)
+        => Write(() =>
         {
-            using var command = _connection.CreateCommand();
-            command.CommandText = "DELETE FROM entries WHERE id = $id;";
-            command.Parameters.AddWithValue("$id", id);
-            return command.ExecuteNonQuery() > 0;
-        }
-    }
+            lock (_gate)
+            {
+                using var command = _connection.CreateCommand();
+                command.CommandText = "DELETE FROM entries WHERE id = $id;";
+                command.Parameters.AddWithValue("$id", id);
+                var removed = command.ExecuteNonQuery() > 0;
+                if (removed)
+                {
+                    CountChanged();
+                }
+
+                return removed;
+            }
+        });
 
     /// <summary>
     /// Deletes entries created within the range, both ends included.
@@ -897,20 +1370,27 @@ public sealed partial class EntryStore : IDisposable
     /// </summary>
     public int DeleteCreatedBetween(
         DateTimeOffset from, DateTimeOffset to, bool keepFavorites = false, bool keepPinned = false)
-    {
-        lock (_gate)
+        => Write(() =>
         {
-            using var command = _connection.CreateCommand();
-            command.CommandText = $"""
-                DELETE FROM entries
-                WHERE created_at BETWEEN $from AND $to
-                  AND NOT ({ProtectedConditionFor(keepFavorites, keepPinned)});
-                """;
-            command.Parameters.AddWithValue("$from", from.ToUnixTimeMilliseconds());
-            command.Parameters.AddWithValue("$to", to.ToUnixTimeMilliseconds());
-            return command.ExecuteNonQuery();
-        }
-    }
+            lock (_gate)
+            {
+                using var command = _connection.CreateCommand();
+                command.CommandText = $"""
+                    DELETE FROM entries
+                    WHERE created_at BETWEEN $from AND $to
+                      AND NOT ({ProtectedConditionFor(keepFavorites, keepPinned)});
+                    """;
+                command.Parameters.AddWithValue("$from", from.ToUnixTimeMilliseconds());
+                command.Parameters.AddWithValue("$to", to.ToUnixTimeMilliseconds());
+                var removed = command.ExecuteNonQuery();
+                if (removed > 0)
+                {
+                    CountChanged();
+                }
+
+                return removed;
+            }
+        });
 
     /// <summary>
     /// The SQL that says an entry is protected — literally, so any caller can
@@ -940,14 +1420,21 @@ public sealed partial class EntryStore : IDisposable
     /// pile they so carefully starred — and the confirmation copy says so.
     /// </summary>
     public int DeleteAll(bool keepFavorites = false, bool keepPinned = false)
-    {
-        lock (_gate)
+        => Write(() =>
         {
-            using var command = _connection.CreateCommand();
-            command.CommandText = $"DELETE FROM entries WHERE NOT ({ProtectedConditionFor(keepFavorites, keepPinned)});";
-            return command.ExecuteNonQuery();
-        }
-    }
+            lock (_gate)
+            {
+                using var command = _connection.CreateCommand();
+                command.CommandText = $"DELETE FROM entries WHERE NOT ({ProtectedConditionFor(keepFavorites, keepPinned)});";
+                var removed = command.ExecuteNonQuery();
+                if (removed > 0)
+                {
+                    CountChanged();
+                }
+
+                return removed;
+            }
+        });
 
     /// <summary>
     /// Neutralises the wildcards LIKE would otherwise read in a user's query —
@@ -957,30 +1444,51 @@ public sealed partial class EntryStore : IDisposable
         => query.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
 
     /// <summary>
+    /// The SQL that says "the text contains this query", with the query's
+    /// parameter bound onto <paramref name="command"/>. Three characters and
+    /// up is a trigram MATCH — the phrase is double-quoted and inner quotes
+    /// doubled, so every character of a user's query (operators included) is
+    /// taken literally rather than parsed as FTS syntax. Below three
+    /// characters there is no trigram to match, and the narrow table is
+    /// scanned the old way.
+    /// </summary>
+    private static string TextContains(string query, SqliteCommand command)
+    {
+        if (query.Length >= 3)
+        {
+            command.Parameters.AddWithValue("$ftsQuery", "\"" + query.Replace("\"", "\"\"") + "\"");
+            return "id IN (SELECT rowid FROM entries_fts WHERE entries_fts MATCH $ftsQuery)";
+        }
+
+        command.Parameters.AddWithValue("$textPattern", $"%{EscapeForLike(query)}%");
+        return "text LIKE $textPattern ESCAPE '\\'";
+    }
+
+    /// <summary>
     /// Moves an existing entry to the top of the history without creating a
     /// second copy of it.
     /// </summary>
     public void Touch(long id, DateTimeOffset at)
-    {
-        lock (_gate)
+        => Write(() =>
         {
-            using var command = _connection.CreateCommand();
-            command.CommandText = "UPDATE entries SET created_at = $createdAt WHERE id = $id;";
-            command.Parameters.AddWithValue("$createdAt", at.ToUnixTimeMilliseconds());
-            command.Parameters.AddWithValue("$id", id);
-            command.ExecuteNonQuery();
-        }
-    }
+            lock (_gate)
+            {
+                using var command = _connection.CreateCommand();
+                command.CommandText = "UPDATE entries SET created_at = $createdAt WHERE id = $id;";
+                command.Parameters.AddWithValue("$createdAt", at.ToUnixTimeMilliseconds());
+                command.Parameters.AddWithValue("$id", id);
+                command.ExecuteNonQuery();
+            }
+        });
 
     public IReadOnlyList<Entry> Recent(int limit)
     {
         lock (_gate)
         {
             using var command = _connection.CreateCommand();
-            command.CommandText = """
-                SELECT id, text, source_app, created_at, kind, thumbnail, original_path, pinned, sub_type, html, rtf, files, favorite, note, use_count, group_id, translated_from, image_width, image_height,
-                       (SELECT group_concat(t.name, char(31)) FROM tags t
-                          JOIN entry_tags et ON et.tag_id = t.id WHERE et.entry_id = entries.id)
+            command.CommandText = $"""
+                SELECT {NarrowColumns},
+                       {TagsColumn}
                 FROM entries
                 ORDER BY pinned DESC, created_at DESC, id DESC
                 LIMIT $limit;
@@ -997,45 +1505,81 @@ public sealed partial class EntryStore : IDisposable
             ? parsed
             : EntrySubtype.None;
 
+    /// <summary>
+    /// Maps a narrow row — the columns <see cref="NarrowColumns"/> names, tags
+    /// last. Payload columns are absent by design: an entry returned from a
+    /// list query carries no thumbnail and no formatted forms, and the caller
+    /// that needs them asks <see cref="BlobsOf"/> or <see cref="Get"/>.
+    /// </summary>
     private static IReadOnlyList<Entry> ReadEntries(SqliteCommand command)
     {
         var entries = new List<Entry>();
         using var reader = command.ExecuteReader();
         while (reader.Read())
         {
-            entries.Add(new Entry(
-                reader.GetInt64(0),
-                reader.GetString(1),
-                reader.IsDBNull(2) ? null : reader.GetString(2),
-                DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(3)))
-            {
-                Kind = (EntryKind)reader.GetInt32(4),
-                ThumbnailPng = reader.IsDBNull(5) ? null : (byte[])reader[5],
-                OriginalPath = reader.IsDBNull(6) ? null : reader.GetString(6),
-                IsPinned = reader.GetInt32(7) != 0,
-                Subtype = ParseSubtype(reader.IsDBNull(8) ? null : reader.GetString(8)),
-                Html = reader.IsDBNull(9) ? null : reader.GetString(9),
-                Rtf = reader.IsDBNull(10) ? null : reader.GetString(10),
-                Files = reader.IsDBNull(11) || reader.GetString(11).Length == 0
-                    ? []
-                    : reader.GetString(11).Split('\n'),
-                Favorite = reader.GetInt32(12) != 0,
-                Note = reader.IsDBNull(13) ? null : reader.GetString(13),
-                UseCount = reader.GetInt32(14),
-                GroupId = reader.IsDBNull(15) ? null : reader.GetInt64(15),
-                TranslatedFrom = reader.IsDBNull(16) ? null : reader.GetInt64(16),
-                ImageWidth = reader.GetInt32(17),
-                ImageHeight = reader.GetInt32(18),
+            entries.Add(ReadNarrowRow(reader, reader.FieldCount - 1));
+        }
 
-                // Joined in rather than fetched per row: a list of a hundred
-                // entries would otherwise be a hundred extra queries.
-                Tags = reader.IsDBNull(19)
-                    ? []
-                    : reader.GetString(19).Split(TagSeparator, StringSplitOptions.RemoveEmptyEntries),
+        return entries;
+    }
+
+    /// <summary>
+    /// Maps a row that joins <c>entry_blobs</c>: the narrow columns, then
+    /// thumbnail/html/rtf, then the tags — the column order
+    /// <see cref="EntriesWithBlobsAfter"/> and <see cref="Get"/> select.
+    /// </summary>
+    private static IReadOnlyList<Entry> ReadEntriesWithBlobs(SqliteCommand command)
+    {
+        var entries = new List<Entry>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            entries.Add(ReadNarrowRow(reader, reader.FieldCount - 1) with
+            {
+                ThumbnailPng = reader.IsDBNull(reader.FieldCount - 4) ? null : (byte[])reader[reader.FieldCount - 4],
+                Html = reader.IsDBNull(reader.FieldCount - 3) ? null : reader.GetString(reader.FieldCount - 3),
+                Rtf = reader.IsDBNull(reader.FieldCount - 2) ? null : reader.GetString(reader.FieldCount - 2),
             });
         }
 
         return entries;
+    }
+
+    /// <summary>
+    /// Reads one row positioned by its tags column: everything before it is
+    /// the narrow set, in <see cref="NarrowColumns"/> order. Field offsets are
+    /// taken from the tags column backwards, so adding a narrow column never
+    /// silently shuffles a reader.
+    /// </summary>
+    private static Entry ReadNarrowRow(SqliteDataReader reader, int tagsIndex)
+    {
+        return new Entry(
+            reader.GetInt64(0),
+            reader.GetString(1),
+            reader.IsDBNull(2) ? null : reader.GetString(2),
+            DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(3)))
+        {
+            Kind = (EntryKind)reader.GetInt32(4),
+            OriginalPath = reader.IsDBNull(5) ? null : reader.GetString(5),
+            IsPinned = reader.GetInt32(6) != 0,
+            Subtype = ParseSubtype(reader.IsDBNull(7) ? null : reader.GetString(7)),
+            Files = reader.IsDBNull(8) || reader.GetString(8).Length == 0
+                ? []
+                : reader.GetString(8).Split('\n'),
+            Favorite = reader.GetInt32(9) != 0,
+            Note = reader.IsDBNull(10) ? null : reader.GetString(10),
+            UseCount = reader.GetInt32(11),
+            GroupId = reader.IsDBNull(12) ? null : reader.GetInt64(12),
+            TranslatedFrom = reader.IsDBNull(13) ? null : reader.GetInt64(13),
+            ImageWidth = reader.GetInt32(14),
+            ImageHeight = reader.GetInt32(15),
+
+            // Joined in rather than fetched per row: a list of a hundred
+            // entries would otherwise be a hundred extra queries.
+            Tags = reader.IsDBNull(tagsIndex)
+                ? []
+                : reader.GetString(tagsIndex).Split(TagSeparator, StringSplitOptions.RemoveEmptyEntries),
+        };
     }
 
     /// <summary>
@@ -1045,30 +1589,34 @@ public sealed partial class EntryStore : IDisposable
     /// cannot nest them. The gate is held throughout and every other caller
     /// waits, so the work should be writes already prepared — never reading
     /// files or waiting on anything.
+    ///
+    /// The batch reports one <see cref="Changed"/> after it commits, however
+    /// many writes are inside it; one that throws reports nothing.
     /// </summary>
     internal void RunInTransaction(Action work)
-    {
-        lock (_gate)
+        => Write(() =>
         {
-            if (_batch is not null)
+            lock (_gate)
             {
-                work();
-                return;
-            }
+                if (_batch is not null)
+                {
+                    work();
+                    return;
+                }
 
-            using var transaction = _connection.BeginTransaction();
-            _batch = transaction;
-            try
-            {
-                work();
-                transaction.Commit();
+                using var transaction = _connection.BeginTransaction();
+                _batch = transaction;
+                try
+                {
+                    work();
+                    transaction.Commit();
+                }
+                finally
+                {
+                    _batch = null;
+                }
             }
-            finally
-            {
-                _batch = null;
-            }
-        }
-    }
+        });
 
     /// <summary>A write that spans statements: inside the open batch when there is one, else in its own transaction.</summary>
     private WriteScope BeginWrite()

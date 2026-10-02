@@ -107,6 +107,30 @@ public class HistoryBrowserTests
     }
 
     [Fact]
+    public void A_new_copy_arriving_mid_walk_neither_repeats_nor_skips_rows()
+    {
+        using var database = new TempDatabase();
+        using var store = SeedNumbered(database, 25);
+        var browser = new HistoryBrowser(store, pageSize: 10);
+
+        browser.Reset();
+        Assert.Equal(10, browser.Loaded.Count);
+
+        // The copy that lands while the user is mid-scroll. An OFFSET window
+        // would shift down by one and read some row twice; the cursor just
+        // continues below where it left off, and the newcomer waits for the
+        // next reset (O-22).
+        store.Append("a brand new copy", "test", Noon.AddMinutes(1));
+
+        browser.LoadMore();
+        browser.LoadMore();
+
+        Assert.Equal(25, browser.Loaded.Count);
+        Assert.Equal(25, browser.Loaded.Select(entry => entry.Id).Distinct().Count());
+        Assert.DoesNotContain(browser.Loaded, entry => entry.Text == "a brand new copy");
+    }
+
+    [Fact]
     public void Forgetting_a_deleted_entry_does_not_send_the_reader_back_to_the_top()
     {
         using var database = new TempDatabase();

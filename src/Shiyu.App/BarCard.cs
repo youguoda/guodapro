@@ -69,10 +69,13 @@ internal sealed class BarCard : INotifyPropertyChanged
 
     public EntrySubtype Subtype { get; init; }
 
-    /// <summary>The copy's HTML form, kept so pasting back into a rich destination keeps its formatting.</summary>
-    public string? Html { get; init; }
-
-    public string? Rtf { get; init; }
+    /// <summary>
+    /// The entry's formatted forms are deliberately not carried here: rows are
+    /// narrow by design (O-22), so an action that pastes or drags with
+    /// formatting fetches them from the store at the moment it acts — one
+    /// primary-key read for something the user does once, instead of a payload
+    /// column on every listed card.
+    /// </summary>
 
     /// <summary>The file rows a file card shows, already clamped to the density knob.</summary>
     public IReadOnlyList<FileRow> FileRows { get; init; } = [];
