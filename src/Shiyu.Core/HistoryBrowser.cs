@@ -12,6 +12,14 @@ public sealed class HistoryBrowser(EntryStore store, int pageSize = 100)
     private readonly List<Entry> _loaded = [];
     private HistoryFilter _filter = HistoryFilter.None;
 
+    /// <summary>
+    /// Where the last page ended. The next page continues strictly after it:
+    /// copies that arrived meanwhile sit above the cursor and cannot repeat,
+    /// where OFFSET paging would shift under them and read history twice or
+    /// skip it entirely.
+    /// </summary>
+    private PageCursor? _cursor;
+
     /// <summary>What has been read so far, newest first.</summary>
     public IReadOnlyList<Entry> Loaded => _loaded;
 
@@ -49,6 +57,7 @@ public sealed class HistoryBrowser(EntryStore store, int pageSize = 100)
     public void Reset()
     {
         _loaded.Clear();
+        _cursor = null;
         HasMore = true;
         LoadMore();
     }
@@ -61,13 +70,18 @@ public sealed class HistoryBrowser(EntryStore store, int pageSize = 100)
             return 0;
         }
 
-        var page = store.Find(_filter, pageSize, _loaded.Count);
+        var page = store.Find(_filter, pageSize, _cursor);
 
         _loaded.AddRange(page);
 
         // A short page means the end; a full one might still be the last, which
         // the next call discovers by coming back empty.
         HasMore = page.Count == pageSize;
+        if (page.Count > 0)
+        {
+            _cursor = PageCursor.Of(page[^1]);
+        }
+
         return page.Count;
     }
 

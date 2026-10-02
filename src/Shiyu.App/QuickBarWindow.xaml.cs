@@ -104,7 +104,7 @@ public partial class QuickBarWindow : Window
     {
         var query = FilterBox.Text;
         var entries = string.IsNullOrWhiteSpace(query)
-            ? _store.Page(PageSize, offset: 0)
+            ? _store.Page(PageSize)
             : _store.Search(query, PageSize);
 
         _items.Clear();

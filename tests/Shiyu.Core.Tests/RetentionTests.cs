@@ -60,7 +60,7 @@ public class RetentionTests
         // This is the whole reason thumbnails live in the database: the history
         // stays complete and explicable after the originals are gone. The list
         // row is narrow (O-22); the payload read goes through Get.
-        var entry = Assert.Single(store.Page(limit: 10, offset: 0));
+        var entry = Assert.Single(store.Page(limit: 10));
         Assert.Equal(EntryKind.Image, entry.Kind);
         Assert.Equal(new byte[] { 9 }, store.Get(entry.Id)!.ThumbnailPng);
         Assert.False(entry.HasOriginal);
@@ -95,7 +95,7 @@ public class RetentionTests
 
         // Text is tiny and is exactly what the user goes looking for months
         // later. Retention has no business touching it.
-        var entry = Assert.Single(store.Page(limit: 10, offset: 0));
+        var entry = Assert.Single(store.Page(limit: 10));
         Assert.Equal("something copied years ago", entry.Text);
     }
 
@@ -154,7 +154,7 @@ public class RetentionTests
         var result = new RetentionService(store, archive, new TestClock(Noon)).Sweep(TimeSpan.FromDays(30));
 
         Assert.Equal(1, result.Reclaimed);
-        Assert.Null(Assert.Single(store.Page(limit: 10, offset: 0)).OriginalPath);
+        Assert.Null(Assert.Single(store.Page(limit: 10)).OriginalPath);
     }
 
     [Fact]

@@ -84,7 +84,7 @@ public class EntryStoreConcurrencyTests
 
         // An import hands back no id, but files the row's tags and group
         // under the one it read: a tag on someone else's row is a wrong id.
-        var everything = store.Page(limit: 10_000, offset: 0).ToDictionary(entry => entry.Text);
+        var everything = store.Page(limit: 10_000).ToDictionary(entry => entry.Text);
         foreach (var (text, group) in imported)
         {
             var entry = everything[text];

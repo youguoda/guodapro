@@ -18,7 +18,7 @@ public class SubtypeStoreTests
         store.Append("#1F6FEB", "paint", DateTimeOffset.UnixEpoch);
         store.Append("普通文本", "notepad", DateTimeOffset.UnixEpoch);
 
-        var entries = store.Page(10, 0);
+        var entries = store.Page(10);
 
         Assert.Equal(EntrySubtype.Link, entries.First(e => e.Text.StartsWith("https")).Subtype);
         Assert.Equal(EntrySubtype.Color, entries.First(e => e.Text == "#1F6FEB").Subtype);
@@ -81,7 +81,7 @@ public class SubtypeStoreTests
 
         using (var reopened = EntryStore.Open(database.FilePath))
         {
-            var entry = Assert.Single(reopened.Page(10, 0));
+            var entry = Assert.Single(reopened.Page(10));
             Assert.Equal(EntrySubtype.Link, entry.Subtype);
         }
     }

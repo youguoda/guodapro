@@ -83,8 +83,8 @@ public class StorageScaleTests
         {
             // The classified row keeps its subtype, the plain row its sentinel
             // — one pass, and nothing text-shaped is left NULL.
-            Assert.Equal(EntrySubtype.Link, upgraded.Page(10, 0).First(e => e.Text.StartsWith("https")).Subtype);
-            Assert.Equal(EntrySubtype.None, upgraded.Page(10, 0).First(e => !e.Text.StartsWith("https")).Subtype);
+            Assert.Equal(EntrySubtype.Link, upgraded.Page(10).First(e => e.Text.StartsWith("https")).Subtype);
+            Assert.Equal(EntrySubtype.None, upgraded.Page(10).First(e => !e.Text.StartsWith("https")).Subtype);
 
             using var command = upgraded.Connection.CreateCommand();
             command.CommandText = "SELECT COUNT(*) FROM entries WHERE sub_type IS NULL AND kind = 0;";
@@ -208,7 +208,7 @@ public class StorageScaleTests
 
         using var store = EntryStore.Open(database.FilePath);
 
-        var rows = store.Page(10, 0).ToDictionary(entry => entry.Text);
+        var rows = store.Page(10).ToDictionary(entry => entry.Text);
 
         // Payloads travel to the side table and come back through the reads
         // that ask for them; every marker column survives the rewrite.
@@ -265,7 +265,7 @@ public class StorageScaleTests
 
         using var store = EntryStore.Open(database.FilePath);
 
-        var rows = store.Page(10, 0).ToDictionary(entry => entry.Text);
+        var rows = store.Page(10).ToDictionary(entry => entry.Text);
 
         // The already-moved row kept its payload, the interrupted ones arrived
         // with theirs — nothing was copied twice and nothing was dropped.

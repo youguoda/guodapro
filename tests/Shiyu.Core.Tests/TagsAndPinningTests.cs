@@ -46,7 +46,7 @@ public class TagsAndPinningTests
         store.AddTag(first.Id, "项目甲");
         store.AddTag(first.Id, "待办");
 
-        var loaded = store.Page(limit: 10, offset: 0).Single(entry => entry.Id == first.Id);
+        var loaded = store.Page(limit: 10).Single(entry => entry.Id == first.Id);
 
         // A list of a hundred entries would otherwise be a hundred extra
         // queries just to show their labels.
@@ -145,7 +145,7 @@ public class TagsAndPinningTests
 
         store.SetPinned(first.Id, pinned: true);
 
-        var entries = store.Page(limit: 10, offset: 0);
+        var entries = store.Page(limit: 10);
         Assert.Equal("the older note", entries[0].Text);
         Assert.True(entries[0].IsPinned);
     }
@@ -159,7 +159,7 @@ public class TagsAndPinningTests
 
         store.SetPinned(first.Id, pinned: false);
 
-        Assert.Equal("the newer note", store.Page(limit: 10, offset: 0)[0].Text);
+        Assert.Equal("the newer note", store.Page(limit: 10)[0].Text);
     }
 
     [Fact]
@@ -176,7 +176,7 @@ public class TagsAndPinningTests
 
         using var reopened = EntryStore.Open(database.FilePath);
 
-        Assert.True(reopened.Page(limit: 10, offset: 0).Single(e => e.Id == pinnedId).IsPinned);
+        Assert.True(reopened.Page(limit: 10).Single(e => e.Id == pinnedId).IsPinned);
     }
 
     [Fact]
@@ -214,7 +214,7 @@ public class TagsAndPinningTests
         }
 
         using var store = EntryStore.Open(database.FilePath);
-        var entry = Assert.Single(store.Page(limit: 10, offset: 0));
+        var entry = Assert.Single(store.Page(limit: 10));
 
         Assert.Equal("from two versions ago", entry.Text);
         Assert.False(entry.IsPinned);

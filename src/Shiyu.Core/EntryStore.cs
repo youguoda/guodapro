@@ -3,6 +3,19 @@
 namespace Shiyu.Core;
 
 /// <summary>
+/// Where a paged read left off: the sort key of the last row a page returned.
+/// The next page asks for everything strictly after it, which reads the same
+/// no matter how many rows have been added above it in the meantime — the
+/// failure mode OFFSET paging has at depth, where every appended row shifts
+/// the window and either repeats or skips history.
+/// </summary>
+public readonly record struct PageCursor(int Pinned, long CreatedAtMs, long Id)
+{
+    public static PageCursor Of(Entry entry)
+        => new(entry.IsPinned ? 1 : 0, entry.CreatedAt.ToUnixTimeMilliseconds(), entry.Id);
+}
+
+/// <summary>
 /// The clipboard history, stored in SQLite. Deliberately concrete rather than
 /// behind a port: search, filtering and retention are exactly the logic a fake
 /// store would stop testing.
@@ -953,9 +966,10 @@ public sealed partial class EntryStore : IDisposable
     ///
     /// One query rather than filtering a search in memory: combining a keyword
     /// with a date range has to narrow the whole history, not just whatever
-    /// the keyword happened to return first.
+    /// the keyword happened to return first. Paged by cursor, like
+    /// <see cref="Page(int, PageCursor?)"/>.
     /// </summary>
-    public IReadOnlyList<Entry> Find(HistoryFilter filter, int limit, int offset = 0)
+    public IReadOnlyList<Entry> Find(HistoryFilter filter, int limit, PageCursor? after = null)
     {
         lock (_gate)
         {
@@ -964,6 +978,7 @@ public sealed partial class EntryStore : IDisposable
             using var command = _connection.CreateCommand();
 
             BuildFilterConditions(filter, command, conditions);
+            AddCursorCondition(command, conditions, after);
 
             var where = conditions.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", conditions);
 
@@ -973,10 +988,9 @@ public sealed partial class EntryStore : IDisposable
                 FROM entries
                 {where}
                 ORDER BY pinned DESC, created_at DESC, id DESC
-                LIMIT $limit OFFSET $offset;
+                LIMIT $limit;
                 """;
             command.Parameters.AddWithValue("$limit", limit);
-            command.Parameters.AddWithValue("$offset", offset);
 
             return ReadEntries(command);
         }
@@ -1081,23 +1095,56 @@ public sealed partial class EntryStore : IDisposable
     /// the history is never loaded into memory in one piece, however large it
     /// grows.
     /// </summary>
-    public IReadOnlyList<Entry> Page(int limit, int offset)
+    /// <summary>
+    /// A window onto the history, newest first. Every read path takes a limit:
+    /// the history is never loaded into memory in one piece, however large it
+    /// grows. The window is positioned by cursor — the sort key of the last
+    /// row read — so a history that grows while the user scrolls neither
+    /// repeats nor skips rows the way deep OFFSETs do.
+    /// </summary>
+    public IReadOnlyList<Entry> Page(int limit, PageCursor? after = null)
     {
         lock (_gate)
         {
+            var conditions = new List<string>();
+
             using var command = _connection.CreateCommand();
+            AddCursorCondition(command, conditions, after);
+
+            var where = conditions.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", conditions);
+
             command.CommandText = $"""
                 SELECT {NarrowColumns},
                        {TagsColumn}
                 FROM entries
+                {where}
                 ORDER BY pinned DESC, created_at DESC, id DESC
-                LIMIT $limit OFFSET $offset;
+                LIMIT $limit;
                 """;
             command.Parameters.AddWithValue("$limit", limit);
-            command.Parameters.AddWithValue("$offset", offset);
 
             return ReadEntries(command);
         }
+    }
+
+    /// <summary>
+    /// The condition that continues a paged read after <paramref name="after"/>:
+    /// row values compared against the index's own ordering, so the page is an
+    /// index walk down from the cursor rather than a walk over everything
+    /// above it — which is what OFFSET does, every page, again. Nothing is
+    /// added for the first page.
+    /// </summary>
+    private static void AddCursorCondition(SqliteCommand command, List<string> conditions, PageCursor? after)
+    {
+        if (after is not { } cursor)
+        {
+            return;
+        }
+
+        command.Parameters.AddWithValue("$cursorPinned", cursor.Pinned);
+        command.Parameters.AddWithValue("$cursorCreatedAt", cursor.CreatedAtMs);
+        command.Parameters.AddWithValue("$cursorId", cursor.Id);
+        conditions.Add("(pinned, created_at, id) < ($cursorPinned, $cursorCreatedAt, $cursorId)");
     }
 
     public int Count()
