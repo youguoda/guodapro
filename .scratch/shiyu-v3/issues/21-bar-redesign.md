@@ -2,7 +2,7 @@
 
 **来源：** UI 报告 §3.1–3.5、§6.1（线框、规格表、状态矩阵）、U-04 至 U-08、U-16 至 U-21；样稿 `docs/review/mockups/bar.png`
 **Blocked by:** 14、20
-**Status:** ready-for-agent
+**Status:** ready-for-human（已并 master 5bfe1d3；探针 22/22 零回退+规格表自检在代理报告，人工目验项列于票尾）
 
 **What to build:**
 - **头部：**
