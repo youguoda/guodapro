@@ -145,5 +145,4 @@ npm test
 
 ## 许可证
 
-本仓库目前未附带开源许可证（没有 LICENSE 文件）。在作者添加许可证之前，默认
-保留所有权利。
+[MIT](LICENSE) © 2026 youguoda
