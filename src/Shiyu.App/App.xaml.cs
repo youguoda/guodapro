@@ -213,7 +213,12 @@ public partial class App : Application
             {
                 Interval = TimeSpan.FromSeconds(3),
             };
-            crash.Tick += (_, _) => throw new InvalidOperationException("debug tick crash probe");
+            crash.Tick += (_, _) =>
+            {
+                // 单发：验证的是"抛 + 存活 + 提示一次"，不是压测节流。
+                crash.Stop();
+                throw new InvalidOperationException("debug tick crash probe");
+            };
             crash.Start();
         }
 #endif
