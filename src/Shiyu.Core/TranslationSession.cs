@@ -31,6 +31,12 @@ public sealed class TranslationSession(ITranslationBackend backend)
     /// <summary>Set when <see cref="State"/> is <see cref="TranslationState.Failed"/>.</summary>
     public string? Error { get; private set; }
 
+    /// <summary>
+    /// The failure itself (票 22)：标题/说明的映射按异常链分类，折叠的
+    /// 「详细信息」也要它。与 <see cref="Error"/> 同生同灭；Cancelled 不算失败。
+    /// </summary>
+    public Exception? Failure { get; private set; }
+
     /// <summary>What has arrived so far, cleaned of any wrapping the model added.</summary>
     public string Text => TranslationCleanup.Clean(string.Concat(_pieces));
 
@@ -62,6 +68,7 @@ public sealed class TranslationSession(ITranslationBackend backend)
     {
         _pieces.Clear();
         Error = null;
+        Failure = null;
         CurrentRequest = request;
         State = TranslationState.Streaming;
         Updated?.Invoke();
@@ -89,6 +96,7 @@ public sealed class TranslationSession(ITranslationBackend backend)
         {
             State = TranslationState.Failed;
             Error = failure.Message;
+            Failure = failure;
         }
         catch (Exception unexpected)
         {
@@ -97,6 +105,7 @@ public sealed class TranslationSession(ITranslationBackend backend)
             Log.Event(LogEvent.TranslationFailed, unexpected);
             State = TranslationState.Failed;
             Error = unexpected.Message;
+            Failure = unexpected;
         }
 
         Updated?.Invoke();

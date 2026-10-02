@@ -1,27 +1,105 @@
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Interop;
-using System.Windows.Media.Animation;
+using System.Windows.Shapes;
+using System.Windows.Threading;
 using Shiyu.Core;
 using Shiyu.Windows;
 
 namespace Shiyu.App;
 
-/// <summary>词典卡一个义项的展示形状：Core 的卡加上一条拼好的同义词行。</summary>
-public sealed record SenseView(
-    string? PartOfSpeech,
-    IReadOnlyList<string> Definitions,
-    IReadOnlyList<string> Examples,
-    string? SynonymsLine);
+/// <summary>词典义项的一行：序号 + 释义文本（词性组内编号）。</summary>
+public sealed record SenseEntry(int Number, string Text);
+
+/// <summary>
+/// 词典例句：斜体只给拉丁（U-22——含中文的 TextBlock 的 FontStyle 永远
+/// Normal，中文没有斜体传统，仿斜只会发虚）。
+/// </summary>
+public sealed record SenseExample(string Text)
+{
+    public FontStyle ItalicStyle => LanguageGuess.FromText(Text).Script == TextScript.Latin
+        ? FontStyles.Italic
+        : FontStyles.Normal;
+}
+
+/// <summary>词典同义词行（一条拼好的整行）。</summary>
+public sealed record SenseSynonyms(string Line);
+
+/// <summary>
+/// 一个词性组（票 22 / §6.2 单词态）：默认 2 条释义 + 1 例句，其余折叠进
+/// 「展开全部释义（N）」。展开后整组重建、列表重挂——词典是阅读辅助，
+/// 不值得为它引入通知管道。
+/// </summary>
+public sealed class SenseGroupView
+{
+    private const int VisibleDefinitions = 2;
+    private const int VisibleExamples = 1;
+
+    private readonly DictionarySense _sense;
+    private bool _expanded;
+
+    public SenseGroupView(DictionarySense sense) => _sense = sense;
+
+    public string? PartOfSpeech => _sense.PartOfSpeech;
+
+    public IReadOnlyList<object> Visible { get; private set; } = [];
+
+    public int HiddenCount { get; private set; }
+
+    public string ExpandLabel => $"展开全部释义（{HiddenCount}）";
+
+    public Visibility ExpandVisibility => !_expanded && HiddenCount > 0
+        ? Visibility.Visible
+        : Visibility.Collapsed;
+
+    public void Expand()
+    {
+        _expanded = true;
+    }
+
+    /// <summary>按折叠规则重建可见行。折叠窗口仿样稿：释义 1 · 例句 · 释义 2 · 同义词。</summary>
+    public void Rebuild()
+    {
+        var definitions = _sense.Definitions;
+        var examples = _sense.Examples;
+
+        var defCount = _expanded ? definitions.Count : Math.Min(VisibleDefinitions, definitions.Count);
+        var exCount = _expanded ? examples.Count : Math.Min(VisibleExamples, examples.Count);
+        HiddenCount = (definitions.Count - defCount) + (examples.Count - exCount);
+
+        var visible = new List<object>(definitions.Count + examples.Count + 1);
+        for (var i = 0; i < defCount; i++)
+        {
+            visible.Add(new SenseEntry(i + 1, definitions[i]));
+
+            // 例句跟在第一条释义后面（样稿 panel.png 的读法）；展开时全量。
+            if (i == 0)
+            {
+                for (var j = 0; j < exCount; j++)
+                {
+                    visible.Add(new SenseExample(examples[j]));
+                }
+            }
+        }
+
+        if (_sense.Synonyms.Count > 0)
+        {
+            visible.Add(new SenseSynonyms("同义词：" + string.Join("、", _sense.Synonyms)));
+        }
+
+        Visible = visible;
+    }
+}
 
 /// <summary>
 /// The translation panel: the original above, the translation growing beneath
 /// it as the words arrive.
 ///
-/// Beyond the stream it carries three quiet additions (ticket 35): a dictionary
-/// card that appears when the selection was a single word, a sentence-by-sentence
-/// alignment toggle, and read-aloud of the finished translation. All of them are
-/// best-effort layers over the translation — the translation itself never waits
-/// for any of them.
+/// 票 22 之后译文槽三态同位（§6.2）：加载骨架（150ms 内首字到达就不出
+/// 现）、失败时 InfoBar 就地替代译文位（人话 + 重试 + 折叠的原始异常）、
+/// 空时折叠。单词态是另一套层级：词头 + 音标 + 发音钮（读原词，
+/// ADR-0012）→ 译文即中文释义 → 1 DIP 分隔 → 不装框的词典。
 ///
 /// Like the badge, it never takes focus. That leaves it unable to receive key
 /// presses, so Escape is a global hotkey held only while the panel is on
@@ -29,6 +107,15 @@ public sealed record SenseView(
 /// </summary>
 public partial class PanelWindow : Window
 {
+    /// <summary>骨架延迟（§6.2/U-23）：快后端的面板不该闪一下假骨架。</summary>
+    private static readonly TimeSpan SkeletonDelay = TimeSpan.FromMilliseconds(150);
+
+    /// <summary>「已复制」的回落时长（§6.2 footer）。</summary>
+    private static readonly TimeSpan CopyResetDelay = TimeSpan.FromSeconds(1.5);
+
+    /// <summary>外壳高度上限（§6.2）：min(560, 工作区高 − 16) 的 560 那半边。</summary>
+    private const double MaxShellHeight = 560;
+
     /// <summary>
     /// 当前热键注册表的取用口，而非一次性捕获（O-43）：注册表随每次设置
     /// 保存整体重建（O-20），攥着退役实例的窗口再按 Esc 只会悄悄失灵。
@@ -59,8 +146,23 @@ public partial class PanelWindow : Window
     /// <summary>逐句对照显示开关。默认关——整段流式是主路径，对照是阅读辅助。</summary>
     private bool _sentenceMode;
 
+    /// <summary>ApplySentenceMode 正在程序化设 IsChecked 的标记（防 Checked 回环）。</summary>
+    private bool _applyingMode;
+
+    /// <summary>单词态（票 22）：词头行就位、模式分段隐藏、footer 不放朗读。</summary>
+    private bool _wordMode;
+
     /// <summary>词典卡换代号：新一次翻译自增，迟到的卡据此知道自己过时了。</summary>
     private int _cardRun;
+
+    private IReadOnlyList<SenseGroupView> _senseGroups = [];
+
+    /// <summary>失败态的人话（§6.2 映射）；原始异常只在展开「详细信息」时上屏。</summary>
+    private TranslationUserError? _lastError;
+
+    private bool _errorDetailOpen;
+    private DispatcherTimer? _skeletonDelay;
+    private DispatcherTimer? _copyReset;
 
     public PanelWindow(
         Func<HotkeyRegistry> hotkeys,
@@ -121,18 +223,33 @@ public partial class PanelWindow : Window
     public async Task TranslateAsync(string text, Action? onDisplayed = null)
     {
         _original = text;
-        OriginalText.Text = text;
-        TranslatedText.Text = string.Empty;
-        SentencePairs.ItemsSource = null;
-        StatusText.Visibility = Visibility.Collapsed;
-        SaveButton.Content = "存入历史";
-        UpdateDirectionLabel();
+        _cardRun++;
+        _lastError = null;
+        CollapseError();
 
         // 新的选中文本作废旧卡：卡还在路上的话，到岸后发现换代号变了就不上屏。
-        _cardRun++;
         DictionaryArea.Visibility = Visibility.Collapsed;
+        _senseGroups = [];
+        CardSenses.ItemsSource = null;
+        CardPhonetic.Text = string.Empty;
         SetupCard.Visibility = Visibility.Collapsed;
-        TranslationScroll.Visibility = Visibility.Visible;
+        ContentScroll.Visibility = Visibility.Visible;
+        SaveLabel.Text = "存入历史";
+        ResetCopyLabel();
+
+        // 单词态本地可判（与词典端口同一个纯词形规则），头部立刻进入单词
+        // 层级，不等词典卡到岸。
+        _wordMode = _dictionary is not null
+            && (DictionaryWord.IsEnglishWord(text) || DictionaryWord.IsChineseWord(text));
+        CardWord.Text = text.Trim();
+
+        OriginalText.Text = text;
+        OriginalText.ToolTip = text;
+        TranslatedText.Inlines.Clear();
+        TranslatedText.Visibility = Visibility.Collapsed;
+        SentencePairs.ItemsSource = null;
+        UpdateDirectionLabel();
+        ApplyLayoutMode();
 
         if (!IsVisible)
         {
@@ -151,10 +268,9 @@ public partial class PanelWindow : Window
         // 面板已显示：此刻之后的剪贴板写不再挡在用户和首帧之间。
         onDisplayed?.Invoke();
 
-        // The entrance lives on the content, not the window: same rule,
-        // opposite side — the sheet fades and rises, the window stays solid.
-
         HoldEscape();
+        UpdateFooterState();
+        UpdateHint();
 
         // 未配置翻译服务：给一张引导卡而不是异常文本（票 08 的验收线——
         // 任何路径都不出现异常英文）。词典卡也不发：没有自己的密钥，
@@ -177,12 +293,13 @@ public partial class PanelWindow : Window
     /// <summary>引导卡：告诉用户去哪，而不是报一个错。</summary>
     private void ShowSetupCard()
     {
-        TranslatedText.Text = string.Empty;
+        TranslatedText.Inlines.Clear();
+        TranslatedText.Visibility = Visibility.Collapsed;
         SentencePairs.ItemsSource = null;
-        TranslationScroll.Visibility = Visibility.Collapsed;
-        StatusText.Visibility = Visibility.Collapsed;
-        SaveButton.IsEnabled = false;
+        ContentScroll.Visibility = Visibility.Collapsed;
+        HideSkeleton();
         SetupCard.Visibility = Visibility.Visible;
+        UpdateFooterState();
     }
 
     private void OnOpenSetup(object sender, RoutedEventArgs e)
@@ -195,7 +312,7 @@ public partial class PanelWindow : Window
 
     private async Task RunTranslation()
     {
-        // 换方向也会走到这里：未配置的结局同样是引导卡，不是异常文本。
+        // 换方向与重试也会走到这里：未配置的结局同样是引导卡，不是异常文本。
         if (!TranslationReady)
         {
             ShowSetupCard();
@@ -211,6 +328,8 @@ public partial class PanelWindow : Window
         var session = new TranslationSession(_backend());
         _session = session;
 
+        ArmSkeletonDelay();
+
         session.Updated += () => Dispatcher.Invoke(() =>
         {
             if (!ReferenceEquals(_session, session))
@@ -218,7 +337,13 @@ public partial class PanelWindow : Window
                 return;
             }
 
-            TranslatedText.Text = session.Text;
+            // 首字到达（或失败/取消）：骨架再也没必要出现。
+            if (session.Text.Length > 0 || session.State != TranslationState.Streaming)
+            {
+                HideSkeleton();
+            }
+
+            RenderTranslation(session);
             if (_sentenceMode)
             {
                 RenderSentencePairs(session.Text);
@@ -229,22 +354,9 @@ public partial class PanelWindow : Window
             // not keep claiming the direction that just failed.
             UpdateDirectionLabel(session.CurrentRequest);
 
-            // A stream reads like a conversation: follow the newest line
-            // unless the user scrolled up to re-read.
-            if (TranslationScroll.ScrollableHeight > 0
-                && TranslationScroll.VerticalOffset >= TranslationScroll.ScrollableHeight - 24)
-            {
-                TranslationScroll.ScrollToEnd();
-            }
-
-            if (session.State == TranslationState.Failed && session.Error is { } error)
-            {
-                // The partial text stays on screen beneath the error: two
-                // thirds of a translation is still two thirds of what was
-                // wanted, and taking it away would be a second failure.
-                StatusText.Text = error;
-                StatusText.Visibility = Visibility.Visible;
-            }
+            FollowStream();
+            UpdateFooterState();
+            UpdateHint();
 
             UpdateLayout();
         });
@@ -253,11 +365,25 @@ public partial class PanelWindow : Window
             new TranslationRequest(_original, _target) { SourceLanguage = _source },
             _inFlight.Token);
 
-        // Kept work needs a door: only a finished translation is worth saving,
-        // and the button says what it will do with it.
-        SaveButton.IsEnabled = _saveTranslation is not null
-            && session.State == TranslationState.Finished
-            && session.Text.Trim().Length > 0;
+        // 终态统一在 await 之后结算（流式回调只管增量）：失败在此映射成人
+        // 话 InfoBar，部分译文保留在上方——三分之二的译文也是答案。
+        Dispatcher.Invoke(() =>
+        {
+            if (!ReferenceEquals(_session, session))
+            {
+                return;
+            }
+
+            HideSkeleton();
+            RenderTranslation(session);
+            if (session.State == TranslationState.Failed)
+            {
+                ShowError(TranslationUserErrorMapper.Describe(session.Failure, session.Error));
+            }
+
+            UpdateFooterState();
+            UpdateHint();
+        });
     }
 
     /// <summary>
@@ -347,40 +473,284 @@ public partial class PanelWindow : Window
 
     private void RenderCard(DictionaryCard card)
     {
-        CardWord.Text = card.Word;
         CardPhonetic.Text = card.Phonetic ?? string.Empty;
-        CardSenses.ItemsSource = card.Senses.Select(sense => new SenseView(
-            sense.PartOfSpeech,
-            sense.Definitions,
-            sense.Examples,
-            sense.Synonyms.Count > 0 ? "同义词：" + string.Join("、", sense.Synonyms) : null));
+        _senseGroups = card.Senses.Select(sense =>
+        {
+            var group = new SenseGroupView(sense);
+            group.Rebuild();
+            return group;
+        }).ToList();
+        CardSenses.ItemsSource = _senseGroups;
         DictionaryArea.Visibility = Visibility.Visible;
         UpdateLayout();
     }
 
-    private void OnToggleSentenceAlignment(object sender, RoutedEventArgs e)
+    private void OnExpandSense(object sender, RoutedEventArgs e)
     {
-        _sentenceMode = !_sentenceMode;
-        ApplySentenceMode();
+        if ((sender as Button)?.Tag is SenseGroupView group)
+        {
+            group.Expand();
+            group.Rebuild();
+
+            // 整表重挂是最省事的通知方式：词典行数两位数，重建不可感知。
+            CardSenses.ItemsSource = null;
+            CardSenses.ItemsSource = _senseGroups;
+        }
     }
 
-    /// <summary>开关只切显示：对照数据由同一份流式文本现算，切换零成本、随时可翻。</summary>
-    private void ApplySentenceMode()
+    // === 译文槽三态（§6.2） ==================================================
+
+    /// <summary>150ms 后仍在干等且一个字都没到，骨架才出现。</summary>
+    private void ArmSkeletonDelay()
     {
-        SentenceToggle.FontWeight = _sentenceMode
-            ? FontWeights.SemiBold
-            : FontWeights.Normal;
-        TranslatedText.Visibility = _sentenceMode ? Visibility.Collapsed : Visibility.Visible;
-        SentencePairs.Visibility = _sentenceMode ? Visibility.Visible : Visibility.Collapsed;
+        HideSkeleton();
+        _skeletonDelay = new DispatcherTimer(DispatcherPriority.Background)
+        {
+            Interval = SkeletonDelay,
+        };
+        _skeletonDelay.Tick += (_, _) =>
+        {
+            _skeletonDelay.Stop();
+            if (_session is { State: TranslationState.Streaming }
+                && _session.Text.Length == 0
+                && TranslatedText.Visibility == Visibility.Collapsed
+                && SetupCard.Visibility == Visibility.Collapsed)
+            {
+                LoadingSkeleton.Visibility = Visibility.Visible;
+                UpdateHint();
+            }
+        };
+        _skeletonDelay.Start();
+    }
+
+    private void HideSkeleton()
+    {
+        _skeletonDelay?.Stop();
+        _skeletonDelay = null;
+        LoadingSkeleton.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>译文渲染：流式尾随静态 accent 光标块（2×18，不闪烁）。</summary>
+    private void RenderTranslation(TranslationSession session)
+    {
+        var text = session.Text;
+        if (text.Length == 0)
+        {
+            // 空态：折叠，不白占一行（§6.2）。
+            TranslatedText.Visibility = Visibility.Collapsed;
+            return;
+        }
 
         if (_sentenceMode)
         {
-            RenderSentencePairs(_session?.Text ?? string.Empty);
+            TranslatedText.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        TranslatedText.Visibility = Visibility.Visible;
+        TranslatedText.Inlines.Clear();
+        TranslatedText.Inlines.Add(new Run(text));
+
+        if (session.State == TranslationState.Streaming)
+        {
+            var caret = new Rectangle
+            {
+                Width = 2,
+                Height = 18,
+                Margin = new Thickness(2, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Bottom,
+            };
+            caret.SetResourceReference(Shape.FillProperty, "Brush.Accent");
+            TranslatedText.Inlines.Add(new InlineUIContainer(caret));
+        }
+    }
+
+    /// <summary>失败态：人话标题 + 说明 + 重试/服务设置；原始异常折叠。</summary>
+    private void ShowError(TranslationUserError error)
+    {
+        _lastError = error;
+        ErrorBar.Title = error.Title;
+        ErrorBar.Message = error.Detail;
+        ErrorBar.IsOpen = true;
+        ErrorBar.Visibility = Visibility.Visible;
+
+        ErrorActions.Visibility = Visibility.Visible;
+        RetryButton.Visibility = error.ShowRetry ? Visibility.Visible : Visibility.Collapsed;
+        ErrorSettingsButton.Visibility = error.ShowSettings ? Visibility.Visible : Visibility.Collapsed;
+        CollapseErrorDetail();
+    }
+
+    private void CollapseError()
+    {
+        ErrorBar.Visibility = Visibility.Collapsed;
+        ErrorActions.Visibility = Visibility.Collapsed;
+        CollapseErrorDetail();
+    }
+
+    /// <summary>折叠「详细信息」——原始异常只在展开那一刻才进 UIA 树。</summary>
+    private void CollapseErrorDetail()
+    {
+        _errorDetailOpen = false;
+        ErrorDetailText.Text = string.Empty;
+        ErrorDetailText.Visibility = Visibility.Collapsed;
+        ErrorDetailChevron.Text = "\uE70D";
+        ErrorDetailToggle.ToolTip = "展开原始错误信息";
+    }
+
+    private void OnToggleErrorDetail(object sender, RoutedEventArgs e)
+    {
+        _errorDetailOpen = !_errorDetailOpen;
+        if (_errorDetailOpen)
+        {
+            ErrorDetailText.Text = _lastError?.Raw ?? string.Empty;
+            ErrorDetailText.Visibility = Visibility.Visible;
+            ErrorDetailChevron.Text = "\uE70E";
+            ErrorDetailToggle.ToolTip = "收起原始错误信息";
+        }
+        else
+        {
+            CollapseErrorDetail();
+        }
+    }
+
+    private void OnCopyErrorDetail(object sender, RoutedEventArgs e)
+    {
+        if (_lastError is null)
+        {
+            return;
+        }
+
+        _clipboard.SetText(_lastError.Raw);
+    }
+
+    private async void OnRetry(object sender, RoutedEventArgs e)
+    {
+        // async void 逃出去的异常是进程级崩溃（O-05）：与换向同一条纪律。
+        try
+        {
+            CollapseError();
+            await RunTranslation();
+        }
+        catch (Exception failure)
+        {
+            Log.Event(LogEvent.TranslationFailed, failure, ("retry", 1));
+            ShowError(TranslationUserErrorMapper.Describe(failure, failure.Message));
+        }
+    }
+
+    private void OnOpenErrorSettings(object sender, RoutedEventArgs e)
+    {
+        _openSettings?.Invoke();
+        Dismiss();
+    }
+
+    // === 布局模式：句子 / 逐句 / 单词 ========================================
+
+    /// <summary>头部与原文块随模式换脸：逐句与单词都藏顶部原文。</summary>
+    private void ApplyLayoutMode()
+    {
+        ModeSegment.Visibility = _wordMode ? Visibility.Collapsed : Visibility.Visible;
+        WordHeader.Visibility = _wordMode ? Visibility.Visible : Visibility.Collapsed;
+        ApplySentenceMode();
+    }
+
+    private void OnModeWholeSegment(object sender, RoutedEventArgs e)
+    {
+        if (_applyingMode)
+        {
+            return;
+        }
+
+        _sentenceMode = false;
+        ApplySentenceMode();
+    }
+
+    private void OnModeSentenceSegment(object sender, RoutedEventArgs e)
+    {
+        if (_applyingMode)
+        {
+            return;
+        }
+
+        _sentenceMode = true;
+        ApplySentenceMode();
+    }
+
+    /// <summary>开关只切显示：对照数据由同一份流式文本现算，切换零成本、随时可翻。
+    /// Checked 事件（而非 Click）让键盘与 UIA 也能驱动；程序化设 IsChecked
+    /// 由 <see cref="_applyingMode"/> 挡住回环。</summary>
+    private void ApplySentenceMode()
+    {
+        _applyingMode = true;
+        try
+        {
+            WholeSegment.IsChecked = !_sentenceMode;
+            SentenceSegment.IsChecked = _sentenceMode;
+            SpeakButton.Visibility = _wordMode ? Visibility.Collapsed : Visibility.Visible;
+
+            // 顶部原文块：逐句模式的原文在句对里；单词模式的"原文"是词头。
+            OriginalText.Visibility = _sentenceMode || _wordMode
+                ? Visibility.Collapsed
+                : Visibility.Visible;
+
+            if (_sentenceMode)
+            {
+                TranslatedText.Visibility = Visibility.Collapsed;
+                SentencePairs.Visibility = Visibility.Visible;
+                RenderSentencePairs(_session?.Text ?? string.Empty);
+            }
+            else
+            {
+                SentencePairs.Visibility = Visibility.Collapsed;
+                SentencePairs.ItemsSource = null;
+                TranslatedText.Visibility = _session is { Text.Length: > 0 } ? Visibility.Visible : Visibility.Collapsed;
+            }
+        }
+        finally
+        {
+            _applyingMode = false;
         }
     }
 
     private void RenderSentencePairs(string translated)
         => SentencePairs.ItemsSource = SentenceAlign.Pair(_original, translated);
+
+    /// <summary>流式像对话：跟随最新一行，除非用户滚上去重读。</summary>
+    private void FollowStream()
+    {
+        if (ContentScroll.ScrollableHeight > 0
+            && ContentScroll.VerticalOffset >= ContentScroll.ScrollableHeight - 24)
+        {
+            ContentScroll.ScrollToEnd();
+        }
+    }
+
+    // === footer ==============================================================
+
+    /// <summary>没有译文时禁用复制/朗读/存入（U-24——消除假可用）。</summary>
+    private void UpdateFooterState()
+    {
+        var hasText = _session?.Text.Trim().Length > 0;
+        CopyButton.IsEnabled = hasText;
+        SpeakButton.IsEnabled = hasText && _speech is not null;
+        SaveButton.IsEnabled = _saveTranslation is not null
+            && _session is { State: TranslationState.Finished }
+            && hasText;
+    }
+
+    /// <summary>加载中提示「正在翻译 · Esc 取消」，平时「Esc 关闭」。</summary>
+    private void UpdateHint()
+    {
+        var busy = LoadingSkeleton.Visibility == Visibility.Visible
+            || _session is { State: TranslationState.Streaming };
+        HintText.Text = (busy, _escape is null) switch
+        {
+            (true, true) => "正在翻译 · Esc 取消",
+            (true, false) => "正在翻译",
+            (false, true) => "Esc 关闭",
+            _ => "点 ✕ 关闭",
+        };
+    }
 
     private void OnSpeak(object sender, RoutedEventArgs e)
     {
@@ -396,6 +766,24 @@ public partial class PanelWindow : Window
     }
 
     /// <summary>
+    /// 词头旁的发音钮读的是**原词**（ADR-0012 拍板）：查词的人想听的是
+    /// 发音，不是译文的朗读。音色跟源语言——正是单词态 footer 不再放
+    /// 朗读按钮换来的那一枚。
+    /// </summary>
+    private void OnSpeakWord(object sender, RoutedEventArgs e)
+    {
+        if (_speech is null || _original.Trim() is not { Length: > 0 } word)
+        {
+            return;
+        }
+
+        var language = _session?.CurrentRequest?.SourceLanguage
+            ?? _source
+            ?? LanguageGuess.FromText(word).LanguageName;
+        _speech.SpeakOrStop(word, SpeechLanguage.CulturePrefix(language));
+    }
+
+    /// <summary>
     /// Hands the finished pair to whoever owns history. The link to the
     /// original entry is resolved there — here there is only text.
     /// </summary>
@@ -408,8 +796,37 @@ public partial class PanelWindow : Window
 
         _saveTranslation(_original, translated);
         SaveButton.IsEnabled = false;
-        SaveButton.Content = "✓ 已存入";
+        SaveLabel.Text = "已存入";
     }
+
+    private void OnCopy(object sender, RoutedEventArgs e)
+    {
+        if (_session is null || _session.Text.Length == 0)
+        {
+            return;
+        }
+
+        CopyLabel.Text = _clipboard.SetText(_session.Text) ? "已复制" : "复制失败";
+
+        // 「已复制」1.5 秒后回落（§6.2）：按钮说真话，但只说一会儿。
+        _copyReset?.Stop();
+        _copyReset = new DispatcherTimer { Interval = CopyResetDelay };
+        _copyReset.Tick += (_, _) =>
+        {
+            _copyReset.Stop();
+            ResetCopyLabel();
+        };
+        _copyReset.Start();
+    }
+
+    private void ResetCopyLabel()
+    {
+        _copyReset?.Stop();
+        _copyReset = null;
+        CopyLabel.Text = "复制";
+    }
+
+    // === 定位与夹回 ==========================================================
 
     private void MoveBesideCursor()
     {
@@ -432,6 +849,77 @@ public partial class PanelWindow : Window
     }
 
     /// <summary>
+    /// 每次尺寸变化都重新夹回工作区（§6.2/U-23）：词典卡晚到、译文长出
+    /// 滚动区时，面板不再越出屏幕底部——先把中间滚动区收矮到外壳上限
+    /// 之内，再把整个窗口拉回工作区。
+    /// </summary>
+    private void OnPanelSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (!IsVisible)
+        {
+            return;
+        }
+
+        var scale = DeviceScale();
+        if (scale <= 0)
+        {
+            return;
+        }
+
+        CapScrollToWorkArea(scale);
+        ClampIntoWorkArea(scale);
+    }
+
+    private double DeviceScale()
+        => PresentationSource.FromVisual(this)?.CompositionTarget?.TransformToDevice.M11 ?? 0;
+
+    /// <summary>中间滚动区的上限 = min(560, 工作区高 − 16) − 头尾固定高。只收不放。</summary>
+    private void CapScrollToWorkArea(double scale)
+    {
+        var work = WorkAreaAroundWindow(scale);
+        var maxShell = Math.Min(MaxShellHeight, work.Height / scale - 16);
+        var fixedChrome = ActualHeight - ContentScroll.ActualHeight;
+        var cap = maxShell - fixedChrome;
+        if (cap > 0 && ContentScroll.MaxHeight > cap)
+        {
+            ContentScroll.MaxHeight = Math.Floor(cap);
+        }
+    }
+
+    /// <summary>把整个窗口夹回它所在显示器的工作区（探针 U-23 的那条零越界）。</summary>
+    private void ClampIntoWorkArea(double scale)
+    {
+        var handle = new WindowInteropHelper(this).Handle;
+        if (handle == IntPtr.Zero)
+        {
+            return;
+        }
+
+        var work = WorkAreaAroundWindow(scale);
+        var width = (int)Math.Ceiling(ActualWidth * scale);
+        var height = (int)Math.Ceiling(ActualHeight * scale);
+        var left = (int)Math.Round(Left * scale);
+        var top = (int)Math.Round(Top * scale);
+
+        var x = Math.Clamp(left, work.Left, Math.Max(work.Left, work.Right - width));
+        var y = Math.Clamp(top, work.Top, Math.Max(work.Top, work.Bottom - height));
+        if (x != left || y != top)
+        {
+            TransientWindow.MoveTo(handle, new ScreenPoint(x, y), ZBand.Topmost);
+        }
+    }
+
+    private ScreenRect WorkAreaAroundWindow(double scale)
+    {
+        var center = new ScreenPoint(
+            (int)Math.Round((Left + ActualWidth / 2) * scale),
+            (int)Math.Round((Top + ActualHeight / 2) * scale));
+        return ScreenGeometry.WorkAreaAt(center);
+    }
+
+    // === 键与关停 ============================================================
+
+    /// <summary>
     /// Takes Escape for as long as the panel is up. Releasing it reliably
     /// matters more than taking it: an Escape left registered would be
     /// swallowed system-wide.
@@ -444,7 +932,7 @@ public partial class PanelWindow : Window
 
         // Escape being unavailable costs the user a click on the close button;
         // it is not worth refusing to show a translation over.
-        HintText.Text = _escape is null ? "点 ✕ 关闭" : "Esc 关闭";
+        UpdateHint();
     }
 
     private void ReleaseEscape()
@@ -470,16 +958,6 @@ public partial class PanelWindow : Window
 
     private void OnClose(object sender, RoutedEventArgs e) => Dismiss();
 
-    private void OnCopy(object sender, RoutedEventArgs e)
-    {
-        if (_session is null || _session.Text.Length == 0)
-        {
-            return;
-        }
-
-        CopyButton.Content = _clipboard.SetText(_session.Text) ? "已复制" : "复制失败";
-    }
-
     private async void OnSwapDirection(object sender, RoutedEventArgs e)
     {
         // async void 逃出去的异常是进程级崩溃（O-05）。翻译失败本身已被
@@ -490,14 +968,13 @@ public partial class PanelWindow : Window
             // source left to the backend there is nothing to swap it with.
             (_source, _target) = (_target, _source ?? "English");
             UpdateDirectionLabel();
-            CopyButton.Content = "复制译文";
+            ResetCopyLabel();
             await RunTranslation();
         }
         catch (Exception failure)
         {
             Log.Event(LogEvent.TranslationFailed, failure, ("swap", 1));
-            StatusText.Text = "翻译失败：" + failure.Message;
-            StatusText.Visibility = Visibility.Visible;
+            ShowError(TranslationUserErrorMapper.Describe(failure, failure.Message));
         }
     }
 
@@ -509,11 +986,15 @@ public partial class PanelWindow : Window
         {
             SourceLanguage = _source,
         };
+
+        // 语言名统一中文（票 22 头部）：设置值与先验短名同过一张映射表，
+        // 认识不了的原样显示。
         var source = request.SourceLanguage
-            ?? LanguageGuess.FromText(_original).Label
+            ?? LanguageGuess.FromText(_original).LanguageName
             ?? "自动识别";
 
-        DirectionLabel.Text = $"{source} → {request.TargetLanguage}";
+        SourceLabel.Text = LanguageDisplay.Name(source);
+        TargetLabel.Text = LanguageDisplay.Name(request.TargetLanguage);
     }
 
     /// <summary>Lets the application close it for real on shutdown.</summary>
@@ -522,6 +1003,8 @@ public partial class PanelWindow : Window
         _inFlight?.Cancel();
         ReleaseEscape();
         _speech?.Stop();
+        HideSkeleton();
+        ResetCopyLabel();
         Close();
     }
 }
