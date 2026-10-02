@@ -1300,46 +1300,55 @@ public partial class App : Application
             return;
         }
 
-        // Ctrl+Shift+Z: deliberately a combination whose modifiers the user is
-        // still holding when it fires, so the released-modifier handling in the
-        // capture platform is exercised every single time rather than only in
-        // some configurations.
-        var conflicts = new List<HotkeyConflict>();
-
-        Add(Settings.CaptureHotkey, "划词翻译", TranslateSelection);
-
-        // Ctrl+Shift+V sits next to the paste the user already knows.
-        Add(Settings.QuickBarHotkey, "快速条", ShowQuickBar);
-
-        // The resident narrow bar: summoned and hidden by the same key.
-        Add(Settings.BarHotkey, "窄条", ToggleBar);
-
-        // The escape hatch. Without it the user cannot tell a filter that
-        // judged wrongly from a tool that broke, and has no way to insist.
-        Add(Settings.ClipboardTranslateHotkey, "翻译剪贴板内容", TranslateClipboard);
-
-        if (conflicts.Count > 0)
+        // The plan (parsing, pairwise collisions, unreadable settings) comes
+        // from Core (O-27): the same verdict the settings window and the
+        // onboarding guide show the user, applied here at registration.
+        var actions = new Dictionary<HotkeyAction, Action>
         {
-            // Reported together rather than one balloon after another, and
-            // never fatal: losing a hotkey to another application is ordinary.
-            _tray?.ShowNotification("拾语", string.Join("\n", conflicts.Select(c => c.Message)));
+            // Ctrl+Shift+Z: deliberately a combination whose modifiers the
+            // user is still holding when it fires, so the released-modifier
+            // handling in the capture platform is exercised every single time
+            // rather than only in some configurations.
+            [HotkeyAction.CaptureSelection] = TranslateSelection,
+
+            // Ctrl+Shift+V sits next to the paste the user already knows.
+            [HotkeyAction.QuickBar] = ShowQuickBar,
+
+            // The resident narrow bar: summoned and hidden by the same key.
+            [HotkeyAction.Bar] = ToggleBar,
+
+            // The escape hatch. Without it the user cannot tell a filter that
+            // judged wrongly from a tool that broke, and has no way to insist.
+            [HotkeyAction.ClipboardTranslate] = TranslateClipboard,
+        };
+
+        var (bindings, problems) = HotkeyPlan.Build(Settings);
+        foreach (var problem in problems)
+        {
+            // Unreadable or colliding settings, named per action. Never fatal:
+            // losing a hotkey is ordinary, and the ones that parse still work.
+            _tray?.ShowNotification("拾语", problem);
         }
 
-        void Add(string spec, string description, Action action)
+        // RegisterHotKey failures are a different thing from plan problems:
+        // those are other software winning, and are reported together rather
+        // than one balloon after another.
+        var conflicts = new List<HotkeyConflict>();
+        foreach (var binding in bindings)
         {
-            var parsed = HotkeySpec.Parse(spec);
-            if (parsed is null)
-            {
-                // An unreadable setting should cost one feature, not startup.
-                _tray?.ShowNotification("拾语", $"快捷键「{spec}」无法识别，{description} 暂时不可用。");
-                return;
-            }
-
-            var hotkey = new Hotkey(Translate(parsed.Modifiers), parsed.Key, description);
-            if (_hotkeys!.Register(hotkey, action) is { } conflict)
+            var hotkey = new Hotkey(
+                Translate(binding.Spec.Modifiers),
+                binding.Spec.Key,
+                HotkeyPlan.ActionNames[binding.Action]);
+            if (_hotkeys!.Register(hotkey, actions[binding.Action]) is { } conflict)
             {
                 conflicts.Add(conflict);
             }
+        }
+
+        if (conflicts.Count > 0)
+        {
+            _tray?.ShowNotification("拾语", string.Join("\n", conflicts.Select(c => c.Message)));
         }
 
         static HotkeyModifiers Translate(HotkeyModifier modifiers)

@@ -929,25 +929,17 @@ public partial class SettingsWindow : Window
 
         var problems = new List<string>();
 
-        var hotkeyNames = new Dictionary<string, string>
+        // 热键判定问 Core 的同一份方案（O-27）：设置窗、引导、App 注册三处
+        // 共用——解析失败、缺修饰键、两键相撞都在那里逐条点名是哪两个
+        // 动作撞了哪一个组合。
+        var hotkeyCandidate = _baseline with
         {
-            ["hotkey.capture"] = "划词翻译",
-            ["hotkey.clipboard"] = "翻译剪贴板",
-            ["hotkey.quickbar"] = "快速条",
-            ["hotkey.bar"] = "窄条",
+            CaptureHotkey = _edited["hotkey.capture"].Text.Trim(),
+            ClipboardTranslateHotkey = _edited["hotkey.clipboard"].Text.Trim(),
+            QuickBarHotkey = _edited["hotkey.quickbar"].Text.Trim(),
+            BarHotkey = _edited["hotkey.bar"].Text.Trim(),
         };
-
-        var parsed = new List<HotkeySpec?>();
-        foreach (var (id, name) in hotkeyNames)
-        {
-            var spec = HotkeySpec.Parse(_edited[id].Text.Trim());
-            if (spec is null)
-            {
-                problems.Add($"{name}的快捷键无法识别，需要形如 Ctrl+Shift+Z 且至少带一个修饰键。");
-            }
-
-            parsed.Add(spec);
-        }
+        problems.AddRange(HotkeyPlan.Build(hotkeyCandidate).Problems);
 
         foreach (var item in AllItems().Where(item => item.Control == SettingsControl.Number))
         {
@@ -962,14 +954,6 @@ public partial class SettingsWindow : Window
         if (_edited["service.target-language"].Text.Trim().Length == 0)
         {
             problems.Add("译文语言不能为空。");
-        }
-
-        var chosen = parsed.Where(h => h is not null).ToList();
-        if (chosen.Count == 4 && chosen.Distinct().Count() != 4)
-        {
-            // Registering the same combination twice means the second one
-            // silently never works.
-            problems.Add("四个快捷键不能相同。");
         }
 
         if (problems.Count > 0)

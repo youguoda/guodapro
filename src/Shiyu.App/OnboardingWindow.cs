@@ -135,13 +135,31 @@ internal sealed class OnboardingWindow : Window
         return grid;
     }
 
+    /// <summary>
+    /// 引导编辑的热键里，快速条不在其中——但它仍在判定里（O-27 修正的缺陷：
+    /// 旧校验只比三个编辑框，把窄条设成快速条默认值时当场不报，保存后
+    /// App 注册失败，误报"已被其他软件占用"）。方案来自 Core，同一份
+    /// 判定也用于收尾回退与 App 注册。
+    /// </summary>
+    private AppSettings HotkeyCandidate()
+        => _current with
+        {
+            CaptureHotkey = EditedText("hotkey.capture"),
+            ClipboardTranslateHotkey = EditedText("hotkey.clipboard"),
+            BarHotkey = EditedText("hotkey.bar"),
+        };
+
+    /// <summary>编辑框里的现值；还没建出来的项回落到当前设置。</summary>
+    private string EditedText(string id)
+        => _states.TryGetValue(id, out var state) ? state.Text.Trim() : SettingsBindings.ReadText(id, _current) ?? "";
+
     private FrameworkElement HotkeyStep()
     {
         var panel = new StackPanel();
 
         var note = new TextBlock
         {
-            Text = "三个全局快捷键，现在确认或改成顺手的：",
+            Text = "三个全局快捷键，现在确认或改成顺手的（与快速条撞车也会在这里点名）：",
             Margin = new Thickness(0, 0, 0, 8),
         };
         note.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
@@ -150,6 +168,7 @@ internal sealed class OnboardingWindow : Window
         var conflict = new TextBlock
         {
             Text = "⚠ 两个快捷键相同，第二个永远不会生效。",
+            TextWrapping = TextWrapping.Wrap,
             Visibility = Visibility.Collapsed,
             Margin = new Thickness(0, 4, 0, 0),
         };
@@ -158,13 +177,17 @@ internal sealed class OnboardingWindow : Window
 
         void RefreshConflict()
         {
-            var parsed = new[] { "hotkey.capture", "hotkey.clipboard", "hotkey.bar" }
-                .Select(id => _states.TryGetValue(id, out var state) ? HotkeySpec.Parse(state.Text.Trim()) : null)
-                .Where(spec => spec is not null)
-                .ToList();
-            conflict.Visibility = parsed.Count != parsed.Distinct().Count()
-                ? Visibility.Visible
-                : Visibility.Collapsed;
+            // 四键一起判（含未在引导里出现的快速条），文案逐条点名。
+            var problems = HotkeyPlan.Build(HotkeyCandidate()).Problems;
+            if (problems.Count > 0)
+            {
+                conflict.Text = "⚠ " + string.Join(" ", problems);
+                conflict.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                conflict.Visibility = Visibility.Collapsed;
+            }
         }
 
         foreach (var id in new[] { "hotkey.capture", "hotkey.clipboard", "hotkey.bar" })
@@ -495,14 +518,11 @@ internal sealed class OnboardingWindow : Window
 
     private void Finish()
     {
-        // Hotkeys that do not parse, or collide, fall back to what already
-        // works: skipping a step must never leave the tool worse than its
-        // defaults.
+        // Hotkeys that do not parse, or collide — with each other or with the
+        // quick bar the guide never edits — fall back to what already works:
+        // skipping a step must never leave the tool worse than its defaults.
         var hotkeyIds = new[] { "hotkey.capture", "hotkey.clipboard", "hotkey.bar" };
-        var parsed = hotkeyIds
-            .Select(id => _states.TryGetValue(id, out var state) ? HotkeySpec.Parse(state.Text.Trim()) : null)
-            .ToList();
-        if (parsed.Any(spec => spec is null) || parsed.Distinct().Count() != parsed.Count)
+        if (HotkeyPlan.Build(HotkeyCandidate()).Problems.Count > 0)
         {
             foreach (var id in hotkeyIds.Where(id => _states.TryGetValue(id, out _)))
             {
