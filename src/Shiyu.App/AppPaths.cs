@@ -29,11 +29,30 @@ internal static class AppPaths
     /// <summary>
     /// The settings file always lives in the default location, never in the
     /// overridden one — otherwise moving the data would hide the setting that
-    /// says where the data went.
+    /// says where the data went. (The one exception is a probe directory;
+    /// see <see cref="UseProbeDirectory"/>.)
     /// </summary>
-    internal static string SettingsFile { get; } = Path.Combine(DefaultRoot, "settings.json");
+    internal static string SettingsFile => _settingsFile;
+
+    private static string _settingsFile = Path.Combine(DefaultRoot, "settings.json");
 
     /// <summary>Points the data paths elsewhere. Read once, at startup.</summary>
     internal static void UseDirectory(string? directory)
         => _root = string.IsNullOrWhiteSpace(directory) ? DefaultRoot : directory.Trim();
+
+#if DEBUG
+    /// <summary>
+    /// A probe instance's whole world is the isolated directory (ticket 15) —
+    /// including the settings file, which UseDirectory deliberately leaves in
+    /// the default location. Without this, a probe would load the user's real
+    /// settings and, worse, write them back (geometry saves, the relay client
+    /// id) from under the instance the user is actually running.
+    /// Debug builds only; a release build has no probe mode.
+    /// </summary>
+    internal static void UseProbeDirectory(string directory)
+    {
+        UseDirectory(directory);
+        _settingsFile = Path.Combine(_root, "settings.json");
+    }
+#endif
 }

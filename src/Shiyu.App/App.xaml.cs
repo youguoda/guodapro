@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Windows;
@@ -59,6 +60,19 @@ public partial class App : Application
     /// </summary>
     private DeferredCapture? _pendingSelection;
 
+    /// <summary>
+    /// 探针模式（票 15）：调试构建 + <c>SHIYU_DATA_DIR</c> 指向隔离目录。
+    /// 一切全局的东西——单实例名、热键、钩子、剪贴板监听、更新检查——
+    /// 都让开，让探针实例和用户正在用的实例并排跑、互不打扰。发布构建
+    /// 里它是常量 false，行为一字不变。
+    /// </summary>
+    private static bool IsProbe =>
+#if DEBUG
+        Environment.GetEnvironmentVariable("SHIYU_DATA_DIR") is { Length: > 0 };
+#else
+        false;
+#endif
+
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
@@ -91,7 +105,25 @@ public partial class App : Application
 
     private void Start()
     {
-        _singleInstance = SingleInstance.Acquire("Shiyu");
+        // The probe decision precedes the mutex: the name is the whole trick
+        // that lets a probe instance run beside the user's real one (票 15).
+        // Same data directory => same mutex, so probes of one directory still
+        // reject each other; a different directory never collides with "Shiyu".
+        var mutexName = "Shiyu";
+#if DEBUG
+        if (Environment.GetEnvironmentVariable("SHIYU_DATA_DIR") is { Length: > 0 } probeDirectory)
+        {
+            mutexName = ProbeMutexName(probeDirectory);
+
+            // Settings move into the probe directory too: reading the real
+            // ones would aim the probe at the user's backend, and writing
+            // them back (geometry, relay id) would reach the real file.
+            AppPaths.UseProbeDirectory(probeDirectory);
+            Trace.WriteLine($"probe mode: hotkeys/hooks off, data dir {probeDirectory}, mutex {mutexName}");
+        }
+#endif
+
+        _singleInstance = SingleInstance.Acquire(mutexName);
         if (!_singleInstance.IsOnlyInstance)
         {
             // Before anything else touches the clipboard or the history: a
@@ -162,24 +194,37 @@ public partial class App : Application
         // One hidden window serves both the clipboard notifications and the
         // tray icon's callbacks — and, later, the global hotkeys.
         _messageWindow = new MessageWindow();
-        _clipboard = new WindowsClipboardMonitor(_messageWindow);
         _exclusions = Settings.BuildExclusionPolicy();
         _images = new ImageArchive(AppPaths.ImageDirectory);
-        _pipeline = new ClipboardPipeline(
-            _clipboard, _store, TimeProvider.System, _exclusions, _images,
-            icons: new SourceIconCache(_store, new WindowsSourceIcons()))
+
+        // A probe instance watches no clipboard: the user's copies must not
+        // land in the probe's database (synthetic data only, ever — that is
+        // what the screenshots are allowed to contain), and a copied English
+        // sentence must not raise a translation badge from the probe process
+        // onto the user's screen.
+        if (!IsProbe)
         {
-            RecordImages = Settings.RecordImages,
-            RecordFiles = Settings.RecordFiles,
-        };
-        _pipeline.ImageFailed += reason
-            => _tray?.ShowNotification("拾语", $"复制的图片没能保存：{reason}");
+            _clipboard = new WindowsClipboardMonitor(_messageWindow);
+            _pipeline = new ClipboardPipeline(
+                _clipboard, _store, TimeProvider.System, _exclusions, _images,
+                icons: new SourceIconCache(_store, new WindowsSourceIcons()))
+            {
+                RecordImages = Settings.RecordImages,
+                RecordFiles = Settings.RecordFiles,
+            };
+            _pipeline.ImageFailed += reason
+                => _tray?.ShowNotification("拾语", $"复制的图片没能保存：{reason}");
+        }
 
         _tray = new TrayIcon(_messageWindow, "拾语")
         {
             RecentItems = () => _store.Recent(limit: 10).Select(entry => entry.Text).ToList(),
         };
-        _pipeline.BadgeDeserved += text => ShowBadge(text);
+
+        if (!IsProbe)
+        {
+            _pipeline!.BadgeDeserved += text => ShowBadge(text);
+        }
 
         _tray.QuitRequested += Shutdown;
         _tray.OpenLibraryRequested += ShowLibrary;
@@ -209,16 +254,25 @@ public partial class App : Application
         _settingsStore.Changed += OnSettingsChanged;
         _appliedSettings = Settings;
 
-        _singleInstance.WatchForOtherInstances(_messageWindow);
+        // The probe keeps out of the real instance's wake-up channel: the
+        // "another instance started" broadcast goes to every Shiyu process,
+        // and a probe answering it would throw a library window at the user.
+        if (!IsProbe)
+        {
+            _singleInstance.WatchForOtherInstances(_messageWindow);
 
-        // Starting Shiyu again is how a user who forgot it was running asks to
-        // see it, so bring the library up rather than only saying "already
-        // running" and leaving them no further along.
-        _singleInstance.AnotherInstanceStarted += ShowLibrary;
+            // Starting Shiyu again is how a user who forgot it was running
+            // asks to see it, so bring the library up rather than only saying
+            // "already running" and leaving them no further along.
+            _singleInstance.AnotherInstanceStarted += ShowLibrary;
+        }
 
         StartRetention();
         ApplyStartupPreference();
-        StartUpdateWatch();
+        if (!IsProbe)
+        {
+            StartUpdateWatch();
+        }
 
         // A probe convenience: SHIYU_OPEN_SETTINGS=1 opens the settings window
         // at startup, so automated checks can drive it without hunting for the
@@ -237,8 +291,9 @@ public partial class App : Application
 
         // The first-run guide asks the few things only the user knows. A
         // history that already exists says this is not a first run — the
-        // guide stays away and never nags an upgrading user.
-        if (!Settings.OnboardingCompleted && _store.Count() == 0)
+        // guide stays away and never nags an upgrading user. A probe skips it
+        // on principle: the whole point is a deterministic, empty surface.
+        if (!IsProbe && !Settings.OnboardingCompleted && _store.Count() == 0)
         {
             // The wizard writes through the store like everyone else, so what
             // it collects — hotkeys, theme, backend, rules — applies live via
@@ -247,7 +302,76 @@ public partial class App : Application
             var wizard = new OnboardingWindow(Settings, _settingsStore);
             wizard.Show();
         }
+
+#if DEBUG
+        RunProbeCommand();
+#endif
     }
+
+#if DEBUG
+    /// <summary>
+    /// 探针的呼出通道（票 15）：热键一颗都没注册，所以窗口只能这样开——
+    /// <c>SHIYU_PROBE_CMD=bar|panel|library|settings|quickbar</c> 启动即直接
+    /// 显示对应窗口，走的是和热键完全相同的内部方法。
+    /// <c>SHIYU_PROBE_ITEM</c> 让设置窗直接落到某个设置项（既有深链）；
+    /// <c>SHIYU_PROBE_TEXT</c> 给面板一句要翻译的话。仅在探针模式生效。
+    /// </summary>
+    private void RunProbeCommand()
+    {
+        if (!IsProbe)
+        {
+            return;
+        }
+
+        var text = Environment.GetEnvironmentVariable("SHIYU_PROBE_TEXT");
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            text = "Placeholder sentence for probe 15.";
+        }
+
+        switch (Environment.GetEnvironmentVariable("SHIYU_PROBE_CMD"))
+        {
+            case "bar":
+                ToggleBar();
+                break;
+
+            case "quickbar":
+                ShowQuickBar();
+                break;
+
+            case "library":
+                ShowLibrary();
+                break;
+
+            case "settings":
+                if (Environment.GetEnvironmentVariable("SHIYU_PROBE_ITEM") is { Length: > 0 } item)
+                {
+                    OpenSettingsAt(item);
+                }
+                else
+                {
+                    ShowSettings();
+                }
+                break;
+
+            case "panel":
+                ShowPanel(text);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// 探针互斥量名：数据目录路径的稳定哈希。同一目录的探针仍互斥，
+    /// 不同目录、以及与用户的 <c>Shiyu</c>，永不相撞。路径大写归一，
+    /// 因为 Windows 把互斥量名当不区分大小写处理而目录写法人人不同。
+    /// </summary>
+    private static string ProbeMutexName(string dataDirectory)
+    {
+        var hash = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(dataDirectory.Trim().ToUpperInvariant()));
+        return "Shiyu-probe-" + Convert.ToHexString(hash)[..16];
+    }
+#endif
 
     /// <summary>
     /// The manual entrance to the updater: one window at a time, from the tray
@@ -801,6 +925,11 @@ public partial class App : Application
     /// </summary>
     private void ApplyWinVTakeover()
     {
+        if (IsProbe)
+        {
+            return;
+        }
+
         if (Settings.TakeOverWinV)
         {
             if (_winV is null)
@@ -835,6 +964,12 @@ public partial class App : Application
     /// </summary>
     private void ApplySelectionBadge()
     {
+        // 同热键：探针不装全局鼠标钩子（票 15）。
+        if (IsProbe)
+        {
+            return;
+        }
+
         if (Settings.SelectionBadge)
         {
             if (_mouseDrag is null)
@@ -930,6 +1065,15 @@ public partial class App : Application
 
     private void RegisterHotkeys()
     {
+        // A probe owns no global keys (票 15): they belong to the user's real
+        // instance, and the guard also covers the re-registration that a
+        // settings save would otherwise trigger.
+        if (IsProbe)
+        {
+            Trace.WriteLine("probe mode: hotkeys/hooks off (RegisterHotkeys skipped)");
+            return;
+        }
+
         // Ctrl+Shift+Z: deliberately a combination whose modifiers the user is
         // still holding when it fires, so the released-modifier handling in the
         // capture platform is exercised every single time rather than only in
