@@ -738,8 +738,11 @@
                            VerticalAlignment="Center"/>
                 <DockPanel x:Name="FeedbackHost" LastChildFill="False"
                            VerticalAlignment="Center" Visibility="Collapsed">
+                    <!-- 家族 ghost 按钮（§6.1 footer / 票 19 组件）：浮层里
+                         不放实心主按钮，静止透明、hover 才起底。 -->
                     <Button x:Name="UndoButton" DockPanel.Dock="Right" Content="撤销"
-                            Padding="8,1" Height="{DynamicResource Control.HeightDense}"
+                            Style="{DynamicResource FlyoutButton}"
+                            Height="28" MinHeight="28" Padding="10,0"
                             Cursor="Hand" Click="OnUndoDelete"
                             Margin="0,0,24,0"
                             Visibility="Collapsed"
@@ -771,14 +774,16 @@
                                 VirtualizingPanel.CacheLength="1"
                                 VirtualizingPanel.CacheLengthUnit="Page"/>
 
+            <!-- 空态底透明（§6.1）：材质是一片连续的板，空态不是板上开洞。 -->
             <Border x:Name="EmptyHost" Visibility="Collapsed"
-                    Background="{DynamicResource Brush.Surface}"
+                    Background="Transparent"
                     HorizontalAlignment="Center" VerticalAlignment="Center"
                     MaxWidth="300" Margin="16,0">
                 <local:EmptyState x:Name="Empty" Glyph="&#xE8A9;">
-                    <Button x:Name="EmptyClear" Content="清除筛选" Margin="0,0,0,0"
-                            Height="{DynamicResource Control.HeightDense}"
-                            Padding="14,0" HorizontalAlignment="Center"
+                    <Button x:Name="EmptyClear" Content="清除筛选"
+                            Style="{DynamicResource FlyoutButton}"
+                            Height="28" MinHeight="28"
+                            HorizontalAlignment="Center"
                             Cursor="Hand" Click="OnClearFilters"
                             Visibility="Collapsed"/>
                 </local:EmptyState>
