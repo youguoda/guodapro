@@ -408,6 +408,8 @@ public partial class LibraryWindow : Window
             failure is IOException or UnauthorizedAccessException
             or NotSupportedException or FileFormatException)
         {
+            // expected: an unreadable or vanished original (deleted behind
+            // the list, offline share) shows the entry without a preview.
             return null;
         }
     }
