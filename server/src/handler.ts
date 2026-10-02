@@ -1,6 +1,7 @@
 import type { Env, RelayServices } from "./types.js";
 import { readLimits } from "./limits.js";
 import { saltedHash } from "./hash.js";
+import { normalizeLanguage } from "./langs.js";
 import { KvStore, Quota, type Identity } from "./quota.js";
 import { ZhipuUpstream } from "./upstream.js";
 
@@ -42,9 +43,24 @@ export async function handleTranslate(
     return jsonError(400, "BAD_REQUEST", parsed.message);
   }
 
-  const { clientId, text, from, to } = parsed.value;
+  const { clientId, text, from: rawFrom, to: rawTo } = parsed.value;
 
-  // 计费与上限都按码点数：一个汉字与一个字母同价。
+  // 语言白名单：to/from 只认封闭集合（含语言代码与常见别名），折叠成
+  // 规范名后才进提示词——自由文本的 to/from 是提示词注入与额度绕过的
+  // 入口（O-19）。
+  const to = normalizeLanguage(rawTo);
+  if (!to) {
+    return jsonError(400, "UNSUPPORTED_LANGUAGE", "暂不支持这种目标语言（to）。");
+  }
+  const from = rawFrom === null ? null : normalizeLanguage(rawFrom);
+  if (rawFrom !== null && from === null) {
+    return jsonError(400, "UNSUPPORTED_LANGUAGE", "暂不支持这种源语言（from），留空可自动识别。");
+  }
+
+  // 计费与上限都按码点数：一个汉字与一个字母同价。只计 text 是安全的：
+  // to/from 经白名单后是从固定词表里选出的规范名（集合封闭、长度有界），
+  // 既夹带不了内容也放大不了提示词；指令模板与 system 提示是服务端常量。
+  // 因此 text 就是"用户控制且进入提示词"的全部内容（O-19）。
   const chars = [...text].length;
   if (chars > limits.maxRequestChars) {
     return jsonError(400, "TEXT_TOO_LONG", `单次最多 ${limits.maxRequestChars} 字。`, {
