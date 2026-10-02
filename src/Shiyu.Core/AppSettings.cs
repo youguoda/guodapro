@@ -272,6 +272,22 @@ public sealed record AppSettings
     };
 
     /// <summary>
+    /// Marks a protected <see cref="BackendApiKey"/> in settings.json. Anything
+    /// without the marker is plaintext from an older Shiyu and loads as-is —
+    /// the next save re-protects it.
+    /// </summary>
+    public const string SecretMarker = "dpapi:";
+
+    /// <summary>
+    /// The one protector instance, installed by the app before any settings
+    /// IO. Ambient rather than passed around: Load/Save are static and called
+    /// from places that have no business knowing about DPAPI. Tests install a
+    /// fake; null means no protection at all (which is also the honest state
+    /// for tools that read settings.json outside the app).
+    /// </summary>
+    public static ISecretProtector? SecretProtector { get; set; }
+
+    /// <summary>
     /// Reads the settings, falling back to defaults for anything missing or
     /// unreadable. A corrupt settings file must not stop Shiyu from starting:
     /// with no window to show an error in, that would look like a tool that
@@ -327,6 +343,17 @@ public sealed record AppSettings
                 parsed = parsed with { BarActions = HoverActions.All };
             }
 
+            // A protected key comes back exactly as it was stored — the marker
+            // plus opaque bytes. Turn it into the plain key the runtime uses;
+            // a blob this machine cannot open (moved from another install,
+            // switched user, broken protector) is an empty key, which asks to
+            // be re-entered, never a mystery string sent as a credential.
+            if (parsed.BackendApiKey.StartsWith(SecretMarker, StringComparison.Ordinal))
+            {
+                var plain = SecretProtector?.Unprotect(parsed.BackendApiKey);
+                parsed = parsed with { BackendApiKey = plain ?? string.Empty };
+            }
+
             settings = parsed;
             return true;
         }
@@ -351,9 +378,50 @@ public sealed record AppSettings
         // Written beside the target and moved into place, so an interrupted
         // save leaves the previous settings rather than half a file.
         var temporary = path + ".tmp";
-        File.WriteAllText(temporary, JsonSerializer.Serialize(this, Format));
+        File.WriteAllText(temporary, JsonSerializer.Serialize(ToStorableNode(), Format));
         File.Move(temporary, path, overwrite: true);
     }
+
+    /// <summary>
+    /// This instance as it appears in settings.json: every field plain except
+    /// the API key, which is protected when a protector is installed. The key
+    /// in memory is always plain — protection is a property of the file, not
+    /// of the running app. Protection failing refuses the save rather than
+    /// quietly writing the plaintext key the user believed was protected.
+    /// </summary>
+    private System.Text.Json.Nodes.JsonObject ToStorableNode()
+    {
+        var node = System.Text.Json.Nodes.JsonObject.Create(
+            JsonSerializer.SerializeToElement(this, Format))!;
+        if (BackendApiKey.Length == 0)
+        {
+            return node;
+        }
+
+        if (SecretProtector is { } protector
+            && protector.Protect(BackendApiKey) is { } stored)
+        {
+            node["BackendApiKey"] = stored;
+        }
+        else if (SecretProtector is not null)
+        {
+            throw new InvalidOperationException("API 密钥保护失败，已放弃写入设置文件。");
+        }
+
+        return node;
+    }
+
+    /// <summary>
+    /// The settings copy a backup carries (ADR-0011). Without the key: the
+    /// key field is empty — a backup leaving this machine must not carry a
+    /// working credential. With it: the plain key, because the protected form
+    /// is bound to this machine's user; the caller only ever embeds it inside
+    /// an encrypted archive, and the import re-protects on first save.
+    /// </summary>
+    public string ToBackupJson(bool includeKey)
+        => includeKey
+            ? JsonSerializer.Serialize(this, Format)
+            : JsonSerializer.Serialize(this with { BackendApiKey = string.Empty }, Format);
 
     public ExclusionPolicy BuildExclusionPolicy()
         => new(ExclusionPolicy.Presets.Concat(
