@@ -85,10 +85,17 @@ export async function handleTranslate(
   const ip = normalizeIp(request.headers.get("CF-Connecting-IP") ?? "unknown");
   const identity: Identity = { clientId, ipHash: await saltedHash(salt, ip) };
 
-  // 三层原子预留：任一层超限则三层都不扣（退款也按同一天的桶退）。
+  // 限速 + 三层原子预留：任一超限则全都不扣（退款也按同一天的桶退）。
   const at = now();
   const denial = await quota.admit(identity, chars, at);
   if (denial) {
+    if (denial.code === "RATE_LIMITED") {
+      // Retry-After 按标准头给出：429 在客户端本来就不重试，这个头是给
+      // 守规矩的调用方与未来的批量路径用的。
+      return jsonError(429, denial.code, denial.message, {
+        retryAfterSeconds: denial.retryAfterSeconds,
+      }, { "Retry-After": String(denial.retryAfterSeconds ?? 60) });
+    }
     return jsonError(429, denial.code, denial.message, {
       remaining: denial.remaining,
       resetAt: denial.resetAt,
@@ -135,10 +142,14 @@ function parseBody(raw: unknown): Parsed {
   return { value: { clientId, text: body.text, from, to: body.to.trim() } };
 }
 
-function json(status: number, payload: unknown): Response {
+function json(
+  status: number,
+  payload: unknown,
+  headers: Record<string, string> = {},
+): Response {
   return new Response(JSON.stringify(payload), {
     status,
-    headers: { "content-type": "application/json; charset=utf-8" },
+    headers: { "content-type": "application/json; charset=utf-8", ...headers },
   });
 }
 
@@ -147,6 +158,7 @@ function jsonError(
   code: string,
   message: string,
   extra: Record<string, unknown> = {},
+  headers: Record<string, string> = {},
 ): Response {
-  return json(status, { error: { code, message, ...extra } });
+  return json(status, { error: { code, message, ...extra } }, headers);
 }

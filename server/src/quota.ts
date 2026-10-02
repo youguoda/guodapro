@@ -8,19 +8,20 @@ export interface Identity {
   ipHash: string;
 }
 
-/** 一层配额被用尽时的事实：错误码、剩余量与重置时间一起走。 */
+/** 一层配额或限速被用尽时的事实：按层带上剩余量/重置时间/重试间隔。 */
 export interface QuotaDenial {
-  code: "QUOTA_DEVICE" | "QUOTA_IP" | "QUOTA_GLOBAL";
+  code: "RATE_LIMITED" | "QUOTA_DEVICE" | "QUOTA_IP" | "QUOTA_GLOBAL";
   message: string;
-  remaining: number;
-  resetAt: string;
+  remaining?: number;
+  resetAt?: string;
+  retryAfterSeconds?: number;
 }
 
 /**
- * 原子配额计数端口（O-19）：admit 在一次调用里对设备/IP/全局三层做
- * "检查并预留"——全部满足才扣减，任一层超限则三层都不扣。处理器只依赖
- * 这个接口：真实部署走 DurableCounter（Durable Object RPC），单测走
- * 同一个 DailyCounter 类 + 假 state 的内存实现。
+ * 原子配额计数端口（O-19）：admit 在一次调用里先查每 IP 突发限速、再对
+ * 设备/IP/全局三层做"检查并预留"——全部满足才扣减，任一层超限则全都不扣。
+ * 处理器只依赖这个接口：真实部署走 DurableCounter（Durable Object RPC），
+ * 单测走同一个 DailyCounter 类 + 假 state 的内存实现。
  */
 export interface QuotaCounter {
   admit(identity: Identity, chars: number, now: Date): Promise<QuotaDenial | null>;
@@ -28,6 +29,7 @@ export interface QuotaCounter {
 }
 
 const Messages: Record<QuotaDenial["code"], string> = {
+  RATE_LIMITED: "请求太频繁，请稍后再试。",
   QUOTA_DEVICE: "今日设备免费额度已用完。",
   QUOTA_IP: "当前网络今日的免费额度已用完。",
   QUOTA_GLOBAL: "公共通道今日额度已用完，明天再来。",
@@ -41,7 +43,13 @@ const Messages: Record<QuotaDenial["code"], string> = {
  * 绝无正文或译文。
  */
 export class DailyCounter extends DurableObject {
-  /** 三层"检查并预留"；任一层超限则什么都不写。 */
+  /**
+   * 突发限速 + 三层"检查并预留"，全部在同一次同步事务里：限速未过或
+   * 任一层超限则什么都不写（包括限速计数——被配额拒绝的请求不消耗
+   * 限速次数）。限速放在同一个 DO 而不是单独一层，是为了与三层共用
+   * 一次 RPC、同一份原子性，省一半 DO 请求与一跳延迟；代价只是同一
+   * 分片里多几枚每分钟键（≤1440×活跃 IP/天），闹钟统一善后。
+   */
   async admit(
     identity: Identity,
     chars: number,
@@ -49,7 +57,19 @@ export class DailyCounter extends DurableObject {
     now: Date,
   ): Promise<QuotaDenial | null> {
     const kv = this.ctx.storage.kv;
+    const minute = Math.floor(now.getTime() / 60000);
     const denial = this.ctx.storage.transactionSync((): QuotaDenial | null => {
+      const rateKey = `r:${identity.ipHash}:${minute}`;
+      const rateUsed = kv.get<number>(rateKey) ?? 0;
+      if (rateUsed >= limits.ipPerMinute) {
+        const intoMinute = now.getTime() - minute * 60000;
+        return {
+          code: "RATE_LIMITED",
+          message: Messages.RATE_LIMITED,
+          retryAfterSeconds: Math.max(1, Math.ceil((60000 - intoMinute) / 1000)),
+        };
+      }
+
       const keys = [`d:${identity.clientId}`, `i:${identity.ipHash}`, "g"];
       const used = keys.map((key) => kv.get<number>(key) ?? 0);
 
@@ -70,6 +90,7 @@ export class DailyCounter extends DurableObject {
         }
       }
 
+      kv.put(rateKey, rateUsed + 1);
       for (const [index, key] of keys.entries()) {
         kv.put(key, used[index] + chars);
       }

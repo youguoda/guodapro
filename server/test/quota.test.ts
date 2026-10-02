@@ -8,6 +8,7 @@ const Limits: Limits = {
   ipDaily: 300,
   globalDaily: 400,
   maxRequestChars: 2000,
+  ipPerMinute: 60,
 };
 
 const Noon = new Date("2026-09-27T12:00:00Z");
@@ -203,6 +204,65 @@ describe("上游失败退款", () => {
     await counter.refund(identity, 500, Noon);
 
     expect(state.count("d:device-a")).toBe(0);
+  });
+});
+
+describe("每 IP 突发限速", () => {
+  const Minute = Math.floor(Noon.getTime() / 60000);
+
+  it("同 IP 一分钟内超过次数被拒，带重试间隔；不扣任何字数", async () => {
+    const counter = new MemoryCounter({ ...Limits, ipPerMinute: 3 });
+    const identity = { clientId: "device-a", ipHash: "hash-1" };
+
+    for (let request = 0; request < 3; request += 1) {
+      expect(await counter.admit(identity, 1, Noon)).toBeNull();
+    }
+    const denial = await counter.admit(identity, 1, Noon);
+
+    expect(denial!.code).toBe("RATE_LIMITED");
+    expect(denial!.retryAfterSeconds).toBeGreaterThanOrEqual(1);
+    expect(denial!.retryAfterSeconds).toBeLessThanOrEqual(60);
+    expect(denial!.message.length).toBeGreaterThan(0);
+    // 限速拒绝不写任何计数：被拒的请求不占额度也不占限速名额。
+    expect(counter.stateAt(Noon).count(`r:hash-1:${Minute}`)).toBe(3);
+    expect(counter.stateAt(Noon).count("g")).toBe(3);
+  });
+
+  it("下一分钟窗口重新计数", async () => {
+    const counter = new MemoryCounter({ ...Limits, ipPerMinute: 2 });
+    const identity = { clientId: "device-a", ipHash: "hash-1" };
+
+    await counter.admit(identity, 1, Noon);
+    await counter.admit(identity, 1, Noon);
+    expect((await counter.admit(identity, 1, Noon))!.code).toBe("RATE_LIMITED");
+
+    const nextMinute = new Date(Noon.getTime() + 61_000);
+    expect(await counter.admit(identity, 1, nextMinute)).toBeNull();
+  });
+
+  it("不同 IP 各自计数互不影响", async () => {
+    const counter = new MemoryCounter({ ...Limits, ipPerMinute: 2 });
+
+    await counter.admit({ clientId: "device-a", ipHash: "hash-1" }, 1, Noon);
+    await counter.admit({ clientId: "device-a", ipHash: "hash-1" }, 1, Noon);
+    const denial = await counter.admit({ clientId: "device-a", ipHash: "hash-1" }, 1, Noon);
+    const other = await counter.admit({ clientId: "device-b", ipHash: "hash-2" }, 1, Noon);
+
+    expect(denial!.code).toBe("RATE_LIMITED");
+    expect(other).toBeNull();
+  });
+
+  it("配额拒绝不消耗限速名额", async () => {
+    const counter = new MemoryCounter({ ...Limits, ipPerMinute: 2 });
+    const identity = { clientId: "device-a", ipHash: "hash-1" };
+
+    // 设备层先灌满：随后的请求都按 QUOTA_DEVICE 拒绝。
+    await counter.admit(identity, 200, Noon);
+    await counter.admit(identity, 1, Noon);
+    await counter.admit(identity, 1, Noon);
+
+    // 限速键一次都没涨——quota 拒绝不写任何东西。
+    expect(counter.stateAt(Noon).count(`r:hash-1:${Minute}`)).toBe(1);
   });
 });
 

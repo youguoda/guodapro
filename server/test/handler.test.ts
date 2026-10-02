@@ -11,6 +11,7 @@ const Limits: Limits = {
   ipDaily: 300,
   globalDaily: 400,
   maxRequestChars: 50,
+  ipPerMinute: 60,
 };
 
 const Noon = new Date("2026-09-27T12:00:00Z");
@@ -76,9 +77,17 @@ async function errorOf(response: Response): Promise<{
   remaining?: number;
   limit?: number;
   resetAt?: string;
+  retryAfterSeconds?: number;
 }> {
   const payload = (await response.json()) as {
-    error: { code: string; message: string; remaining?: number; limit?: number; resetAt?: string };
+    error: {
+      code: string;
+      message: string;
+      remaining?: number;
+      limit?: number;
+      resetAt?: string;
+      retryAfterSeconds?: number;
+    };
   };
   return payload.error;
 }
@@ -320,6 +329,25 @@ describe("/translate：IPv6 /64 聚合", () => {
 
     const sharedHash = await saltedHash("test-salt", "203.0.113.7");
     expect(counter.stateAt(Noon).count(`i:${sharedHash}`)).toBe(10);
+  });
+});
+
+describe("/translate：突发限速", () => {
+  it("同 IP 一分钟内超过次数 429，带 Retry-After 且不惊动上游", async () => {
+    const { upstream, calls } = fakeUpstream();
+    const counter = new MemoryCounter({ ...Limits, ipPerMinute: 2 });
+    const { env, services } = open(upstream, counter);
+
+    await call(env, services, body());
+    await call(env, services, body());
+    const response = await call(env, services, body());
+
+    expect(response.status).toBe(429);
+    const error = await errorOf(response);
+    expect(error.code).toBe("RATE_LIMITED");
+    expect(error.retryAfterSeconds).toBeGreaterThanOrEqual(1);
+    expect(response.headers.get("Retry-After")).toBeTruthy();
+    expect(calls.length).toBe(2);
   });
 });
 

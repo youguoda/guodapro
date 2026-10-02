@@ -28,6 +28,9 @@ export interface Env {
   /** 单请求字符上限，十进制字符串，默认 2000。 */
   MAX_REQUEST_CHARS?: string;
 
+  /** 每 IP（IPv6 按 /64）每分钟请求上限，十进制字符串，默认 60。 */
+  IP_PER_MINUTE_LIMIT?: string;
+
   /** 上游模型名，默认 glm-4-flash（免费档）。 */
   UPSTREAM_MODEL?: string;
 
