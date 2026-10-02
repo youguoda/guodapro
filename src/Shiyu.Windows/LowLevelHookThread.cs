@@ -22,6 +22,12 @@ namespace Shiyu.Windows;
 ///   "已接管"而系统行为原样（O-16 的另一半）。
 /// - 回调在钩子线程上、于 DispatchMessage 内执行——回调读写的任何状态只能
 ///   活在这条线程上；要通知 UI，用构造时捕获的 SynchronizationContext Post。
+///   钩子句柄经回调的第一个参数传入而不是让回调回头读字段：装钩在下面的
+///   构造里就已生效，调用方对自己的字段赋值晚于首个回调可能的执行——字段
+///   回读会读到 null，而低级钩子回调里抛异常等于泵线程死亡、钩子被系统
+///   静默摘除。回调闭包能安全触碰的只有宿主构造前就赋值的调用方字段
+///   （字段初始化器与构造函数前段——Thread.Start 建立它们与钩子线程间的
+///   happens-before）。
 /// - Dispose 可在任意线程调用、幂等：PostThreadMessage(WM_QUIT) 让泵循环
 ///   退出，钩子由钩子线程自己在循环退出**之后**卸载（装/卸同一条线程，此后
 ///   回调不可能再执行），Join 带超时兜底——一条被外部挂起的线程不该把进程
@@ -29,22 +35,33 @@ namespace Shiyu.Windows;
 /// </summary>
 internal sealed class LowLevelHookThread : IDisposable
 {
-    private readonly LowLevelHookProc _proc;
+    /// <summary>
+    /// 钩子回调：第一个参数是宿主装上的钩子句柄（CallNextHookEx 转交用），
+    /// 其余与 Win32 的 LowLevelKeyboardProc/LowLevelMouseProc 相同。
+    /// </summary>
+    public delegate IntPtr Callback(IntPtr hook, int code, IntPtr wParam, IntPtr lParam);
+
+    private readonly Callback _callback;
+    private readonly LowLevelHookProc _dispatch;
     private readonly Thread _thread;
     private readonly ManualResetEventSlim _installed = new(false);
 
     // 三者都由钩子线程在 _installed.Set() 之前写入（Set 的内存屏障负责
-    // 发布）：构造线程此后只读一次；HookHandle 在回调里读时写在同一条
-    // 线程上，天然有序。
+    // 发布）：构造线程此后只读一次；_hook 在回调里读时写在同一条线程上，
+    // 天然有序。
     private IntPtr _hook;
     private uint _threadId;
     private int _installError;
 
     private bool _disposed;
 
-    public LowLevelHookThread(int idHook, LowLevelHookProc proc, string threadName)
+    public LowLevelHookThread(int idHook, Callback callback, string threadName)
     {
-        _proc = proc;
+        _callback = callback;
+
+        // 宿主自己的转发层：_callback 与 _dispatch 都在 Start 之前赋值，
+        // 钩子线程经 Thread.Start 的 happens-before 一定看得见它们。
+        _dispatch = Dispatch;
 
         _thread = new Thread(() => Run(idHook))
         {
@@ -64,18 +81,16 @@ internal sealed class LowLevelHookThread : IDisposable
         }
     }
 
-    /// <summary>
-    /// 装上的钩子句柄，回调转交 CallNextHookEx 用。安装成功后不再变化；
-    /// 卸载发生在泵循环退出之后，此后回调不可能再执行，读到旧值也无害。
-    /// </summary>
-    internal IntPtr HookHandle => _hook;
+    /// <summary>把系统送来的事件转交给调用方回调，钩子句柄随身带走。</summary>
+    private IntPtr Dispatch(int code, IntPtr wParam, IntPtr lParam)
+        => _callback(_hook, code, wParam, lParam);
 
     private void Run(int idHook)
     {
         _threadId = NativeMethods.GetCurrentThreadId();
 
         _hook = NativeMethods.SetWindowsHookExW(
-            idHook, _proc, NativeMethods.GetModuleHandleW(null), 0);
+            idHook, _dispatch, NativeMethods.GetModuleHandleW(null), 0);
         if (_hook == IntPtr.Zero)
         {
             // 只带走错误码，异常在调用线程上构造——错误码不会像异常对象

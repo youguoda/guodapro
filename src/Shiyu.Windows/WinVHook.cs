@@ -19,7 +19,9 @@ namespace Shiyu.Windows;
 /// feeds run on that hook thread and nowhere else (nothing else in this class
 /// touches the filter, so there is no cross-thread state to guard); the mask
 /// injection and the app trigger below stay POSTED to the context captured
-/// here at construction, exactly where they ran before the migration.
+/// here at construction, exactly where they ran before the migration. The
+/// hook handle reaches the callback as its first argument (see
+/// <see cref="LowLevelHookThread"/> for why a field read-back would race).
 /// </summary>
 public sealed class WinVHook : IDisposable
 {
@@ -61,11 +63,11 @@ public sealed class WinVHook : IDisposable
     /// <summary>Raised on the installing thread's context when Win+V is taken.</summary>
     public event Action? Triggered;
 
-    private IntPtr HookCallback(int code, IntPtr wParam, IntPtr lParam)
+    private IntPtr HookCallback(IntPtr hook, int code, IntPtr wParam, IntPtr lParam)
     {
         if (code < 0)
         {
-            return NativeMethods.CallNextHookEx(_host.HookHandle, code, wParam, lParam);
+            return NativeMethods.CallNextHookEx(hook, code, wParam, lParam);
         }
 
         var info = Marshal.PtrToStructure<KbdLlHookStruct>(lParam);
@@ -92,12 +94,12 @@ public sealed class WinVHook : IDisposable
         if (key == SpecialKey.Other && direction == KeyDirection.Up)
         {
             // Nothing the filter decides on; skip the call for speed.
-            return NativeMethods.CallNextHookEx(_host.HookHandle, code, wParam, lParam);
+            return NativeMethods.CallNextHookEx(hook, code, wParam, lParam);
         }
 
         return _filter.Feed(key, direction) == KeyFlow.Swallow
             ? new IntPtr(1)
-            : NativeMethods.CallNextHookEx(_host.HookHandle, code, wParam, lParam);
+            : NativeMethods.CallNextHookEx(hook, code, wParam, lParam);
     }
 
     public void Dispose()

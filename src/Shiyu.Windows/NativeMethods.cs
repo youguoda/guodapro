@@ -161,6 +161,7 @@ internal static class NativeMethods
 
     [DllImport("kernel32.dll")]
     internal static extern uint GetCurrentThreadId();
+
     [DllImport("user32.dll", SetLastError = true)]
     internal static extern bool AddClipboardFormatListener(IntPtr hWnd);
 

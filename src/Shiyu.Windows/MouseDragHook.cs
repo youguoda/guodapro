@@ -57,7 +57,7 @@ public sealed class MouseDragHook : IDisposable
     /// <summary>一次拖选完成（≥5px 位移后左键抬起）。在构造线程捕获的上下文上触发。</summary>
     public event Action? DragCompleted;
 
-    private IntPtr HookCallback(int code, IntPtr wParam, IntPtr lParam)
+    private IntPtr HookCallback(IntPtr hook, int code, IntPtr wParam, IntPtr lParam)
     {
         if (code >= 0)
         {
@@ -65,7 +65,7 @@ public sealed class MouseDragHook : IDisposable
         }
 
         // 永远放行：观察者不吞输入。
-        return NativeMethods.CallNextHookEx(_host.HookHandle, code, wParam, lParam);
+        return NativeMethods.CallNextHookEx(hook, code, wParam, lParam);
     }
 
     private void Report(long message, IntPtr lParam)
