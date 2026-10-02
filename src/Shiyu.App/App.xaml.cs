@@ -69,19 +69,6 @@ public partial class App : Application
     private readonly SelectionDebt _selectionDebt = new();
 
     /// <summary>
-    /// 探针模式（票 15）：调试构建 + <c>SHIYU_DATA_DIR</c> 指向隔离目录。
-    /// 一切全局的东西——单实例名、热键、钩子、剪贴板监听、更新检查——
-    /// 都让开，让探针实例和用户正在用的实例并排跑、互不打扰。发布构建
-    /// 里它是常量 false，行为一字不变。
-    /// </summary>
-    private static bool IsProbe =>
-#if DEBUG
-        Environment.GetEnvironmentVariable("SHIYU_DATA_DIR") is { Length: > 0 };
-#else
-        false;
-#endif
-
-    /// <summary>
     /// 崩溃托盘提示的节流表（O-05）：同类异常 5 分钟内只打扰一次。键是
     /// 异常类型+消息的指纹，值是上次提示时间；过期项顺手清，表不设上限
     /// 就成了泄漏。
@@ -187,11 +174,12 @@ public partial class App : Application
         // that lets a probe instance run beside the user's real one (票 15).
         // Same data directory => same mutex, so probes of one directory still
         // reject each other; a different directory never collides with "Shiyu".
+        // The reads live in DebugOverrides (O-41): release builds answer null.
         var mutexName = "Shiyu";
 #if DEBUG
-        if (Environment.GetEnvironmentVariable("SHIYU_DATA_DIR") is { Length: > 0 } probeDirectory)
+        if (DebugOverrides.ProbeDirectory is { } probeDirectory)
         {
-            mutexName = ProbeMutexName(probeDirectory);
+            mutexName = DebugOverrides.ProbeMutexName(probeDirectory);
 
             // Settings move into the probe directory too: reading the real
             // ones would aim the probe at the user's backend, and writing
@@ -219,10 +207,10 @@ public partial class App : Application
         // Everything reads and writes settings through one store (O-20). The
         // relay override stays a probe convenience riding the store's
         // non-persisting bypass: reads see it, the file never learns of it.
-        var relayUrl = Environment.GetEnvironmentVariable("SHIYU_RELAY_URL");
+        // Debug-only since O-41: release builds never see the variable.
         var loaded = SettingsStore.Load(
             AppPaths.SettingsFile,
-            string.IsNullOrEmpty(relayUrl) ? null : s => s with { RelayEndpoint = relayUrl });
+            DebugOverrides.RelayUrl is { } relayUrl ? s => s with { RelayEndpoint = relayUrl } : null);
         _settingsStore = loaded.Store;
         AppPaths.UseDirectory(Settings.DataDirectoryOverride);
 
@@ -239,7 +227,8 @@ public partial class App : Application
         // against an isolated data directory so automated checks never touch a
         // real history. Deliberately after the settings line — the settings
         // file always wins in real use, the variable only exists for probes.
-        if (Environment.GetEnvironmentVariable("SHIYU_DATA_DIR") is { Length: > 0 } dataDirectory)
+        // Debug-only since O-41.
+        if (DebugOverrides.ProbeDirectory is { } dataDirectory)
         {
             AppPaths.UseDirectory(dataDirectory);
         }
@@ -252,7 +241,7 @@ public partial class App : Application
         // 实机验收用的隐藏命令（票 06）：在 DispatcherTimer.Tick 里抛一个
         // 异常，验证 UI 线程兜底——进程存活、日志一行、托盘提示一次。仅
         // 调试构建存在，与 SHIYU_DATA_DIR 同族，绝不进发布。
-        if (Environment.GetEnvironmentVariable("SHIYU_DEBUG_TICK_CRASH") == "1")
+        if (DebugOverrides.DebugTickCrash)
         {
             var crash = new System.Windows.Threading.DispatcherTimer
             {
@@ -317,7 +306,7 @@ public partial class App : Application
         // what the screenshots are allowed to contain), and a copied English
         // sentence must not raise a translation badge from the probe process
         // onto the user's screen.
-        if (!IsProbe)
+        if (!DebugOverrides.IsProbe)
         {
             _clipboard = new WindowsClipboardMonitor(_messageWindow);
             _pipeline = new ClipboardPipeline(
@@ -336,7 +325,7 @@ public partial class App : Application
             RecentItems = () => _store.Recent(limit: 10).Select(entry => entry.Text).ToList(),
         };
 
-        if (!IsProbe)
+        if (!DebugOverrides.IsProbe)
         {
             _pipeline!.BadgeDeserved += text => ShowBadge(text);
         }
@@ -393,7 +382,7 @@ public partial class App : Application
         // The probe keeps out of the real instance's wake-up channel: the
         // "another instance started" broadcast goes to every Shiyu process,
         // and a probe answering it would throw a library window at the user.
-        if (!IsProbe)
+        if (!DebugOverrides.IsProbe)
         {
             _singleInstance.WatchForOtherInstances(_messageWindow);
 
@@ -405,22 +394,23 @@ public partial class App : Application
 
         StartRetention();
         ApplyStartupPreference();
-        if (!IsProbe)
+        if (!DebugOverrides.IsProbe)
         {
             StartUpdateWatch();
         }
 
         // A probe convenience: SHIYU_OPEN_SETTINGS=1 opens the settings window
         // at startup, so automated checks can drive it without hunting for the
-        // tray icon. Harmless for a user who never sets the variable.
-        if (Environment.GetEnvironmentVariable("SHIYU_OPEN_SETTINGS") == "1")
+        // tray icon. Harmless for a user who never sets the variable — and
+        // unheard-of in release builds (O-41).
+        if (DebugOverrides.OpenSettings)
         {
             ShowSettings();
         }
 
         // Same idea for the updater: open the update window at startup so
         // automated checks can drive the manual flow end to end.
-        if (Environment.GetEnvironmentVariable("SHIYU_OPEN_UPDATE") == "1")
+        if (DebugOverrides.OpenUpdate)
         {
             ShowUpdateWindow();
         }
@@ -429,7 +419,7 @@ public partial class App : Application
         // history that already exists says this is not a first run — the
         // guide stays away and never nags an upgrading user. A probe skips it
         // on principle: the whole point is a deterministic, empty surface.
-        if (!IsProbe && !Settings.OnboardingCompleted && _store.Count() == 0)
+        if (!DebugOverrides.IsProbe && !Settings.OnboardingCompleted && _store.Count() == 0)
         {
             // The wizard writes through the store like everyone else, so what
             // it collects — hotkeys, theme, backend, rules — applies live via
@@ -454,18 +444,18 @@ public partial class App : Application
     /// </summary>
     private void RunProbeCommand()
     {
-        if (!IsProbe)
+        if (!DebugOverrides.IsProbe)
         {
             return;
         }
 
-        var text = Environment.GetEnvironmentVariable("SHIYU_PROBE_TEXT");
+        var text = DebugOverrides.ProbeText;
         if (string.IsNullOrWhiteSpace(text))
         {
             text = "Placeholder sentence for probe 15.";
         }
 
-        switch (Environment.GetEnvironmentVariable("SHIYU_PROBE_CMD"))
+        switch (DebugOverrides.ProbeCommand)
         {
             case "bar":
                 ToggleBar();
@@ -480,7 +470,7 @@ public partial class App : Application
                 break;
 
             case "settings":
-                if (Environment.GetEnvironmentVariable("SHIYU_PROBE_ITEM") is { Length: > 0 } item)
+                if (DebugOverrides.ProbeItem is { } item)
                 {
                     OpenSettingsAt(item);
                 }
@@ -494,18 +484,6 @@ public partial class App : Application
                 ShowPanel(text);
                 break;
         }
-    }
-
-    /// <summary>
-    /// 探针互斥量名：数据目录路径的稳定哈希。同一目录的探针仍互斥，
-    /// 不同目录、以及与用户的 <c>Shiyu</c>，永不相撞。路径大写归一，
-    /// 因为 Windows 把互斥量名当不区分大小写处理而目录写法人人不同。
-    /// </summary>
-    private static string ProbeMutexName(string dataDirectory)
-    {
-        var hash = System.Security.Cryptography.SHA256.HashData(
-            System.Text.Encoding.UTF8.GetBytes(dataDirectory.Trim().ToUpperInvariant()));
-        return "Shiyu-probe-" + Convert.ToHexString(hash)[..16];
     }
 #endif
 
@@ -1141,7 +1119,7 @@ public partial class App : Application
     /// </summary>
     private void ApplyWinVTakeover()
     {
-        if (IsProbe)
+        if (DebugOverrides.IsProbe)
         {
             return;
         }
@@ -1181,7 +1159,7 @@ public partial class App : Application
     private void ApplySelectionBadge()
     {
         // 同热键：探针不装全局鼠标钩子（票 15）。
-        if (IsProbe)
+        if (DebugOverrides.IsProbe)
         {
             return;
         }
@@ -1295,7 +1273,7 @@ public partial class App : Application
         // A probe owns no global keys (票 15): they belong to the user's real
         // instance, and the guard also covers the re-registration that a
         // settings save would otherwise trigger.
-        if (IsProbe)
+        if (DebugOverrides.IsProbe)
         {
             Trace.WriteLine("probe mode: hotkeys/hooks off (RegisterHotkeys skipped)");
             return;

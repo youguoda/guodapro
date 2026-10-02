@@ -20,9 +20,6 @@ public sealed class UpdateOrchestrator(
     string? publicKeyPem = null,
     string? userAgent = null)
 {
-    /// <summary>调试构建专用的发布源覆盖：SHIYU_UPDATE_API。发布构建不认它（O-06）。</summary>
-    private const string ApiOverrideVariable = "SHIYU_UPDATE_API";
-
     private readonly HttpClient _http = http;
     private readonly string _dataDirectory = dataDirectory;
     private readonly UpdateChannel _channel = channel ?? UpdateChannel.Default;
@@ -49,7 +46,11 @@ public sealed class UpdateOrchestrator(
         var url = _channel.LatestUrl;
 #if DEBUG
         // Debug only: a release build takes its update source from nothing
-        // but the compiled-in channel.
+        // but the compiled-in channel. 常量随读取一起住在 DEBUG 区（O-41）：
+        // 无引用的私有常量也会留在元数据里，字面量进发布产物就没有干净的
+        // 二进制验证可言。
+        const string ApiOverrideVariable = "SHIYU_UPDATE_API";
+
         if (Environment.GetEnvironmentVariable(ApiOverrideVariable) is { Length: > 0 } overrideBase)
         {
             url = overrideBase.TrimEnd('/') + "/releases/latest";
