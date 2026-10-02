@@ -670,7 +670,8 @@ internal partial class BarWindow
     /// The hide is the full <see cref="Dismiss"/> (O-37): this path once
     /// called Hide directly, which left the preview clock armed and skipped
     /// the lightweight drop — a pasted-from bar kept its decoded thumbnails
-    /// and its timers alive for as long as it sat hidden.
+    /// and its timers alive for as long as it sat hidden. The reason rides
+    /// through to the refresh policy, which keeps that invariant tested.
     /// </summary>
     private void PasteEntry(BarCard card)
     {
@@ -679,7 +680,7 @@ internal partial class BarWindow
             _returnTo = ForegroundWindow.Current();
         }
 
-        Dismiss();
+        Dismiss(BarHideReason.Pasted);
 
         if (card.Files.Count > 0)
         {

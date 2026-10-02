@@ -53,6 +53,13 @@ internal partial class BarWindow : Window
 
     private PreviewPolicy _previewPolicy = new(500, () => Environment.TickCount64);
 
+    /// <summary>
+    /// 显隐与刷新的判定（票 16 / O-27 下沉候选 5）：何时重读、何时进轻量、
+    /// 一条 Changed 该不该触发刷新，都由这台 Core 状态机裁定；本窗只剩
+    /// "把命令应用到窗口"的 <see cref="RunRefresh"/> 一层。
+    /// </summary>
+    private BarRefreshPolicy _refreshPolicy = new(true);
+
     private System.Windows.Threading.DispatcherTimer? _previewTick;
 
     private BarCard? _selected;
@@ -104,6 +111,7 @@ internal partial class BarWindow : Window
         _store.Changed += OnStoreChanged;
 
         _previewPolicy = new PreviewPolicy(settings.PreviewHoverDelayMs, () => Environment.TickCount64);
+        _refreshPolicy = new BarRefreshPolicy(settings.LightweightWhenHidden);
 
         // Win11 material behind the sheet (ticket 30): the window went layered
         // in XAML, which is the only surface the backdrop renders on.
@@ -144,6 +152,7 @@ internal partial class BarWindow : Window
         // A changed dwell or a disabled hover takes effect on the next event;
         // a preview already up keeps its own rules until it closes.
         _previewPolicy = new PreviewPolicy(settings.PreviewHoverDelayMs, () => Environment.TickCount64);
+        _refreshPolicy.ApplySettings(settings.LightweightWhenHidden);
         ArmPreviewTick();
         ApplyTopmost(settings.BarAlwaysOnTop);
         if (affectsLayout)
@@ -252,8 +261,9 @@ internal partial class BarWindow : Window
         _returnTo = ForegroundWindow.Current();
 
         // Whatever changed while hidden was ignored for a reason: showing
-        // again reads the world as it is now, in one go.
-        ReloadData();
+        // again reads the world as it is now, in one go (the policy's Shown
+        // verdict, O-37).
+        RunRefresh(_refreshPolicy.Shown());
         MoveBesideCursorIfWanted();
         Show();
         Activate();
@@ -314,8 +324,13 @@ internal partial class BarWindow : Window
         TransientWindow.MoveTo(helper.Handle, placed, ZBandPolicy.FollowsHost(Topmost));
     }
 
-    /// <summary>Hides with the standard fade, from a painted surface, and gives focus back.</summary>
-    public void Dismiss()
+    /// <summary>
+    /// Hides with the standard fade, from a painted surface, and gives focus back.
+    ///
+    /// The reason rides along so the policy can hold the invariant that a
+    /// paste-driven hide runs the same full teardown as a toggle (票 14).
+    /// </summary>
+    public void Dismiss(BarHideReason reason = BarHideReason.Toggled)
     {
         RunPreviewCommand(_previewPolicy.BarHidden());
 
@@ -326,7 +341,7 @@ internal partial class BarWindow : Window
         DismissFirstUseHint();
         Hide();
         _returnTo.Restore();
-        EnterLightweightIfEnabled();
+        RunRefresh(_refreshPolicy.Hidden(reason));
     }
 
     /// <summary>
@@ -370,19 +385,34 @@ internal partial class BarWindow : Window
     }
 
     /// <summary>
+    /// 把刷新策略的裁决应用到窗口（票 16）：重读、进轻量，命令说什么做什么。
+    /// 判定本身在 <see cref="BarRefreshPolicy"/>（Core）里，有它自己的单测。
+    /// </summary>
+    private void RunRefresh(BarRefreshCommand command)
+    {
+        if (command.HasFlag(BarRefreshCommand.Reload))
+        {
+            ReloadData();
+        }
+
+        if (command.HasFlag(BarRefreshCommand.EnterLightweight))
+        {
+            EnterLightweight();
+        }
+    }
+
+    /// <summary>
     /// While hidden, the realised cards are the whole cost of the window —
     /// thumbnails decoded, rows laid out — and none of it is doing anything.
     /// Dropping them and trimming the working set costs a rebuild on the next
-    /// summon, which ReloadIfBehind(force) already does; recording never
-    /// pauses, because the listener and the pipeline do not live here.
+    /// summon, which Shown's Reload already does; recording never pauses,
+    /// because the listener and the pipeline do not live here.
+    ///
+    /// Executed only on the policy's say-so — the LightweightWhenHidden gate
+    /// lives in Core now.
     /// </summary>
-    private void EnterLightweightIfEnabled()
+    private void EnterLightweight()
     {
-        if (!_settings.LightweightWhenHidden || IsVisible)
-        {
-            return;
-        }
-
         // The cards being dropped are also the destination of every decode
         // and probe still in flight; their generation ends here.
         _cardBackfills.Invalidate();

@@ -497,9 +497,10 @@ internal partial class BarWindow
 
     /// <summary>
     /// The store changed underneath — a copy from anywhere, a retention sweep,
-    /// an import, an edit in the library window. Reload while visible; while
-    /// hidden there is nothing to refresh and Summon reads fresh anyway, which
-    /// is exactly the boundary the old two-second probe kept.
+    /// an import, an edit in the library window. Whether that means a reload
+    /// is the refresh policy's verdict (票 16 / O-27): visible and not this
+    /// window's own write → reload; anything else is ignored, which is exactly
+    /// the boundary the old two-second probe kept.
     /// </summary>
     private void OnStoreChanged()
     {
@@ -508,20 +509,20 @@ internal partial class BarWindow
         // reloads itself — so a reload here would only reset the scroll under
         // the user (O-37). The depth is read on the writer's thread; a benign
         // race with a background write costs one extra reload, never a miss.
-        if (_selfWrites > 0 || !IsVisible)
+        if (_refreshPolicy.StoreChanged(selfWrite: _selfWrites > 0) == BarRefreshCommand.None)
         {
             return;
         }
 
         if (Dispatcher.CheckAccess())
         {
-            ReloadData();
+            RunRefresh(BarRefreshCommand.Reload);
         }
         else
         {
             // External writes arrive on the pipeline's thread; the cards
             // belong to the dispatcher's.
-            Dispatcher.BeginInvoke(ReloadData);
+            Dispatcher.BeginInvoke(() => RunRefresh(BarRefreshCommand.Reload));
         }
     }
 
