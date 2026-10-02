@@ -324,6 +324,32 @@ internal partial class BarWindow
     // turns into a drag: the system's own minimum drag distance decides.
     private Point? _dragOrigin;
 
+    /// <summary>
+    /// The thumbnail for a card whose background decode has not landed —
+    /// fetched here, once, for a drag that would otherwise carry nothing
+    /// (O-36's one synchronous exception: the user is holding the mouse
+    /// button down, asking for this specific entry).
+    /// </summary>
+    private System.Windows.Media.ImageSource? DecodeThumbnailNow(long id)
+    {
+        var payload = _store.BlobsOf([id]).GetValueOrDefault(id);
+        var decoded = AppIconCache.Decode(payload?.ThumbnailPng, 320);
+
+        if (decoded is not null)
+        {
+            // What the drag carries, later cards show too.
+            var card = _cards.FirstOrDefault(c => c.Id == id)
+                ?? _pinned.FirstOrDefault(c => c.Id == id);
+
+            if (card is not null)
+            {
+                card.Thumbnail = decoded;
+            }
+        }
+
+        return decoded;
+    }
+
     private void OnCardMouseMove(object sender, MouseEventArgs e)
     {
         if (e.LeftButton != MouseButtonState.Pressed)
@@ -376,7 +402,11 @@ internal partial class BarWindow
                 break;
 
             case EntryKind.Image:
-                if (card.Thumbnail is BitmapSource picture)
+                // The thumbnail backfills from a background decode (O-36), so
+                // a drag begun inside that first instant may still find null —
+                // the bytes are fetched on the spot rather than letting the
+                // drag quietly produce nothing.
+                if ((card.Thumbnail ?? DecodeThumbnailNow(card.Id)) is BitmapSource picture)
                 {
                     data.SetImage(picture);
                     data.SetText(card.Text, TextDataFormat.UnicodeText);
