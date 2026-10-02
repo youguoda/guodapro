@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using Shiyu.Core;
@@ -154,10 +155,10 @@ internal static class ItemEditors
         {
             Text = item.Hint,
             TextWrapping = TextWrapping.Wrap,
-            FontSize = 14,
-            Opacity = 0.75,
             Margin = new Thickness(0, 2, 0, 0),
         };
+        // 说明文字走令牌色，不再乘 Opacity——透明度会绕过对比度测试（票 18/R6）。
+        hint.SetResourceReference(TextElement.FontSizeProperty, "Size.Hint");
         hint.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
         stack.Children.Add(hint);
         return stack;
@@ -191,9 +192,9 @@ internal static class ItemEditors
         {
             Text = hint,
             TextWrapping = TextWrapping.Wrap,
-            FontSize = 14,
-            Opacity = 0.75,
         };
+        // 同上：说明文字只靠令牌色分层，透明度一律不上（票 18/R6）。
+        text.SetResourceReference(TextElement.FontSizeProperty, "Size.Hint");
         text.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
         stack.Children.Add(text);
         return stack;

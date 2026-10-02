@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using Shiyu.Core;
@@ -37,6 +38,9 @@ internal sealed class GroupManagerWindow : Window
         FontFamily = (FontFamily)Application.Current.FindResource("Font.Ui");
         FontSize = (double)Application.Current.FindResource("Size.Body");
 
+        // R1（票 18）：隐式 TextBlock 样式已删，文字默认值由窗口根继承下去。
+        SetResourceReference(TextElement.ForegroundProperty, "Brush.Text");
+
         var root = new StackPanel { Margin = new Thickness(12) };
 
         // The one-sentence mind model (票 39): the head manages the piles,
@@ -55,7 +59,6 @@ internal sealed class GroupManagerWindow : Window
             Text = "分组是抽屉：切到哪个就只看哪摊。标签是横标签，用来叠加筛选——两者在这里各管各的。",
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 8),
-            Opacity = 0.8,
         };
         intro.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
         root.Children.Add(intro);
@@ -98,7 +101,6 @@ internal sealed class GroupManagerWindow : Window
             Text = "删除分组不会删除其中的条目——它们只是回到未分组。",
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 10, 0, 0),
-            Opacity = 0.7,
         };
         hint.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextTertiary");
         root.Children.Add(hint);
@@ -125,7 +127,7 @@ internal sealed class GroupManagerWindow : Window
 
         if (groups.Count == 0)
         {
-            var empty = new TextBlock { Text = "还没有分组。复制后在卡片上点「组」即可归组。", Opacity = 0.6, Margin = new Thickness(0, 4, 0, 4) };
+            var empty = new TextBlock { Text = "还没有分组。复制后在卡片上点「组」即可归组。", Margin = new Thickness(0, 4, 0, 4) };
             empty.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
             _list.Children.Add(empty);
             return;

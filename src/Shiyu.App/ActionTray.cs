@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
@@ -54,8 +55,8 @@ internal sealed class ActionTray : StackPanel
         {
             Text = HoverActions.IconGlyph(id),
             FontFamily = IconFont,
-            FontSize = 16,
         };
+        label.SetResourceReference(TextElement.FontSizeProperty, "Size.IconMedium");
 
         var button = new Button
         {
