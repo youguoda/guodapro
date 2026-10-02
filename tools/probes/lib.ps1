@@ -550,10 +550,24 @@ function Get-WindowShot([IntPtr]$Hwnd) {
     $bmp = [Shiyu.Probe.Native]::CaptureHbitmap($Hwnd)
     if ($bmp -eq [IntPtr]::Zero) { return $null }
     try {
-        return [System.Drawing.Bitmap]::FromHbitmap($bmp)
+        $raw = [System.Drawing.Bitmap]::FromHbitmap($bmp)
     } finally {
         [Shiyu.Probe.Native]::FreeHbitmap($bmp)
     }
+    # FromHbitmap hands back a bitmap that still shares GDI memory: LockBits
+    # on it can serve a stale buffer (a live quickbar shot counted 0 accent
+    # pixels while its own saved PNG held 107). Redrawing onto a fresh bitmap
+    # forces a realized, owned copy - every consumer then reads what was
+    # actually captured.
+    $clean = New-Object System.Drawing.Bitmap $raw.Width, $raw.Height, `
+        ([System.Drawing.Imaging.PixelFormat]::Format32bppRgb)
+    $g = [System.Drawing.Graphics]::FromImage($clean)
+    try {
+        $g.DrawImage($raw, 0, 0, $raw.Width, $raw.Height)
+    } finally {
+        $g.Dispose(); $raw.Dispose()
+    }
+    return $clean
 }
 
 function Save-Shot([System.Drawing.Bitmap]$Bitmap, [string]$Name) {

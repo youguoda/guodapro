@@ -116,9 +116,10 @@ try {
             }
             $badgeW = ($maxX - $minX + 1) / $rect.Scale
             $badgeH = ($maxY - $minY + 1) / $rect.Scale
-            # A keycap badge is ~16 DIP square; a match as big as the whole
-            # crop means the accent found was something else entirely.
-            if ($accentHits -lt 40 -or $badgeH -lt 8 -or $badgeW -gt 26 -or $badgeH -gt 26) {
+            # The KeyCap style is width-as-content: single letters ~18 DIP,
+            # "Tab" ~28, "<->" ~30 (ticket 19). Only a match wider than that,
+            # or taller than any keycap, means the accent was something else.
+            if ($accentHits -lt 40 -or $badgeH -lt 8 -or $badgeW -gt 38 -or $badgeH -gt 26) {
                 Add-Check 'defect:bar-keycap-arrows-clipped' 'FAIL' `
                     ("accent badge block not found (hits={0}, box={1:N1}x{2:N1} DIP, center=({3},{4}), shot={5}x{6})" -f `
                         $accentHits, $badgeW, $badgeH, $cx, $cy, $shotCtrl.Width, $shotCtrl.Height)
