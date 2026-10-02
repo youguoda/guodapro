@@ -206,6 +206,11 @@ public partial class App : Application
             return;
         }
 
+        // The key protector goes in before any settings IO: the very first
+        // load may meet a protected key, and the very first save (the relay
+        // client id) must protect if a key is already there (ADR-0011).
+        AppSettings.SecretProtector = new DpapiSecretProtector();
+
         // Everything reads and writes settings through one store (O-20). The
         // relay override stays a probe convenience riding the store's
         // non-persisting bypass: reads see it, the file never learns of it.
@@ -650,7 +655,7 @@ public partial class App : Application
             new BackupUi(
                 _store!,
                 AppPaths.ImageDirectory,
-                () => File.Exists(AppPaths.SettingsFile) ? File.ReadAllText(AppPaths.SettingsFile) : null,
+                includeKey => Settings.ToBackupJson(includeKey),
                 RestoreSettingsFromBackup));
         _settingsWindow.Closed += (_, _) => _settingsWindow = null;
         _settingsWindow.Show();
@@ -672,6 +677,14 @@ public partial class App : Application
             if (!AppSettings.TryParse(json, out var restored))
             {
                 return "条目已导入，但备份里的设置无法识别，已保留当前设置。";
+            }
+
+            // A backup made without the key (the default, ADR-0011) must not
+            // wipe the key this machine already has: the user asked to import
+            // history, not to log out of their translation service.
+            if (restored.BackendApiKey.Length == 0)
+            {
+                restored = restored with { BackendApiKey = Settings.BackendApiKey };
             }
 
             try

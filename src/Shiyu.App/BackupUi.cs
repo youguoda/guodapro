@@ -21,7 +21,7 @@ namespace Shiyu.App;
 public sealed class BackupUi(
     EntryStore store,
     string imagesDirectory,
-    Func<string?> readSettingsJson,
+    Func<bool, string?> readSettingsJson,
     Func<string, string?> restoreSettingsJson)
 {
     public void Export(Window owner)
@@ -44,7 +44,9 @@ public sealed class BackupUi(
             return;
         }
 
-        var settings = readSettingsJson();
+        // ADR-0011：密钥默认不随备份离开本机；只有加密导出时用户可以勾选
+        // 带上（明文形式，包内加密），导入后由本机的 DPAPI 重新保护。
+        var settings = readSettingsJson(password.Bytes is not null && password.IncludeKey);
         RunWithProgress(owner, "正在导出…", report =>
         {
             var counts = BackupArchive.Export(
@@ -176,7 +178,7 @@ public sealed class BackupUi(
         return done ? answer : null;
     }
 
-    private sealed record PasswordAnswer(bool Cancelled, byte[]? Bytes);
+    private sealed record PasswordAnswer(bool Cancelled, byte[]? Bytes, bool IncludeKey = false);
 
     /// <summary>
     /// The password ask. Bytes are lifted straight out of the SecureString as
@@ -215,6 +217,19 @@ public sealed class BackupUi(
             root.Children.Add(again);
         }
 
+        // 只有加密导出才问（ADR-0011）：不加密的备份带密钥等于明文外带，
+        // 没有勾选可言。
+        CheckBox? includeKey = null;
+        if (withConfirm)
+        {
+            includeKey = new CheckBox
+            {
+                Content = "同时导出 API 密钥（保存在加密的备份内）",
+                Margin = new Thickness(0, 10, 0, 0),
+            };
+            root.Children.Add(includeKey);
+        }
+
         var hint = new TextBlock
         {
             Text = "两次输入不一致。",
@@ -228,6 +243,7 @@ public sealed class BackupUi(
         }
 
         byte[]? answer = null;
+        var includeKeyValue = false;
         var decided = false;
 
         var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 10, 0, 0) };
@@ -259,6 +275,7 @@ public sealed class BackupUi(
             }
 
             answer = first;
+            includeKeyValue = includeKey?.IsChecked == true;
             decided = true;
             window.Close();
         };
@@ -281,7 +298,9 @@ public sealed class BackupUi(
         window.Content = root;
         window.ShowDialog();
 
-        return decided ? new PasswordAnswer(false, answer) : new PasswordAnswer(true, null);
+        return decided
+            ? new PasswordAnswer(false, answer, includeKeyValue)
+            : new PasswordAnswer(true, null);
     }
 
     private static byte[]? BytesOf(SecureString secret)
