@@ -310,7 +310,8 @@ public sealed class OpenAiCompatibleBackend(
             }
             catch (Exception)
             {
-                // The status code alone is still worth reporting.
+                // expected: the status code alone is still worth reporting;
+                // the body is best-effort context, never load-bearing.
             }
 
             if (terminalBody?.Contains("AllocationQuota.FreeTierOnly", StringComparison.Ordinal) == true)

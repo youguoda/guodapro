@@ -174,7 +174,8 @@ public static class ConnectionProbe
         }
         catch (Exception)
         {
-            // 读不出错误体就当普通凭据错误处理：状态码本身仍值得报告。
+            // expected: 读不出错误体就当普通凭据错误处理：状态码本身仍值得
+            // 报告，失败原因对测试连接三态没有增量。
             return false;
         }
     }

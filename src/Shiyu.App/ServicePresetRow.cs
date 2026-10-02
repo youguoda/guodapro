@@ -221,7 +221,8 @@ internal sealed class ServicePresetRow
         }
         catch (Exception)
         {
-            // 打不开浏览器不该静默——这行链接是配置流程的一部分。
+            // expected: 打不开浏览器——这行链接是配置流程的一部分，界面上
+            // 说清去哪里就够了，不需要日志。
             ShowResult("打不开浏览器，请手动访问服务商的控制台申请密钥。", "Brush.TextSecondary");
         }
     }
