@@ -62,7 +62,7 @@ public sealed partial class EntryStore : IDisposable
     /// <summary>
     /// The shape the code expects. Bumped whenever a migration is added below.
     /// </summary>
-    private const int SchemaVersion = 13;
+    private const int SchemaVersion = 14;
 
     /// <summary>
     /// The columns every list path reads: everything except the payloads that
@@ -280,6 +280,17 @@ public sealed partial class EntryStore : IDisposable
             SplitBlobsIntoSideTable();
         }
 
+        if (from < 14)
+        {
+            // The trigram full-text index that finally makes Chinese search
+            // indexable (O-22): the default tokeniser refuses to segment
+            // Chinese, which is why search was a LIKE scan for so long. A
+            // trigram index keeps substring semantics — every three-character
+            // window of the text is a token — so 剪贴板 finds 剪贴板历史
+            // exactly as LIKE did, without walking the table.
+            CreateFullTextIndex();
+        }
+
         if (from != SchemaVersion)
         {
             Execute($"PRAGMA user_version = {SchemaVersion};");
@@ -484,6 +495,52 @@ public sealed partial class EntryStore : IDisposable
         Execute("ALTER TABLE entries DROP COLUMN html;");
         Execute("ALTER TABLE entries DROP COLUMN rtf;");
         Execute("VACUUM;");
+    }
+
+    /// <summary>
+    /// The trigram full-text index over the entries' text, and the triggers
+    /// that keep it in step with every write path — including the ones inside
+    /// an import transaction, which is exactly why sync lives in triggers
+    /// rather than at call sites: a rollback rolls the index back with the
+    /// rows, and no future write path can forget it.
+    ///
+    /// External content (<c>content='entries'</c>): the text is stored once,
+    /// in the table that owns it; the index holds only the trigrams. The
+    /// 'delete' commands in the triggers hand FTS the old text because with
+    /// external content it cannot re-read what is already gone.
+    ///
+    /// The rebuild command repopulates from the content table in one atomic
+    /// statement, so a database that arrives mid-upgrade either has the whole
+    /// index or none of it, and the migration simply runs again.
+    /// </summary>
+    private void CreateFullTextIndex()
+    {
+        Execute("""
+            CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts USING fts5(
+                text,
+                tokenize = 'trigram',
+                content = 'entries',
+                content_rowid = 'id');
+            """);
+
+        Execute("""
+            CREATE TRIGGER IF NOT EXISTS entries_fts_insert AFTER INSERT ON entries BEGIN
+                INSERT INTO entries_fts (rowid, text) VALUES (new.id, new.text);
+            END;
+            """);
+        Execute("""
+            CREATE TRIGGER IF NOT EXISTS entries_fts_delete AFTER DELETE ON entries BEGIN
+                INSERT INTO entries_fts (entries_fts, rowid, text) VALUES ('delete', old.id, old.text);
+            END;
+            """);
+        Execute("""
+            CREATE TRIGGER IF NOT EXISTS entries_fts_update AFTER UPDATE OF text ON entries BEGIN
+                INSERT INTO entries_fts (entries_fts, rowid, text) VALUES ('delete', old.id, old.text);
+                INSERT INTO entries_fts (rowid, text) VALUES (new.id, new.text);
+            END;
+            """);
+
+        Execute("INSERT INTO entries_fts (entries_fts) VALUES ('rebuild');");
     }
 
     private int ReadSchemaVersion()
@@ -859,11 +916,12 @@ public sealed partial class EntryStore : IDisposable
     /// <summary>
     /// Finds entries whose text contains <paramref name="query"/>, newest first.
     ///
-    /// Substring matching rather than a full-text index: SQLite's full-text
-    /// tokenisers do not segment Chinese, so "剪贴板历史" indexes as a single
-    /// token and searching for "剪贴板" would find nothing — useless for a
-    /// tool whose user writes Chinese. A scan stays well inside the time a
-    /// keystroke can hide at the sizes a personal clipboard history reaches.
+    /// The trigram index answers three characters and up — Chinese included,
+    /// which the default tokeniser cannot segment — with exact substring
+    /// semantics. Shorter queries fall back to a LIKE scan of the narrow
+    /// table: no trigram exists below three characters, so the index has
+    /// nothing to say, and one or two characters over a narrow row is a cheap
+    /// question.
     /// </summary>
     public IReadOnlyList<Entry> Search(string query, int limit, int offset = 0)
     {
@@ -879,11 +937,10 @@ public sealed partial class EntryStore : IDisposable
                 SELECT {NarrowColumns},
                        {TagsColumn}
                 FROM entries
-                WHERE text LIKE $pattern ESCAPE '\'
+                WHERE {TextContains(query, command)}
                 ORDER BY pinned DESC, created_at DESC, id DESC
                 LIMIT $limit OFFSET $offset;
                 """;
-            command.Parameters.AddWithValue("$pattern", $"%{EscapeForLike(query)}%");
             command.Parameters.AddWithValue("$limit", limit);
             command.Parameters.AddWithValue("$offset", offset);
 
@@ -957,9 +1014,11 @@ public sealed partial class EntryStore : IDisposable
         if (!string.IsNullOrWhiteSpace(filter.Query))
         {
             // The note is searchable alongside the text: "the brand blue one"
-            // has to find the entry whose content is a bare hex code.
-            conditions.Add("(text LIKE $pattern ESCAPE '\\' OR note LIKE $pattern ESCAPE '\\')");
-            command.Parameters.AddWithValue("$pattern", $"%{EscapeForLike(filter.Query)}%");
+            // has to find the entry whose content is a bare hex code. The
+            // note is short and unindexed, so it stays a LIKE either way —
+            // only the text has a trigram index worth consulting.
+            conditions.Add($"({TextContains(filter.Query, command)} OR note LIKE $notePattern ESCAPE '\\')");
+            command.Parameters.AddWithValue("$notePattern", $"%{EscapeForLike(filter.Query)}%");
         }
 
         if (filter.Favorite is { } favoriteOnly && favoriteOnly)
@@ -1268,6 +1327,27 @@ public sealed partial class EntryStore : IDisposable
     /// </summary>
     private static string EscapeForLike(string query)
         => query.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
+
+    /// <summary>
+    /// The SQL that says "the text contains this query", with the query's
+    /// parameter bound onto <paramref name="command"/>. Three characters and
+    /// up is a trigram MATCH — the phrase is double-quoted and inner quotes
+    /// doubled, so every character of a user's query (operators included) is
+    /// taken literally rather than parsed as FTS syntax. Below three
+    /// characters there is no trigram to match, and the narrow table is
+    /// scanned the old way.
+    /// </summary>
+    private static string TextContains(string query, SqliteCommand command)
+    {
+        if (query.Length >= 3)
+        {
+            command.Parameters.AddWithValue("$ftsQuery", "\"" + query.Replace("\"", "\"\"") + "\"");
+            return "id IN (SELECT rowid FROM entries_fts WHERE entries_fts MATCH $ftsQuery)";
+        }
+
+        command.Parameters.AddWithValue("$textPattern", $"%{EscapeForLike(query)}%");
+        return "text LIKE $textPattern ESCAPE '\\'";
+    }
 
     /// <summary>
     /// Moves an existing entry to the top of the history without creating a
