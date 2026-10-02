@@ -321,24 +321,9 @@ public static class DesignTokens
         => Math.Round(fontSize * BodyLineRatio);
 
     // --- shape ----------------------------------------------------------------
-
-    /// <summary>
-    /// Corner radii, named by where they belong rather than by pixel value.
-    /// Control 4 / Overlay 8 是 Windows 11 的 ControlCornerRadius /
-    /// OverlayCornerRadius（ADR-0012）：窗口级交还 DWM 画 8，页内元素 4。
-    /// Window 12 与 Pill 13 是旧分层窗口时代的值，票 19/20 迁移后退役；
-    /// 胶囊一律按"高度的一半"推导，不再取常量。
-    /// </summary>
-    public static readonly IReadOnlyDictionary<string, double> Radius = new Dictionary<string, double>
-    {
-        ["Thumb"] = 3,
-        ["Small"] = 4,
-        ["Control"] = 4,
-        ["Card"] = 8,
-        ["Overlay"] = 8,
-        ["Window"] = 12,
-        ["Pill"] = 13,
-    };
+    //
+    //（Radius 挪到控件尺寸常量之后：Pill 由 ControlHeight 推导，而静态
+    // 字段初始化按声明顺序执行。）
 
     // --- 控件尺寸（UI 报告 §4.2）------------------------------------------------
     /// <summary>按钮/输入/下拉/数值/开关行的标准高。</summary>
@@ -353,6 +338,26 @@ public static class DesignTokens
     public const double ListRowHeight = 56;
     public const double ListRowHeightSingle = 40;
     public const double SettingsCardMinHeight = 64;
+
+    /// <summary>
+    /// Corner radii, named by where they belong rather than by pixel value.
+    /// Control 4 / Overlay 8 是 Windows 11 的 ControlCornerRadius /
+    /// OverlayCornerRadius（ADR-0012）：窗口级交还 DWM 画 8，页内元素 4。
+    /// Pill = 标准控件高（32）的一半——胶囊一律按"高度的一半"推导，
+    /// 非标准高度的胶囊在使用点现算，不取常量（ADR-0012 §5）。
+    /// Window 与 Card 是旧分层窗口时代的值，窗口迁移到 Overlay/Control 后
+    /// 在本票末尾删除（迁移期并存，避免 DynamicResource 静默落空）。
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, double> Radius = new Dictionary<string, double>
+    {
+        ["Thumb"] = 3,
+        ["Small"] = 4,
+        ["Control"] = 4,
+        ["Card"] = 8,
+        ["Overlay"] = 8,
+        ["Window"] = 12,
+        ["Pill"] = ControlHeight / 2,
+    };
 
     // --- 语义间距（4px 网格，UI 报告 §4.2；SpacingScale 迁移后退役）------------
     /// <summary>图标↔文字、键帽内边距、设置卡之间。</summary>
