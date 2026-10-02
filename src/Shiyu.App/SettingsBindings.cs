@@ -38,6 +38,9 @@ internal static class SettingsBindings
         "hotkey.bar" => settings.BarHotkey,
         "service.target-language" => settings.TargetLanguage,
         "service.source-language" => settings.SourceLanguage ?? string.Empty,
+
+        // 预设下拉的当前项即预设 Id；空串表示「自定义」。
+        "service.preset" => settings.BackendPresetId,
         "service.base-url" => settings.BackendBaseUrl,
         "service.model" => settings.BackendModel,
 
@@ -111,6 +114,11 @@ internal static class SettingsBindings
         {
             SourceLanguage = text.Trim() is { Length: > 0 } source ? source : null,
         },
+
+        // 只写 Id 本身：地址与模型由各自的行写。数据层还有一道裁决
+        // （ProviderPresets.ResolveFor）——手改过的地址/模型不会带着预设
+        // 的附加字段发给别家，界面清空 Id 只是让用户看得见"已是自定义"。
+        "service.preset" => current with { BackendPresetId = text.Trim() },
         "service.base-url" => current with { BackendBaseUrl = text },
         "service.model" => current with { BackendModel = text },
 

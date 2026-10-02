@@ -112,6 +112,28 @@
                 </StackPanel>
             </Border>
 
+            <!-- 未配置翻译服务时的引导卡（票 08）：给一条去路，不给一段异常。 -->
+            <Border x:Name="SetupCard" Visibility="Collapsed" Margin="0,10,0,0"
+                    Padding="12,10" CornerRadius="{DynamicResource Radius.Card}"
+                    Background="{DynamicResource Brush.SurfaceSubtle}"
+                    BorderBrush="{DynamicResource Brush.Accent}" BorderThickness="1">
+                <StackPanel>
+                    <TextBlock Text="还没有配置翻译服务" FontSize="{DynamicResource Size.Body}"
+                               FontWeight="{DynamicResource Weight.Emphasis}" />
+                    <TextBlock Text="翻译需要一个你自己的 API 密钥：设置 → 服务里选一家服务商预设（有免费的），点「申请密钥」，粘进来即可。"
+                               TextWrapping="Wrap" Margin="0,4,0,0"
+                               FontSize="{DynamicResource Size.Caption}"
+                               Foreground="{DynamicResource Brush.TextSecondary}" />
+                    <Button x:Name="SetupButton" Content="去配置" HorizontalAlignment="Left"
+                            Margin="0,8,0,0" Padding="14,4" Cursor="Hand" Click="OnOpenSetup"
+                            ToolTip="打开设置的服务页"/>
+                    <TextBlock Text="用公共通道？暂未开放" Margin="0,8,0,0"
+                               FontSize="{DynamicResource Size.Hint}"
+                               Foreground="{DynamicResource Brush.TextTertiary}"
+                               ToolTip="公共通道将在上线条件满足后开放：自定义域名大陆实测可达、服务端加固完成、运营费用有人承担。"/>
+                </StackPanel>
+            </Border>
+
             <TextBlock x:Name="StatusText" FontSize="{DynamicResource Size.Caption}" Margin="0,8,0,0"
                        TextWrapping="Wrap" Foreground="{DynamicResource Brush.Danger}"
                        Visibility="Collapsed" />

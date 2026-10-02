@@ -66,7 +66,8 @@ public sealed partial class ClipboardPipeline
     }
 }
 
-public sealed record TranslationBatchResult(int Translated, int Skipped, int Failed);
+/// <param name="FailureReason">第一条失败的人话原因（若有过失败）；全部成功或只是跳过时为 null。批量结束的报告带着它，用户才知道"失败"该去修什么。</param>
+public sealed record TranslationBatchResult(int Translated, int Skipped, int Failed, string? FailureReason = null);
 
 /// <summary>
 /// Translates a chosen set of entries and files each result as a linked
@@ -103,6 +104,7 @@ public sealed class TranslationBatch(
         var skipped = 0;
         var failed = 0;
         var done = 0;
+        string? failureReason = null;
 
         foreach (var id in entryIds)
         {
@@ -160,15 +162,21 @@ public sealed class TranslationBatch(
             catch (Exception failure)
             {
                 // One unreachable entry does not take the batch down; the
-                // rest keep going and the summary says how many fell. 汇总
-                // 只给数字（O-24），哪一条、为什么，日志里补齐。
+                // One unreachable entry does not take the batch down; the
+                // rest keep going and the summary says how many fell —
+                // with the first reason in plain words, because "失败 3 条"
+                // without a why is a dead end. 只记人话：意外的英文异常
+                // 原文对用户不是信息；哪一条、为什么，日志里补齐（O-24）。
                 Log.Event(LogEvent.TranslationFailed, failure, ("batch", 1), ("done", done));
                 failed++;
+                failureReason ??= failure is TranslationFailedException plain
+                    ? plain.Message
+                    : "翻译服务不可用";
             }
 
             progress?.Report((done, entryIds.Count));
         }
 
-        return new TranslationBatchResult(translated, skipped, failed);
+        return new TranslationBatchResult(translated, skipped, failed, failureReason);
     }
 }

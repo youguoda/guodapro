@@ -39,6 +39,12 @@ public partial class PanelWindow : Window
 
     private readonly SpeechSynthesis? _speech;
 
+    /// <summary>翻译此刻是否有一条能走的路；null 表示"不归我管"（测试与旧调用）。</summary>
+    private readonly Func<bool>? _backendReady;
+
+    /// <summary>「去配置」深链：打开设置的服务页，面板自身让开。</summary>
+    private readonly Action? _openSettings;
+
     private IDisposable? _escape;
     private CancellationTokenSource? _inFlight;
     private TranslationSession? _session;
@@ -59,7 +65,9 @@ public partial class PanelWindow : Window
         AppSettings settings,
         Action<string, string>? saveTranslation = null,
         Func<string, IDictionaryApi?>? dictionary = null,
-        SpeechSynthesis? speech = null)
+        SpeechSynthesis? speech = null,
+        Func<bool>? backendReady = null,
+        Action? openSettings = null)
     {
         InitializeComponent();
 
@@ -69,11 +77,19 @@ public partial class PanelWindow : Window
         _saveTranslation = saveTranslation;
         _dictionary = dictionary;
         _speech = speech;
+        _backendReady = backendReady;
+        _openSettings = openSettings;
         _target = settings.TargetLanguage;
         _source = settings.SourceLanguage;
 
         Backdrop.Attach(this, () => BackdropKind.Acrylic);
     }
+
+    /// <summary>
+    /// 翻译服务是否已配置。公共通道未上线时不构成可用的路（票 08）——
+    /// 热键、划词、复制徽标三条路都汇到这里，未配置的结局只有引导卡。
+    /// </summary>
+    private bool TranslationReady => _backendReady?.Invoke() != false;
 
     /// <summary>
     /// 译文语言跟随设置即时换新（O-20）：面板是复用实例，改设置不该等
@@ -111,6 +127,8 @@ public partial class PanelWindow : Window
         // 新的选中文本作废旧卡：卡还在路上的话，到岸后发现换代号变了就不上屏。
         _cardRun++;
         DictionaryArea.Visibility = Visibility.Collapsed;
+        SetupCard.Visibility = Visibility.Collapsed;
+        TranslationScroll.Visibility = Visibility.Visible;
 
         if (!IsVisible)
         {
@@ -134,6 +152,15 @@ public partial class PanelWindow : Window
 
         HoldEscape();
 
+        // 未配置翻译服务：给一张引导卡而不是异常文本（票 08 的验收线——
+        // 任何路径都不出现异常英文）。词典卡也不发：没有自己的密钥，
+        // LLM 词典路本来就缺席。
+        if (!TranslationReady)
+        {
+            ShowSetupCard();
+            return;
+        }
+
         // 两阶段词典（票 35）：阶段一翻译照常跑完上屏；阶段二在它之后补卡。
         // 查询与翻译并行发出（省一轮往返），但渲染严格排在翻译之后——
         // 用户先看到译文，再看到词典细节，顺序即"两阶段"的含义。
@@ -143,8 +170,34 @@ public partial class PanelWindow : Window
         await RenderCardWhenCurrent(cardTask, cardRun);
     }
 
+    /// <summary>引导卡：告诉用户去哪，而不是报一个错。</summary>
+    private void ShowSetupCard()
+    {
+        TranslatedText.Text = string.Empty;
+        SentencePairs.ItemsSource = null;
+        TranslationScroll.Visibility = Visibility.Collapsed;
+        StatusText.Visibility = Visibility.Collapsed;
+        SaveButton.IsEnabled = false;
+        SetupCard.Visibility = Visibility.Visible;
+    }
+
+    private void OnOpenSetup(object sender, RoutedEventArgs e)
+    {
+        _openSettings?.Invoke();
+
+        // 设置窗要落到焦点上，无激活的面板留在原地只会挡视线。
+        Dismiss();
+    }
+
     private async Task RunTranslation()
     {
+        // 换方向也会走到这里：未配置的结局同样是引导卡，不是异常文本。
+        if (!TranslationReady)
+        {
+            ShowSetupCard();
+            return;
+        }
+
         // A second request while the first is still arriving abandons it; the
         // user has moved on and the old stream's text would interleave.
         _inFlight?.Cancel();

@@ -39,6 +39,7 @@ public partial class SettingsWindow : Window
     private TextBox? _directoryBox;
     private TextBlock? _directoryWarning;
     private PasswordBox? _secretBox;
+    private ServicePresetRow? _presetRow;
 
     /// <summary>The page the user last had open, kept per session.</summary>
     private static int _lastTabIndex;
@@ -65,6 +66,7 @@ public partial class SettingsWindow : Window
 
         BuildTree();
         ApplyBackendKindRows();
+        HookPresetDemotion();
 
         // Reopen where the user left off; the index is clamped by the count
         // so a future schema shrink cannot select a ghost page.
@@ -340,7 +342,7 @@ public partial class SettingsWindow : Window
             SettingsControl.Hotkey => HotkeyCapture(item, state),
             SettingsControl.Text => TextFor(item, state),
             SettingsControl.ReadOnly => ReadOnlyFor(item),
-            SettingsControl.Custom => CustomFor(item),
+            SettingsControl.Custom => CustomFor(item, state),
             _ => new TextBlock(),
         };
     }
@@ -435,7 +437,13 @@ public partial class SettingsWindow : Window
         // worth anyone's attention.
         var editor = ItemEditors.Segmented(
             item, _baseline, state,
-            changed: _ => ApplyBackendKindRows());
+            changed: _ => ApplyBackendKindRows(),
+
+            // 公共通道未上线（票 08/ADR-0009）：看得见、点不动。
+            choiceEnabled: item.Id == "service.backend-kind"
+                ? choice => choice != (int)TranslationBackendKind.Relay
+                    || RelayChannel.Available
+                : null);
 
         _segmented[item.Id] = editor is StackPanel panel
             ? panel.Children.OfType<ToggleButton>().ToArray()
@@ -444,14 +452,14 @@ public partial class SettingsWindow : Window
     }
 
     /// <summary>
-    /// 公共通道不需要接口地址、模型与凭据——选了它就把这三行收走，免得
+    /// 公共通道不需要接口地址、模型与凭据——选了它就把这几行收走，免得
     /// "开箱即用"的承诺旁边摆着三个要填的框。
     /// </summary>
     private void ApplyBackendKindRows()
     {
         var ownKey = _edited["service.backend-kind"].Choice
             == (int)TranslationBackendKind.OwnKey;
-        foreach (var id in new[] { "service.base-url", "service.model", "service.api-key" })
+        foreach (var id in new[] { "service.preset", "service.base-url", "service.model", "service.api-key" })
         {
             if (_rows.TryGetValue(id, out var row))
             {
@@ -633,13 +641,72 @@ public partial class SettingsWindow : Window
             VerticalAlignment = VerticalAlignment.Center,
         };
 
-    private FrameworkElement CustomFor(SettingsItem item) => item.Id switch
+    private FrameworkElement CustomFor(SettingsItem item, ItemState state) => item.Id switch
     {
         "store.backup" => BackupRow(),
         "store.usage" => StorageUsagePanel(),
         "about.onboarding" => OnboardingRow(),
+        "service.preset" => PresetRow(state),
         _ => new TextBlock(),
     };
+
+    /// <summary>
+    /// 服务商预设行（票 08）：与引导共用 <see cref="ServicePresetRow"/>。地址与
+    /// 模型框是各自的编辑器行——建行顺序在本行之后，所以读取走字典惰性
+    /// 解析；「测试连接」用框里现值（凭据留空表示沿用已存的），不是存档值。
+    /// </summary>
+    private FrameworkElement PresetRow(ItemState state)
+    {
+        _presetRow = new ServicePresetRow(
+            _baseline,
+            state,
+            readForm: () =>
+            {
+                var url = _textBoxes.TryGetValue("service.base-url", out var urlBox)
+                    ? urlBox.Text
+                    : string.Empty;
+                var model = _textBoxes.TryGetValue("service.model", out var modelBox)
+                    ? modelBox.Text
+                    : string.Empty;
+
+                // 与保存语义一致：凭据留空 = 保留已存的那个。
+                var key = _secretBox?.Password is { Length: > 0 } typed
+                    ? typed
+                    : _baseline.BackendApiKey;
+                return (url, model, key);
+            },
+            applyPreset: preset =>
+            {
+                if (_textBoxes.TryGetValue("service.base-url", out var urlBox))
+                {
+                    urlBox.Text = preset.BaseUrl;
+                }
+
+                if (_textBoxes.TryGetValue("service.model", out var modelBox))
+                {
+                    modelBox.Text = preset.DefaultModel;
+                }
+            });
+
+        return _presetRow.Element;
+    }
+
+    /// <summary>地址或模型被手改时，预设行立即降级为「自定义」。</summary>
+    private void HookPresetDemotion()
+    {
+        if (_presetRow is null)
+        {
+            return;
+        }
+
+        foreach (var id in new[] { "service.base-url", "service.model" })
+        {
+            if (_textBoxes.TryGetValue(id, out var box))
+            {
+                box.TextChanged += (_, _) => _presetRow?.NoteAddressEdited();
+            }
+        }
+    }
 
     private FrameworkElement OnboardingRow()
     {

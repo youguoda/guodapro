@@ -348,8 +348,10 @@ public class RelaySettingsTests
             BackendApiKey = "some-key",
         };
 
+        // 公共通道未上线（ADR-0009 的闸门关着）：选中它也落到自备密钥后端，
+        // 不再架一条注定连不上的路。闸门翻开的那天，这里翻回 RelayBackend。
         var backend = relay.BuildTranslationBackend();
-        Assert.IsType<RelayBackend>(backend);
+        Assert.IsType<OpenAiCompatibleBackend>(backend);
         ((IDisposable)backend).Dispose();
 
         var own = ownKey.BuildTranslationBackend();

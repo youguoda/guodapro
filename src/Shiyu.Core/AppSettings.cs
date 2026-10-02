@@ -57,6 +57,20 @@ public sealed record AppSettings
     public string BackendModel { get; init; } = string.Empty;
 
     /// <summary>
+    /// 选中的服务商预设（<see cref="ProviderPresets"/> 的 Id）；空表示自定义。
+    /// 请求时按它解析出附加字段与温度规则——但地址或模型一旦手改得与预设
+    /// 不符，解析就当作没有预设（见 <see cref="ProviderPresets.ResolveFor"/>），
+    /// 存量文件里的旧 Id 因此不构成风险。
+    /// </summary>
+    public string BackendPresetId { get; init; } = string.Empty;
+
+    /// <summary>
+    /// 「公共通道暂未开放」的一次性提示是否已经给过（票 08 迁移）。存量
+    /// 用户选中公共通道时启动迁移要说一次话；每次启动都说就成了骚扰。
+    /// </summary>
+    public bool RelayUnavailableNoticed { get; init; }
+
+    /// <summary>
     /// Stored as written. The history beside it is not encrypted either, so
     /// pretending this one field is protected would be theatre — what it does
     /// get is never being shown in the interface or written to a log.
@@ -218,14 +232,38 @@ public sealed record AppSettings
     public TranslationBackendOptions Backend => new(BackendBaseUrl, BackendModel, BackendApiKey);
 
     /// <summary>
+    /// 翻译此刻是否真的有一条能走的路。公共通道在上线条件满足前
+    /// （<see cref="RelayChannel.Available"/> 为 false）不构成可用的路：
+    /// 选中它的用户只有配好自备密钥才算配置完成——面板据此决定显示
+    /// 译文还是配置引导卡。
+    /// </summary>
+    [JsonIgnore]
+    public bool IsTranslationConfigured
+        => TranslationBackend == TranslationBackendKind.Relay && RelayChannel.Available
+            ? RelayEndpoint.Trim().Length > 0
+            : Backend.IsConfigured;
+
+    /// <summary>
     /// The live backend for the chosen road, in the same spirit as
     /// <see cref="BuildExclusionPolicy"/>: settings stay data, and the
     /// translation port gets built here so every window shares one truth.
+    /// 公共通道未上线（<see cref="RelayChannel.Available"/> 为 false）时
+    /// 一律落到自备密钥后端——没配密钥的话后端自己会给出人话。
     /// </summary>
     public ITranslationBackend BuildTranslationBackend()
-        => TranslationBackend == TranslationBackendKind.Relay
-            ? new RelayBackend(new RelayBackendOptions(RelayEndpoint, RelayClientId))
-            : new OpenAiCompatibleBackend(Backend);
+    {
+        if (TranslationBackend == TranslationBackendKind.Relay && RelayChannel.Available)
+        {
+            return new RelayBackend(new RelayBackendOptions(RelayEndpoint, RelayClientId));
+        }
+
+        var preset = ProviderPresets.ResolveFor(this);
+        return new OpenAiCompatibleBackend(
+            Backend,
+            extraBody: preset?.ExtraBody,
+            maxTemperature: preset?.MaxTemperature,
+            sendTemperature: preset?.SendTemperature ?? true);
+    }
 
     private static readonly JsonSerializerOptions Format = new()
     {

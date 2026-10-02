@@ -2,7 +2,10 @@
 
 **来源：** 优化报告 O-04、O-14；判断报告 P0-3；ADR-0009
 **Blocked by:** 07
-**Status:** ready-for-agent
+**Branch:** `v3/first-run`（33590c9 + e331aa8 + fc4da94，待并）
+**Status:** ready-for-human
+
+实施记录（2026-10-02）：Core（33590c9）——`ProviderPresets` 照票面核实数据落清单（百炼/DeepSeek/智谱/硅基流动进默认下拉、Kimi 入"更多"，字段含 `ExtraBody/MaxTemperature/SendTemperature/ApiKeyUrl`），`ResolveFor(settings)` 按"地址一致且模型是默认或备选"裁决，手改即视为自定义；`OpenAiCompatibleBackend` 加三个可选构造参数（附加顶层字段深拷贝合并、温度 `Min(请求值, 上限)`、可整段不发 temperature；缺省行为不变），403 `AllocationQuota.FreeTierOnly` 译成"免费额度已用完，请实名或充值"；`ConnectionProbe` 一次极小非流式请求（"hi"、max_tokens≤16、预设字段与温度规则同真翻译）三态人话：成功带耗时、密钥无效（401/403）、连不上/超时，密钥只进 Authorization 头；`RelayChannel.Available = false` 常量闸门（注释列 ADR-0009 三个上线条件），`AppSettings.IsTranslationConfigured` 据此把"选中公共通道"判为未配置、`BuildTranslationBackend` 一律落自备密钥后端；新字段 `BackendPresetId`、`RelayUnavailableNoticed`；`TranslationBatchResult` 带第一条失败人话原因。App（e331aa8 + fc4da94）——引导与设置的公共通道选项标"即将推出"且禁用（`ItemEditors.Segmented` 新增 choiceEnabled）；新 `ServicePresetRow` 供两处共用：预设下拉+申请密钥直达+测试连接三态上色，选中即代填地址/模型、手改即降级"自定义"（数据层 `ResolveFor` 再兜底）；引导加"稍后配置"（服务各项回滚基线后收尾）；设置服务页加 `service.preset` Custom 行（凭据留空沿用已存值）；面板未配置时显示"还没有配置翻译服务"引导卡（[去配置] 深链 `service.preset`、"用公共通道？暂未开放"），复制徽标/划词热键/翻译剪贴板/换方向全落此卡；启动时对选中公共通道的存量用户走 SettingsStore 一次性迁移（有自备密钥静默切 OwnKey 并托盘告知一次、没密钥保留选择仅置标记，翻译时见引导卡）；管理窗四个 Agent 动作无自备密钥时禁用并 tooltip"需要自备密钥 · 去设置"（开窗与激活时刷新），动作与批量翻译改走与面板同一后端工厂（预设规则对词典/批量同样生效），批量结束报告"成功 n（跳过 s）失败 m（首条失败原因）"。Core 753 全绿（+37 新测试，改 2 条旧钉：Relay 选中在闸门关闭时不再建 RelayBackend——此为票面要求的行为变更），App Debug 构建 0 警告 0 错误。
 
 **What to build:**
 - 公共通道在上线条件满足前不可选（引导与设置里显示"即将推出"）。已选择公共通道的老用户：如果配置了自备密钥就改用它，否则显示配置引导卡；只提示一次。
