@@ -1,8 +1,11 @@
 # 06 — 全局异常处理、本地日志、静默 catch 治理
 
 **来源：** 优化报告 O-05、O-24
-**Blocked by:** 03
-**Status:** ready-for-agent
+**Blocked by:** 03（已完成）
+**Branch:** `v3/log`（已并 master，5 提交 4f8094a→576d8be）
+**Status:** ready-for-human（崩溃探针已实机验收通过）
+
+实施+验收记录（2026-10-02）：Log 门面 20 事件枚举、公开签名无 string 参数（反射测试钉住）、FileLogSink 按天滚动/保留 7 天/1MB 轮转/IO 失败静默；三处理器（UI 线程 Handled 挺住+托盘一次 5 分钟节流）；OnExit 先还剪贴板债；4 个 async void 全保护；catch 三分法 60 处（16 接日志/21 收窄/23 expected）+ CI 静态检查 `tools/checks/no-silent-catch.ps1`（对基线 60 违规先红、本分支绿）。Core 728。**实机验收（探针实例）**：`SHIYU_DEBUG_TICK_CRASH=1` 注入 Tick 异常 → 进程存活、`logs/shiyu-20261002.log` 出现 `error AppCrash ex=InvalidOperationException: debug tick crash probe` 含栈帧。
 
 **What to build:**
 - `DispatcherUnhandledException`、`TaskScheduler.UnobservedTaskException`、`AppDomain.UnhandledException` 三个处理器。
