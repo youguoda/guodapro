@@ -105,7 +105,7 @@ internal sealed class HandoverText : TextBlock
 
 /// <summary>
 /// The key badge that covers a row's source-app icon while Ctrl is held,
-/// showing the number key that pastes that row. Opaque, same sixteen units,
+/// showing the number key that pastes that row. Opaque, same eighteen units,
 /// exactly over the icon: one element to toggle, no layout movement.
 /// </summary>
 internal sealed class RowKeyBadge : Border

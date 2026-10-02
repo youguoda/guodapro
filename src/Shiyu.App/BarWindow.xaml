@@ -306,7 +306,9 @@
                          纯文本不再自报类型（§6.1）：扫读位留给信息量——链接、
                          "图片 · 1920×1080"、"3 个文件"。 -->
                     <DockPanel Grid.Row="0" Margin="0,0,0,6">
-                        <Grid DockPanel.Dock="Left" Width="16" Height="16" Margin="0,0,6,0">
+                        <!-- 来源图标 18×18（§6.1 卡片）：位图是最快的识别线索；
+                             键帽就盖在它上面，同 18 单位。 -->
+                        <Grid DockPanel.Dock="Left" Width="18" Height="18" Margin="0,0,6,0">
                             <Image Source="{Binding Icon}" Visibility="{Binding IconVisibility}"/>
                             <Border CornerRadius="{DynamicResource Radius.Thumb}"
                                     Background="{DynamicResource Brush.Accent}"

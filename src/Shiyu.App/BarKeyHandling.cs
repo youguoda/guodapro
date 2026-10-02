@@ -230,12 +230,17 @@ internal partial class BarWindow
                 CycleKind(+1);
                 break;
 
-            case Key.Up when !IsTyping:
+            // ↑↓ walk the list even while the search box holds focus (it
+            // does by design, right after summon) and mid-query: a
+            // single-line box has no caret rows of its own. The old guard
+            // existed only to keep the tag ComboBox's own arrows — that
+            // control is gone (U-04), so the guard went with it.
+            case Key.Up:
                 e.Handled = true;
                 Move(-1);
                 break;
 
-            case Key.Down when !IsTyping:
+            case Key.Down:
                 e.Handled = true;
                 Move(+1);
                 break;
