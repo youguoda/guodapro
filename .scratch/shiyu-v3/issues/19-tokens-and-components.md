@@ -10,6 +10,8 @@
 **Spike 1 结论（2026-10-02，主控亲做，分支 `v3/spike-mica` 未并）：非分层 Mica 配方成立。**
 配方：`WindowStyle="SingleBorderWindow"` + `AllowsTransparency="False"` + `WindowChrome.GlassFrameThickness="-1"` + `Background="Transparent"` + `OnSourceInitialized` 里 `CompositionTarget.BackgroundColor = Colors.Transparent`；壳层去掉自绘边框/圆角/`DropShadowEffect`（阴影与圆角交还系统，DWMWA 38=2 照旧）。**证据**（探针 PrintWindow 像素采样，对照旧分层版）：新窗口四角/边缘为一致的壁纸色（R239 G249 B221——桌面绿透过 Mica），旧版为纯中性灰（243/243/243，`SurfaceMaterial` 近不透明盖死的实证）；内容完整渲染、重定向面不黑、崩溃无。**推翻票 03 的"材质只在分层窗口可见"路径依赖，R7 的三宗罪（材质被盖/失 ClearType 前置/无边框无贴靠）一并解除**（ClearType 数值上未证——色度采样被彩色 UI 干扰，由实施票 23 时用 visual-judge 或肉眼复核；Effect 子树已移除是其前置条件成立）。票 23（设置窗）与票 24（管理窗）照此配方实施；spike 分支的 XAML 改动可直接作起点。
 
+**令牌层已由主控亲做并并 master（2026-10-02，63d348b）**：新色槽 12 个两套调色板齐备（CardStroke/StrokeStrong/Divider/AccentSubtle/Selected/DangerSubtle/TextOnDanger/FocusOuter/FocusInner/Success/Caution/Brand，成对纪律与 Slots 完备性自动覆盖）；SurfaceMaterial α 降至 D9/E0 并有测试钉住不许写回；字阶 v2 全档（Type.* 常量 + ThemeManager 导出，旧 Font* 档并存待模板迁移后退役）；图标档 12/16/20/24/48；语义间距 Space.1–12 与控件尺寸档（Control.Height 等）已导出；非文本 3:1（StrokeStrong/FocusOuter）与叠层透明契约（OverlaySlots alpha<FF）入 DesignTokenTests。**代理剩余范围**：共享组件（IconButton/FlyoutButton/AcccentButton/两种 KeyCap/SearchBox/ToggleSwitch/NumberBox/ComboBox/ListRow/InfoBar/ContentDialog/EmptyState，先抽 BarWindow 里锁着的样式）、全仓迁移到 v2 令牌与退役旧档、静态检查（Themes/ 外禁字面量字号/圆角/文字透明度）、Aero2 清零的像素验收。789 全绿基线。
+
 **What to build:**
 - **两个 spike 先行：**
   - .NET 9 第一方 Fluent 主题字典映射到现有令牌（路线 A），对比手写模板（路线 B），选定一条；
