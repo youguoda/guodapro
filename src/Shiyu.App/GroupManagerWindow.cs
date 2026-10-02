@@ -36,7 +36,7 @@ internal sealed class GroupManagerWindow : Window
         MinWidth = 380;
         Background = (Brush)Application.Current.FindResource("Brush.Background");
         FontFamily = (FontFamily)Application.Current.FindResource("Font.Ui");
-        FontSize = (double)Application.Current.FindResource("Size.Body");
+        FontSize = (double)Application.Current.FindResource("Type.Body");
 
         // R1（票 18）：隐式 TextBlock 样式已删，文字默认值由窗口根继承下去。
         SetResourceReference(TextElement.ForegroundProperty, "Brush.Text");

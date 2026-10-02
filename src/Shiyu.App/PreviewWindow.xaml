@@ -8,7 +8,7 @@
         Focusable="False"
         AllowsTransparency="True" Background="Transparent"
         WindowStartupLocation="Manual"
-        FontSize="{DynamicResource Size.Body}"
+        FontSize="{DynamicResource Type.Body}"
         TextElement.FontFamily="{DynamicResource Font.Ui}"
         TextElement.Foreground="{DynamicResource Brush.Text}"
         MouseEnter="OnMouseEnter" MouseLeave="OnMouseLeave">
@@ -36,10 +36,10 @@
 
             <DockPanel Grid.Row="0" Margin="0,0,0,6">
                 <TextBlock x:Name="WhenText" DockPanel.Dock="Right"
-                           FontSize="{DynamicResource Size.Caption}"
+                           FontSize="{DynamicResource Type.Caption}"
                            Foreground="{DynamicResource Brush.TextTertiary}"
                            VerticalAlignment="Center" Margin="8,0,0,0"/>
-                <TextBlock x:Name="KindText" FontSize="{DynamicResource Size.Caption}"
+                <TextBlock x:Name="KindText" FontSize="{DynamicResource Type.Caption}"
                            Foreground="{DynamicResource Brush.TextSecondary}"
                            VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
             </DockPanel>
@@ -48,8 +48,11 @@
                 <ScrollViewer x:Name="TextHost" Focusable="False"
                               VerticalScrollBarVisibility="Auto"
                               HorizontalScrollBarVisibility="Disabled">
+                    <!-- 预览正文：被阅读的内容，Type.Content 18/31（ADR-0012 排版 2）；
+                         Measure() 用同一对常量算尺寸。 -->
                     <TextBlock x:Name="TextBody" TextWrapping="Wrap"
-                               LineHeight="{DynamicResource Line.Body}"
+                               FontSize="{DynamicResource Type.Content}"
+                               LineHeight="{DynamicResource Line.Content}"
                                LineStackingStrategy="BlockLineHeight"
                                Foreground="{DynamicResource Brush.Text}"/>
                 </ScrollViewer>

@@ -14,10 +14,10 @@
         </Border.Effect>
         <StackPanel Orientation="Horizontal">
             <TextBlock Text="译" Foreground="{DynamicResource Brush.TextOnAccent}"
-                       FontSize="{DynamicResource Size.Body}"
+                       FontSize="{DynamicResource Type.Body}"
                        FontWeight="{DynamicResource Weight.Emphasis}" />
             <TextBlock Text="翻译这段" Foreground="{DynamicResource Brush.TextOnAccent}"
-                       FontSize="{DynamicResource Size.Secondary}" Margin="8,0,0,0"
+                       FontSize="{DynamicResource Type.Body}" Margin="8,0,0,0"
                        VerticalAlignment="Center" />
         </StackPanel>
     </Border>

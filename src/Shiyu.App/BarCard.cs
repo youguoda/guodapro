@@ -189,13 +189,13 @@ internal sealed class BarCard : INotifyPropertyChanged
     public int TextLines { get; init; }
 
     /// <summary>
-    /// The text clamp as a height of whole Body-LARGE lines — the card body
-    /// grew to Size.BodyLarge (票 39), so the clamp grew with it. Visually
-    /// identical to MaxLines, usable from XAML on this build (see the
+    /// The text clamp as a height of whole Content lines — the card body is
+    /// Type.Content 18/31 (票 32/39), so the clamp counts 31-DIP lines.
+    /// Visually identical to MaxLines, usable from XAML on this build (see the
     /// template comment).
     /// </summary>
     public double TextMaxHeight
-        => TextLines * DesignTokens.LineHeightFor(DesignTokens.FontBodyLarge);
+        => TextLines * DesignTokens.LineForContent;
 
     public int ImageHeight { get; init; }
 

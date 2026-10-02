@@ -5,7 +5,7 @@
         ShowInTaskbar="False" Topmost="True" ResizeMode="NoResize"
         SizeToContent="Height" Width="460"
         TextElement.FontFamily="{DynamicResource Font.Ui}"
-        TextElement.FontSize="{DynamicResource Size.Body}"
+        TextElement.FontSize="{DynamicResource Type.Body}"
         TextElement.Foreground="{DynamicResource Brush.Text}"
         Deactivated="OnDeactivated" PreviewKeyDown="OnPreviewKeyDown">
     <Border x:Name="Shell" CornerRadius="{DynamicResource Radius.Window}" Background="{DynamicResource Brush.SurfaceMaterial}"
@@ -15,7 +15,7 @@
         </Border.Effect>
 
         <StackPanel Margin="10,8">
-            <TextBox x:Name="FilterBox" FontSize="{DynamicResource Size.Body}" Padding="8,6"
+            <TextBox x:Name="FilterBox" FontSize="{DynamicResource Type.Body}" Padding="8,6"
                      BorderThickness="0" TextChanged="OnFilterChanged" />
 
             <ListBox x:Name="Items" Margin="0,8,0,0" MaxHeight="260" BorderThickness="0"
@@ -27,7 +27,7 @@
                     <DataTemplate>
                         <StackPanel Margin="2,4">
                             <TextBlock Text="{Binding Preview}" TextTrimming="CharacterEllipsis" />
-                            <TextBlock Text="{Binding Meta}" FontSize="{DynamicResource Size.Caption}"
+                            <TextBlock Text="{Binding Meta}" FontSize="{DynamicResource Type.Caption}"
                                        Foreground="{DynamicResource Brush.TextSecondary}"
                                        Margin="0,2,0,0" />
                         </StackPanel>
@@ -37,9 +37,9 @@
 
             <TextBlock x:Name="EmptyLabel" Text="没有匹配的记录" Margin="4,10,0,4"
                        Foreground="{DynamicResource Brush.TextTertiary}"
-                       FontSize="{DynamicResource Size.Secondary}" Visibility="Collapsed" />
+                       FontSize="{DynamicResource Type.Body}" Visibility="Collapsed" />
 
-            <TextBlock Margin="4,8,0,2" FontSize="{DynamicResource Size.Hint}"
+            <TextBlock Margin="4,8,0,2" FontSize="{DynamicResource Type.Caption}"
                        Foreground="{DynamicResource Brush.TextTertiary}"
                        Text="↑↓ 选择 · Enter 粘贴 · Esc 关闭" />
         </StackPanel>

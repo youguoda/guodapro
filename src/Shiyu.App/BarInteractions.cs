@@ -245,7 +245,7 @@ internal partial class BarWindow
         => (FontFamily)Application.Current.FindResource("Font.Ui");
 
     private static double PopupText
-        => (double)Application.Current.FindResource("Size.Body");
+        => (double)Application.Current.FindResource("Type.Body");
 
     /// <summary>
     /// A menu that would hang off the screen edge is nudged back in — measured

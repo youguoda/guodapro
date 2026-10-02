@@ -68,7 +68,7 @@ internal sealed class UpdateWindow : Window
         ShowInTaskbar = false;
         MinWidth = 380;
         Background = (Brush)FindResource("Brush.Background");
-        FontSize = DesignTokens.FontBody;
+        FontSize = (double)FindResource("Type.Body");
 
         // R1（票 18）：隐式 TextBlock 样式已删，字体与文字色由窗口根继承。
         SetResourceReference(TextElement.FontFamilyProperty, "Font.Ui");
@@ -83,7 +83,8 @@ internal sealed class UpdateWindow : Window
 
         _notes.SetResourceReference(TextBox.BackgroundProperty, "Brush.SurfaceInput");
         _notes.SetResourceReference(TextBox.ForegroundProperty, "Brush.Text");
-        _notes.FontSize = DesignTokens.FontSecondary;
+        // 更新说明（release notes）是被阅读的正文：Type.Content 18。
+        _notes.FontSize = (double)FindResource("Type.Content");
 
         var buttons = new StackPanel
         {

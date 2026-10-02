@@ -51,7 +51,7 @@ internal sealed class OnboardingWindow : Window
         ShowInTaskbar = false;
         Background = (Brush)Application.Current.FindResource("Brush.Background");
         FontFamily = (FontFamily)Application.Current.FindResource("Font.Ui");
-        FontSize = (double)Application.Current.FindResource("Size.Body");
+        FontSize = (double)Application.Current.FindResource("Type.Body");
 
         // R1（票 18）：隐式 TextBlock 样式已删，文字默认值由窗口根继承下去。
         SetResourceReference(TextElement.ForegroundProperty, "Brush.Text");
@@ -60,7 +60,8 @@ internal sealed class OnboardingWindow : Window
 
         var root = new StackPanel { Margin = new Thickness(18) };
 
-        _heading.SetResourceReference(TextElement.FontSizeProperty, "Size.BodyLarge");
+        // 每步的页标题：Type.Subtitle 20/28 SemiBold（UI 报告 §4.1 页标题档）。
+        _heading.SetResourceReference(TextElement.FontSizeProperty, "Type.Subtitle");
         _heading.FontWeight = FontWeights.SemiBold;
         _heading.SetResourceReference(TextBlock.ForegroundProperty, "Brush.Text");
         root.Children.Add(_heading);
@@ -70,7 +71,7 @@ internal sealed class OnboardingWindow : Window
             Text = "几步就绪，每一步都可跳过——跳过也完全可用。",
             Margin = new Thickness(0, 4, 0, 10),
         };
-        intro.SetResourceReference(TextElement.FontSizeProperty, "Size.Caption");
+        intro.SetResourceReference(TextElement.FontSizeProperty, "Type.Caption");
         intro.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
         root.Children.Add(intro);
 
@@ -78,7 +79,7 @@ internal sealed class OnboardingWindow : Window
         root.Children.Add(_body);
 
         _stepLabel.Margin = new Thickness(0, 10, 0, 0);
-        _stepLabel.SetResourceReference(TextElement.FontSizeProperty, "Size.Caption");
+        _stepLabel.SetResourceReference(TextElement.FontSizeProperty, "Type.Caption");
         _stepLabel.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextTertiary");
         root.Children.Add(_stepLabel);
 
@@ -123,7 +124,7 @@ internal sealed class OnboardingWindow : Window
             Text = item.Label,
             VerticalAlignment = VerticalAlignment.Center,
         };
-        label.SetResourceReference(TextElement.FontSizeProperty, "Size.Caption");
+        label.SetResourceReference(TextElement.FontSizeProperty, "Type.Body");
         label.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
         Grid.SetColumn(label, 0);
         grid.Children.Add(label);
@@ -152,7 +153,7 @@ internal sealed class OnboardingWindow : Window
             Visibility = Visibility.Collapsed,
             Margin = new Thickness(0, 4, 0, 0),
         };
-        conflict.SetResourceReference(TextElement.FontSizeProperty, "Size.Hint");
+        conflict.SetResourceReference(TextElement.FontSizeProperty, "Type.Caption");
         conflict.SetResourceReference(TextBlock.ForegroundProperty, "Brush.Danger");
 
         void RefreshConflict()
@@ -280,7 +281,7 @@ internal sealed class OnboardingWindow : Window
             Text = "勾选与手填的名字都会写进设置的排除规则，随时可改。",
             Margin = new Thickness(0, 6, 0, 0),
         };
-        footnote.SetResourceReference(TextElement.FontSizeProperty, "Size.Hint");
+        footnote.SetResourceReference(TextElement.FontSizeProperty, "Type.Caption");
         footnote.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
         panel.Children.Add(footnote);
 
@@ -326,7 +327,9 @@ internal sealed class OnboardingWindow : Window
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 10),
         };
-        disclosure.SetResourceReference(TextElement.FontSizeProperty, "Size.Hint");
+        disclosure.SetResourceReference(TextElement.FontSizeProperty, "Type.Caption");
+        disclosure.LineStackingStrategy = LineStackingStrategy.BlockLineHeight;
+        disclosure.SetResourceReference(TextBlock.LineHeightProperty, "Line.CaptionMulti");
         disclosure.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
         panel.Children.Add(disclosure);
 

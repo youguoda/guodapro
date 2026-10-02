@@ -56,7 +56,7 @@ internal sealed class ActionTray : StackPanel
             Text = HoverActions.IconGlyph(id),
             FontFamily = IconFont,
         };
-        label.SetResourceReference(TextElement.FontSizeProperty, "Size.IconMedium");
+        label.SetResourceReference(TextElement.FontSizeProperty, "Size.IconS");
 
         var button = new Button
         {

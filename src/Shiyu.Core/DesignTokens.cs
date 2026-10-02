@@ -256,14 +256,9 @@ public static class DesignTokens
     /// </summary>
     public const string FamilyIcon = "Segoe Fluent Icons, Segoe MDL2 Assets";
 
-    public const double FontHint = 14;
-    public const double FontCaption = 14;
-    public const double FontSecondary = 15;
-    public const double FontBody = 16;
-    public const double FontBodyLarge = 18;
-
     // --- typography v2（票 19 / ADR-0012：控件回 14，内容字号交给用户）-----------
-    // 旧 Font* 档位在上、迁移期并存；票 19 的模板与窗口迁移完成后退役。
+    // 旧 Font*（Hint/Caption/Secondary/Body/BodyLarge）与 Icon*（Small/Medium/Large）
+    // 档已随全仓迁移退役：控件 14、内容 18、图标取 Fluent 设计尺寸 12/16/20/24/48。
     // 规则：行高落 4px 网格、多行中文≈1.7；SemiBold 只给拉丁词头与键帽；
     // "再大一号"只走 TypeContent 的设置项与系统文本缩放，不再动控件档。
 
@@ -301,18 +296,15 @@ public static class DesignTokens
     public static double LineForContent => 31;
     public static double LineForContentMono => 26;
 
-    // --- 图标尺寸 v2：只取 Segoe Fluent 的设计尺寸（官方 16/20/24/48），14/19 是
-    // 跟着旧字号被推出来的、小尺寸发虚，迁移后退役。 ------------------------------
+    /// <summary>
+    /// 图标尺寸 v2：只取 Segoe Fluent 的设计尺寸（官方 16/20/24/48）。旧的
+    /// 14/16/19 三档是跟着旧字号被推出来的、小尺寸发虚，已随迁移退役。
+    /// </summary>
     public const double IconXs = 12;
     public const double IconS = 16;
     public const double IconM = 20;
     public const double IconL = 24;
     public const double IconXl = 48;
-
-    /// <summary>Sizes for the symbol font: inline with text, standard, feature.</summary>
-    public const double IconSmall = 14;
-    public const double IconMedium = 16;
-    public const double IconLarge = 19;
 
     /// <summary>Chinese body line height. A floor, not a suggestion — see DesignTokenTests.</summary>
     public const double BodyLineRatio = 1.7;

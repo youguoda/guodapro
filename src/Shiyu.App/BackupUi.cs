@@ -139,7 +139,7 @@ public sealed class BackupUi(
             ShowInTaskbar = false,
             Background = (Brush)Application.Current.FindResource("Brush.Background"),
             FontFamily = (FontFamily)Application.Current.FindResource("Font.Ui"),
-            FontSize = (double)Application.Current.FindResource("Size.Body"),
+            FontSize = (double)Application.Current.FindResource("Type.Body"),
         };
         window.SetResourceReference(TextElement.ForegroundProperty, "Brush.Text");
 
@@ -199,7 +199,7 @@ public sealed class BackupUi(
             ShowInTaskbar = false,
             Background = (Brush)Application.Current.FindResource("Brush.Background"),
             FontFamily = (FontFamily)Application.Current.FindResource("Font.Ui"),
-            FontSize = (double)Application.Current.FindResource("Size.Body"),
+            FontSize = (double)Application.Current.FindResource("Type.Body"),
         };
         window.SetResourceReference(TextElement.ForegroundProperty, "Brush.Text");
 
@@ -342,7 +342,7 @@ public sealed class BackupUi(
             ShowInTaskbar = false,
             Background = (Brush)Application.Current.FindResource("Brush.Background"),
             FontFamily = (FontFamily)Application.Current.FindResource("Font.Ui"),
-            FontSize = (double)Application.Current.FindResource("Size.Body"),
+            FontSize = (double)Application.Current.FindResource("Type.Body"),
         };
         window.SetResourceReference(TextElement.ForegroundProperty, "Brush.Text");
 

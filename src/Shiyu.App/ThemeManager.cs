@@ -120,16 +120,7 @@ internal sealed class ThemeManager : IDisposable
         values["Font.Mono"] = new FontFamily(DesignTokens.FamilyMono);
         values["Font.Icon"] = new FontFamily(DesignTokens.FamilyIcon);
 
-        values["Size.Hint"] = DesignTokens.FontHint;
-        values["Size.Caption"] = DesignTokens.FontCaption;
-        values["Size.Secondary"] = DesignTokens.FontSecondary;
-        values["Size.Body"] = DesignTokens.FontBody;
-        values["Size.BodyLarge"] = DesignTokens.FontBodyLarge;
-        values["Size.IconSmall"] = DesignTokens.IconSmall;
-        values["Size.IconMedium"] = DesignTokens.IconMedium;
-        values["Size.IconLarge"] = DesignTokens.IconLarge;
-
-        // 票 19 字阶 v2（迁移期与旧档并存；模板迁移完成后旧键退役）。
+        // 字阶 v2（票 19 / ADR-0012：控件回 14，内容 18 可调；旧 Font*/Size.* 档已退役）。
         values["Type.Caption"] = DesignTokens.TypeCaption;
         values["Type.Body"] = DesignTokens.TypeBody;
         values["Type.BodyStrong"] = DesignTokens.TypeBodyStrong;
@@ -168,10 +159,6 @@ internal sealed class ThemeManager : IDisposable
         values["Space.6"] = new Thickness(DesignTokens.Space6);
         values["Space.8"] = new Thickness(DesignTokens.Space8);
         values["Space.12"] = new Thickness(DesignTokens.Space12);
-
-        values["Line.Secondary"] = DesignTokens.LineHeightFor(DesignTokens.FontSecondary);
-        values["Line.Body"] = DesignTokens.LineHeightFor(DesignTokens.FontBody);
-        values["Line.BodyLarge"] = DesignTokens.LineHeightFor(DesignTokens.FontBodyLarge);
 
         values["Weight.Emphasis"] = FontWeights.SemiBold;
 

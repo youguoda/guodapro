@@ -76,7 +76,8 @@ internal sealed class RowKeyBadge : Border
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
         };
-        label.SetResourceReference(TextBlock.FontSizeProperty, "Size.Hint");
+        // 键帽数字走 Type.KeyCap（12，票 19 字阶 v2 的键帽专用档）。
+        label.SetResourceReference(TextBlock.FontSizeProperty, "Type.KeyCap");
         label.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextOnAccent");
         label.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding("RowKeyText"));
         Child = label;

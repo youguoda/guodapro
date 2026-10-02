@@ -167,7 +167,7 @@ internal static class ItemEditors
             Margin = new Thickness(0, 2, 0, 0),
         };
         // 说明文字走令牌色，不再乘 Opacity——透明度会绕过对比度测试（票 18/R6）。
-        hint.SetResourceReference(TextElement.FontSizeProperty, "Size.Hint");
+        hint.SetResourceReference(TextElement.FontSizeProperty, "Type.Caption");
         hint.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
         stack.Children.Add(hint);
         return stack;
@@ -203,7 +203,7 @@ internal static class ItemEditors
             TextWrapping = TextWrapping.Wrap,
         };
         // 同上：说明文字只靠令牌色分层，透明度一律不上（票 18/R6）。
-        text.SetResourceReference(TextElement.FontSizeProperty, "Size.Hint");
+        text.SetResourceReference(TextElement.FontSizeProperty, "Type.Caption");
         text.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
         stack.Children.Add(text);
         return stack;

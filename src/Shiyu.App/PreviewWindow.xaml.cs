@@ -294,7 +294,7 @@ internal partial class PreviewWindow : Window
     /// </summary>
     private (double Width, double Height) Measure(BarCard card)
     {
-        var lineHeight = DesignTokens.LineHeightFor(DesignTokens.FontBody);
+        var lineHeight = DesignTokens.LineForContent;
 
         switch (card.Kind)
         {
@@ -308,7 +308,7 @@ internal partial class PreviewWindow : Window
                 var box = PreviewSizing.MaxWidth - PreviewSizing.ChromeHorizontal;
                 var formatted = Formatted(
                     card.Text,
-                    DesignTokens.FontBody,
+                    DesignTokens.TypeContent,
                     constrain: box);
                 var lineCount = (int)Math.Ceiling(formatted.Height / lineHeight);
                 var textWidth = Math.Min(formatted.Width, box);
@@ -317,7 +317,7 @@ internal partial class PreviewWindow : Window
         }
     }
 
-    /// <summary>One file row: a line and its breathing room, in the secondary size.</summary>
+    /// <summary>One file row: a line and its breathing room, in the mono-content size.</summary>
     private const double FileRowHeight = 26;
 
     /// <summary>
@@ -390,7 +390,7 @@ internal partial class PreviewWindow : Window
                 var name = new TextBlock
                 {
                     Text = path,
-                    FontSize = DesignTokens.FontSecondary,
+                    FontSize = DesignTokens.TypeContentMono,
                     VerticalAlignment = VerticalAlignment.Center,
                 };
                 name.SetResourceReference(TextBlock.ForegroundProperty,

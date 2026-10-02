@@ -81,10 +81,18 @@ public class DesignTokenTests
     [Fact]
     public void Line_heights_are_derived_from_the_ratio_not_hand_picked()
     {
-        foreach (var size in new[] { DesignTokens.FontSecondary, DesignTokens.FontBody, DesignTokens.FontBodyLarge })
-        {
-            var line = DesignTokens.LineHeightFor(size);
+        // 票 19 字阶 v2：多行档（CaptionMulti/BodyMulti/Content/ContentMono）
+        // 必须仍是按 1.7 比例推出的，不许手挑一个"差不多"的值。
+        (double Size, double Line)[] ladder =
+        [
+            (DesignTokens.TypeCaption, DesignTokens.LineForCaptionMulti),
+            (DesignTokens.TypeBody, DesignTokens.LineForBodyMulti),
+            (DesignTokens.TypeContent, DesignTokens.LineForContent),
+            (DesignTokens.TypeContentMono, DesignTokens.LineForContentMono),
+        ];
 
+        foreach (var (size, line) in ladder)
+        {
             // Rounding to whole pixels may shave a little, never more than
             // half a line ratio's worth.
             Assert.True(line >= size * (DesignTokens.BodyLineRatio - 0.05),
