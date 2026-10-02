@@ -1238,4 +1238,53 @@
             </Setter.Value>
         </Setter>
     </Style>
+
+    <!--
+      NavToggle（票 23 设置窗左导航，§6.3）：高 36、圆角 4 的导航项，
+      选中 = Selected 底（左缘 3×16 指示条与文字加粗由窗口叠加——它们
+      是导航的一部分，不是按钮本身）；悬停 StateHover。图标条模式（宽 48）
+      下只剩 ContentPresenter 的图标，Padding 由窗口按收放态给定。
+    -->
+    <Style x:Key="NavToggle" TargetType="ToggleButton">
+        <Setter Property="FontFamily" Value="{DynamicResource Font.Ui}"/>
+        <Setter Property="FontSize" Value="{DynamicResource Type.Body}"/>
+        <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FocusVisualStyle" Value="{DynamicResource FocusRing}"/>
+        <Setter Property="HorizontalContentAlignment" Value="Left"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToggleButton">
+                    <Grid>
+                        <Border x:Name="Chrome" CornerRadius="{DynamicResource Radius.Control}"
+                                Background="Transparent"/>
+                        <Border x:Name="Hover" CornerRadius="{DynamicResource Radius.Control}"
+                                Background="{DynamicResource Brush.StateHover}" Opacity="0"/>
+                        <ContentPresenter Margin="{TemplateBinding Padding}"
+                                          HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalAlignment="Center"
+                                          RecognizesAccessKey="True"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Brush.Selected}"/>
+                        </Trigger>
+                        <MultiTrigger>
+                            <MultiTrigger.Conditions>
+                                <Condition Property="IsMouseOver" Value="True"/>
+                                <Condition Property="IsChecked" Value="False"/>
+                            </MultiTrigger.Conditions>
+                            <Setter TargetName="Hover" Property="Opacity" Value="1"/>
+                        </MultiTrigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Hover" Property="Background" Value="{DynamicResource Brush.StatePressed}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Foreground" Value="{DynamicResource Brush.TextTertiary}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
 </ResourceDictionary>

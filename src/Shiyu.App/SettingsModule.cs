@@ -34,7 +34,10 @@ internal sealed class SettingsModule
                 shell.Store,
                 AppPaths.ImageDirectory,
                 includeKey => shell.Settings.ToBackupJson(includeKey),
-                RestoreSettingsFromBackup));
+                RestoreSettingsFromBackup),
+
+            // 关于页的「检查更新」（§5.1）：与托盘菜单同一个手动入口。
+            _ => shell.ShowUpdateWindow?.Invoke());
         _window.Closed += (_, _) => _window = null;
         _window.Show();
 

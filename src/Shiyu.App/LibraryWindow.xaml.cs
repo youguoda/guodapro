@@ -690,18 +690,19 @@ public partial class LibraryWindow : Window
         var protectedCount = _store.CountProtected(keepFavorites, keepPinned);
         var message = protectedCount > 0
             ? $"将永久删除全部 {total} 条中未受保护的 {total - protectedCount} 条，无法撤销。"
-                + $"受收藏/置顶保护的 {protectedCount} 条会保留。确定吗？"
-            : $"将永久删除全部 {total} 条历史记录，无法撤销。确定吗？";
+                + $"受收藏/置顶保护的 {protectedCount} 条会保留。"
+            : $"将永久删除全部 {total} 条历史记录，无法撤销。";
 
-        var answer = MessageBox.Show(
+        // §6.5 不可撤销·全部：对话框里写明条数（按钮 = 动词+数量），并先
+        // 提醒可以导出一份再动手；默认焦点与 Enter 都落在取消。
+        var answer = ContentDialog.Show(
             this,
-            message,
             "清空全部历史",
-            MessageBoxButton.OKCancel,
-            MessageBoxImage.Warning,
-            MessageBoxResult.Cancel);
+            message + "\n想留底的话，可以先到 设置 › 常规 › 备份 导出一份。",
+            new ContentDialogButton("取消", ContentDialogButtonStyle.Standard, IsCancelFocus: true),
+            new ContentDialogButton($"清空 {total - protectedCount} 条", ContentDialogButtonStyle.Danger));
 
-        if (answer != MessageBoxResult.OK)
+        if (answer != 1)
         {
             return;
         }
@@ -736,20 +737,23 @@ public partial class LibraryWindow : Window
         var keepFavorites = guard.ProtectEntries && guard.ProtectFavorites;
         var keepPinned = guard.ProtectEntries && guard.ProtectPinned;
         var protectedInRange = _store.CountProtectedBetween(start, end, keepFavorites, keepPinned);
+        var inRange = _store.CountMatching(new HistoryFilter { From = start, To = end });
+        var removable = inRange - protectedInRange;
         var rangeMessage = protectedInRange > 0
             ? $"将永久删除 {from:yyyy-MM-dd} 至 {to:yyyy-MM-dd} 之间的全部记录，无法撤销。"
-                + $"其中受收藏/置顶保护的 {protectedInRange} 条会保留。确定吗？"
-            : $"将永久删除 {from:yyyy-MM-dd} 至 {to:yyyy-MM-dd} 之间的全部记录，无法撤销。确定吗？";
+                + $"其中受收藏/置顶保护的 {protectedInRange} 条会保留。"
+            : $"将永久删除 {from:yyyy-MM-dd} 至 {to:yyyy-MM-dd} 之间的全部记录，无法撤销。";
 
-        var answer = MessageBox.Show(
+        // §6.5 不可撤销·有范围：对话框选好范围后实时显示条数，按钮写
+        // 动词+数量；默认焦点与 Enter 都落在取消。
+        var answer = ContentDialog.Show(
             this,
-            rangeMessage,
             "按时间段删除",
-            MessageBoxButton.OKCancel,
-            MessageBoxImage.Warning,
-            MessageBoxResult.Cancel);
+            rangeMessage,
+            new ContentDialogButton("取消", ContentDialogButtonStyle.Standard, IsCancelFocus: true),
+            new ContentDialogButton($"删除 {removable} 条", ContentDialogButtonStyle.Danger));
 
-        if (answer != MessageBoxResult.OK)
+        if (answer != 1)
         {
             return;
         }

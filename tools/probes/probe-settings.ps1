@@ -3,6 +3,11 @@
 # Opens the settings deep-linked to the theme item (SHIYU_PROBE_ITEM), so
 # the page carrying a segmented control with a CHECKED chip is on screen.
 #
+# Ticket 23 moved the theme item to the "general" page of the five-page
+# nav redesign and widened the window 560 -> 880 DIP; the deep link still
+# lands on the item by id, and the checked chip is still the page's one
+# solid accent block, so only the window-width locator changed.
+#
 # Checks:
 #   - defect: the checked segment's text contrast < 4.5:1 (review 3.9 P0 -
 #     the implicit TextBlock style forces Brush.Text over the accent fill)
@@ -21,16 +26,16 @@ $dataDir = Join-Path $env:TEMP 'shiyu-probe-run\settings'
 
 $p = Start-ProbeApp -Exe $Exe -DataDir $dataDir -Cmd 'settings' -Item 'theme'
 try {
-    $hwnd = Wait-ProbeWindow $p.Id 560
+    $hwnd = Wait-ProbeWindow $p.Id 880
     if ($hwnd -eq [IntPtr]::Zero) {
-        Add-Check 'window:settings-found' 'FAIL' 'no 560-DIP window of the probe pid'
+        Add-Check 'window:settings-found' 'FAIL' 'no 880-DIP window of the probe pid'
         return $script:Checks
     }
     Add-Check 'window:settings-found' 'PASS' ("hwnd={0}" -f $hwnd)
     Move-WindowToProbeSpot $hwnd 2
     Start-Sleep -Milliseconds 1800   # deep-link pulse + settle
 
-    $rect = Get-WindowRectInfo $hwnd 560
+    $rect = Get-WindowRectInfo $hwnd 880
     $shot = Get-WindowShot $hwnd
     if (-not $shot) {
         Add-Check 'defect:settings-segment-contrast' 'FAIL' 'screenshot failed'

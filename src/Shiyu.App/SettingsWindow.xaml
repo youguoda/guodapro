@@ -1,115 +1,45 @@
 <Window x:Class="Shiyu.App.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="拾语 · 设置" Width="560" Height="640" MinWidth="520"
-        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        xmlns:local="clr-namespace:Shiyu.App"
+        Title="拾语 · 设置" Width="880" Height="640" MinWidth="640" MinHeight="480"
         WindowStartupLocation="CenterScreen"
         TextElement.FontFamily="{DynamicResource Font.Ui}"
         TextElement.FontSize="{DynamicResource Type.Body}"
-        TextElement.Foreground="{DynamicResource Brush.Text}">
-    <WindowChrome.WindowChrome>
-        <!-- token-ok: WindowChrome CornerRadius 0 switches the system rounding
-             off (this window draws its own shell); a functional zero, not a
-             visual radius choice. -->
-        <WindowChrome CaptionHeight="0" ResizeBorderThickness="6"
-                      GlassFrameThickness="0" CornerRadius="0"
-                      UseAeroCaptionButtons="False" />
-    </WindowChrome.WindowChrome>
-    <Window.Resources>
-        <Style x:Key="SectionHeading" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="{DynamicResource Type.BodyStrong}"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Foreground" Value="{DynamicResource Brush.Text}"/>
-            <Setter Property="Margin" Value="0,14,0,6"/>
-        </Style>
-        <Style x:Key="FieldLabel" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="{DynamicResource Type.Body}"/>
-            <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}"/>
-            <Setter Property="VerticalAlignment" Value="Center"/>
-        </Style>
-    </Window.Resources>
-
+        TextElement.Foreground="{DynamicResource Brush.Text}"
+        PreviewKeyDown="OnWindowKeyDown">
     <!--
-      The floating Win11 shell (ticket 33): Mica behind a translucent brand
-      tint, our own titlebar, rounded like every transient surface. Margin
-      carries the shadow and collapses when maximized.
+      票 23 / ADR-0012 §7：常规窗走系统窗框——SingleBorderWindow + 客户区
+      透明（code-behind 把 CompositionTarget.BackgroundColor 置透明，票 19
+      spike 配方），DWM 在底下画 Mica，标题栏、圆角、阴影、贴靠布局都是
+      系统的。旧配方（分层窗口 + 自绘壳）整体退役。
     -->
-    <Border x:Name="Shell" Margin="10" CornerRadius="{DynamicResource Radius.Window}"
-            Background="{DynamicResource Brush.SurfaceMaterial}"
-            BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1">
-        <Border.Effect>
-            <StaticResource ResourceKey="Shadow.Floating"/>
-        </Border.Effect>
-        <DockPanel>
-            <Border x:Name="TitleBar" DockPanel.Dock="Top" Height="40"
-                    Background="Transparent" MouseLeftButtonDown="OnTitleBarDrag">
-                <DockPanel LastChildFill="False" Margin="14,0,0,0">
-                    <TextBlock Text="拾语 · 设置" VerticalAlignment="Center"
-                               FontSize="{DynamicResource Type.Body}"
-                               Foreground="{DynamicResource Brush.TextSecondary}"/>
-                    <Button x:Name="MinimizeButton" DockPanel.Dock="Right" Width="34" Height="30"
-                            Content="&#xE921;" FontFamily="{DynamicResource Font.Icon}" FontSize="{DynamicResource Size.IconXs}"
-                            Style="{StaticResource CaptionButtonStyle}" Click="OnMinimizeClick" ToolTip="最小化"/>
-                    <Button x:Name="MaximizeButton" DockPanel.Dock="Right" Width="34" Height="30"
-                            Content="&#xE922;" FontFamily="{DynamicResource Font.Icon}" FontSize="{DynamicResource Size.IconXs}"
-                            Style="{StaticResource CaptionButtonStyle}" Click="OnMaximizeRestoreClick" ToolTip="最大化"/>
-                    <Button x:Name="CloseButton" DockPanel.Dock="Right" Width="40" Height="30"
-                            Content="&#xE8BB;" FontFamily="{DynamicResource Font.Icon}" FontSize="{DynamicResource Size.IconXs}"
-                            Style="{StaticResource CloseCaptionButtonStyle}" Click="OnCloseClick" ToolTip="关闭"/>
-                </DockPanel>
-            </Border>
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition x:Name="NavColumn" Width="240" MinWidth="48"/>
+            <ColumnDefinition x:Name="ContentColumn" Width="*"/>
+        </Grid.ColumnDefinitions>
 
-            <Grid Margin="14,4,14,14">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
+        <!-- 左导航（§6.3）：搜索框 + 五页 + 关于固定底部；宽 < 760 收成 48
+             的图标条。全部 code-behind 构建。 -->
+        <Border x:Name="NavPane" Grid.Column="0" Margin="12,8,12,12"
+                VerticalAlignment="Stretch" HorizontalAlignment="Stretch">
 
-        <TextBox x:Name="SearchBox" Grid.Row="0" Padding="8,6"
-                 VerticalContentAlignment="Center"
-                 ToolTip="搜索设置——支持你自己的说法，比如“多久删”"
-                 TextChanged="OnSearchChanged"/>
-        <TextBlock Text="搜索设置…" Grid.Row="0" IsHitTestVisible="False" Margin="10,7,0,0"
-                   Foreground="{DynamicResource Brush.TextTertiary}"
-                   FontSize="{DynamicResource Type.Body}">
-            <TextBlock.Style>
-                <Style TargetType="TextBlock">
-                    <Style.Triggers>
-                        <DataTrigger Binding="{Binding Text, ElementName=SearchBox}" Value="">
-                            <Setter Property="Visibility" Value="Visible"/>
-                        </DataTrigger>
-                    </Style.Triggers>
-                    <Setter Property="Visibility" Value="Collapsed"/>
-                </Style>
-            </TextBlock.Style>
-        </TextBlock>
+        </Border>
 
-        <!-- Every page, section, and editor below is generated from
-             SettingsSchema — this window hardcodes no setting. -->
-        <Grid Grid.Row="1">
-            <TabControl x:Name="Pages" Background="Transparent" BorderThickness="0"/>
+        <!-- 内容列：页面滚动区 + 搜索结果弹层。code-behind 构建。 -->
+        <Grid x:Name="ContentHost" Grid.Column="1" MinWidth="0">
+            <ScrollViewer x:Name="PageScroller" VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled"/>
 
-            <!-- Search results overlay the pages until one is chosen. -->
+            <!-- 搜索结果弹层（§6.3）：最多 8 行，带面包屑；Enter 跳转并脉冲。 -->
             <Border x:Name="ResultsHost" Visibility="Collapsed"
-                    VerticalAlignment="Top" Margin="0,6,8,0" MaxHeight="320"
+                    VerticalAlignment="Top" Margin="0,6,32,0" MaxHeight="360"
                     Background="{DynamicResource Brush.Surface}"
                     BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1"
                     CornerRadius="{DynamicResource Radius.Overlay}" Padding="4">
                 <StackPanel x:Name="ResultsList"/>
             </Border>
         </Grid>
-
-        <DockPanel Grid.Row="2" LastChildFill="False" Margin="0,14,0,0">
-            <TextBlock x:Name="SaveStatus" DockPanel.Dock="Left" VerticalAlignment="Center"
-                       Foreground="{DynamicResource Brush.TextSecondary}"
-                       FontSize="{DynamicResource Type.Body}" TextWrapping="Wrap" MaxWidth="330"/>
-            <Button DockPanel.Dock="Right" Content="保存" MinWidth="86" Padding="12,5"
-                    Click="OnSave"/>
-            <Button DockPanel.Dock="Right" Content="关闭" MinWidth="86" Padding="12,5"
-                    Margin="0,0,8,0" Click="OnClose"/>
-        </DockPanel>
     </Grid>
-        </DockPanel>
-    </Border>
 </Window>

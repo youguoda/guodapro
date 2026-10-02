@@ -5,7 +5,7 @@
 #   - starting and stopping the probe app instance (isolated data dir only,
 #     only ever the pid we started ourselves)
 #   - finding a window of that instance by its DIP width (windows of this
-#     app are size-fixed: bar 384 / panel 420 / quickbar 460 / settings 560 /
+#     app are size-fixed: bar 384 / panel 420 / quickbar 460 / settings 880 /
 #     library 1150; the app's WPF class names are per-instance GUIDs, so a
 #     width match plus pid match is the structural way to tell them apart)
 #   - PrintWindow(hwnd, hdc, PW_RENDERFULLCONTENT) screenshots (reads the
