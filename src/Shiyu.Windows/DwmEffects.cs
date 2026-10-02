@@ -35,7 +35,7 @@ public static class DwmEffects
         }
         catch (Exception)
         {
-            // Dwmapi refusing an attribute on this build — the fallback look.
+            // expected: 这台构建的 Dwmapi 拒了该属性——回退外观。
         }
     }
 

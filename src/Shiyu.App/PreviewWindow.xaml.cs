@@ -422,10 +422,12 @@ internal partial class PreviewWindow : Window
             {
                 return Decode(new Uri(path), boxWidth);
             }
-            catch (Exception)
+            catch (Exception failure) when (
+                failure is IOException or UnauthorizedAccessException
+                or NotSupportedException or System.IO.FileFormatException)
             {
-                // A corrupt or truncated original falls back below; the
-                // thumbnail is the promise the database always keeps.
+                // expected: 原图损坏或截断——落到下面去，缩略图是数据库
+                // 永远守住的承诺。
             }
         }
 

@@ -83,9 +83,10 @@ public static class UpdateStaging
                 Directory.Delete(path, recursive: true);
             }
         }
-        catch (Exception)
+        catch (Exception failure) when (
+            failure is IOException or UnauthorizedAccessException)
         {
-            // Leftovers are clutter, never a boot problem.
+            // expected: 删不掉的残余是杂物，从来不是启动问题。
         }
     }
 

@@ -731,9 +731,12 @@ public partial class SettingsWindow : Window
                     UseShellExecute = true,
                 });
             }
-            catch (Exception)
+            catch (Exception failure)
             {
-                // A folder that cannot be opened now is not worth a dialog.
+                // 用户点名要开文件夹（O-24）：点了解没动静要说一句，日志
+                // 留一条——弹窗确实不必。
+                Log.Event(LogEvent.OpenLinkFailed, failure, ("folder", 1));
+                ((App)Application.Current).TellUser("没能打开数据文件夹。");
             }
         };
 

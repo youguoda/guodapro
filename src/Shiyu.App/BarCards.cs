@@ -120,9 +120,11 @@ internal partial class BarWindow
             image.Freeze();
             return image;
         }
-        catch (Exception)
+        catch (Exception failure) when (
+            failure is IOException or UnauthorizedAccessException
+            or NotSupportedException or System.IO.FileFormatException)
         {
-            // A file with an image extension that is not a readable bitmap.
+            // expected: 扩展名长得像图片、内容不是可解码位图——行兜底。
             return null;
         }
     }

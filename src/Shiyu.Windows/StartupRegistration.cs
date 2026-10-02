@@ -28,6 +28,7 @@ public static class StartupRegistration
         }
         catch (Exception)
         {
+            // expected: 注册表被组策略锁住——按"未开机自启"读，别拦启动。
             return false;
         }
     }
@@ -47,6 +48,7 @@ public static class StartupRegistration
         }
         catch (Exception)
         {
+            // expected: 同 IsEnabled——读不了就当不指向本程序。
             return false;
         }
     }
@@ -78,6 +80,8 @@ public static class StartupRegistration
         }
         catch (Exception)
         {
+            // expected: 写不进注册表（策略限制）——回报"没写成"，调用方
+            // 下次启动照 Windows 现实重试，不拦任何流程。
             return false;
         }
     }

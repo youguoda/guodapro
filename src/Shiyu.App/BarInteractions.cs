@@ -408,7 +408,7 @@ internal partial class BarWindow
     /// <summary>Sent upward so the tray can say what the card cannot.</summary>
     public event Action<string>? DeadDragNotice;
 
-    private static void OpenUri(BarCard card)
+    private void OpenUri(BarCard card)
     {
         try
         {
@@ -421,9 +421,12 @@ internal partial class BarWindow
                 UseShellExecute = true,
             });
         }
-        catch (Exception)
+        catch (Exception failure)
         {
-            // A link the shell cannot resolve is not worth a broken window.
+            // 用户点名要打开的东西没动静就是坏掉的样（O-24）：托盘说一句，
+            // 日志留一条，窗口不碎。
+            Log.Event(LogEvent.OpenLinkFailed, failure);
+            DeadDragNotice?.Invoke("没能打开链接或邮箱地址。");
         }
     }
 
@@ -682,10 +685,12 @@ internal partial class BarWindow
                 UseShellExecute = true,
             });
         }
-        catch (Exception)
+        catch (Exception failure)
         {
-            // A file that has moved or gone missing since retention is not
-            // worth interrupting the user over.
+            // 同 OpenUri（O-24）：点了没动静要有说法。文件搬走/失效是清理
+            // 后的正常事，托盘一句足矣。
+            Log.Event(LogEvent.OpenLinkFailed, failure, ("file", 1));
+            DeadDragNotice?.Invoke("没能打开原文件，它可能已被移动或删除。");
         }
     }
 
@@ -703,8 +708,10 @@ internal partial class BarWindow
         {
             System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{target}\"");
         }
-        catch (Exception)
+        catch (Exception failure)
         {
+            Log.Event(LogEvent.OpenLinkFailed, failure, ("locate", 1));
+            DeadDragNotice?.Invoke("没能定位原文件的位置。");
         }
     }
 

@@ -74,7 +74,8 @@ public sealed class SpeechSynthesis : IDisposable
             }
             catch (Exception)
             {
-                // 朗读是锦上添花：没有声音设备、没有音色，都静默无效。
+                // expected: 朗读是锦上添花——没有声音设备、没有音色，
+                // 都静默无效。
             }
         });
     }
@@ -88,6 +89,7 @@ public sealed class SpeechSynthesis : IDisposable
         }
         catch (Exception)
         {
+            // expected: 停不下来的朗读随线程关停一起消失。
         }
     });
 
@@ -112,7 +114,7 @@ public sealed class SpeechSynthesis : IDisposable
         }
         catch (Exception)
         {
-            // 没有 SAPI 或没有音频输出：朗读按钮从此静默无效。
+            // expected: 没有 SAPI 或没有音频输出——朗读按钮从此静默无效。
             _synthesizer = null;
         }
 
@@ -146,7 +148,7 @@ public sealed class SpeechSynthesis : IDisposable
         }
         catch (Exception)
         {
-            // 装了 SAPI 但音色枚举失败：按“没有匹配音色”记下，用默认。
+            // expected: 装了 SAPI 但音色枚举失败——按"没有匹配音色"记下，用默认。
         }
 
         _voiceByPrefix[culturePrefix] = match;
@@ -165,6 +167,7 @@ public sealed class SpeechSynthesis : IDisposable
         }
         catch (Exception)
         {
+            // expected: 音色信息读不出——当作不匹配。
             return false;
         }
     }
@@ -177,7 +180,7 @@ public sealed class SpeechSynthesis : IDisposable
         }
         catch (Exception)
         {
-            // 音色在这台机器上消失（拔掉的语音包）：留在默认音色上。
+            // expected: 音色在这台机器上消失（拔掉的语音包）——留在默认音色上。
         }
     }
 
@@ -196,7 +199,7 @@ public sealed class SpeechSynthesis : IDisposable
         }
         catch (Exception)
         {
-            // 线程已停（应用关机竞态）：朗读没有非完成不可的理由。
+            // expected: 线程已停（应用关机竞态）——朗读没有非完成不可的理由。
         }
     }
 
@@ -220,6 +223,7 @@ public sealed class SpeechSynthesis : IDisposable
                 }
                 catch (Exception)
                 {
+                    // expected: 关机路径尽力而为——释放失败不再有后果。
                 }
 
                 _synthesizer = null;

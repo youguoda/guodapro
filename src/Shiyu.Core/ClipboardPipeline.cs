@@ -100,6 +100,7 @@ public sealed partial class ClipboardPipeline : IDisposable
             }
 
             _store.AppendFiles(files, snapshot.SourceApp, _clock.GetUtcNow());
+            Log.Event(LogEvent.ClipboardRecorded, ("kind", (int)EntryKind.Files), ("count", files.Count));
             return;
         }
 
@@ -145,6 +146,7 @@ public sealed partial class ClipboardPipeline : IDisposable
             now,
             WithinLimit(snapshot.Html),
             WithinLimit(snapshot.Rtf));
+        Log.Event(LogEvent.ClipboardRecorded, ("kind", (int)EntryKind.Text));
         Offer(snapshot.Text);
     }
 
@@ -164,11 +166,15 @@ public sealed partial class ClipboardPipeline : IDisposable
                 now,
                 rendered.Width,
                 rendered.Height);
+            Log.Event(
+                LogEvent.ClipboardRecorded,
+                ("kind", (int)EntryKind.Image), ("width", rendered.Width), ("height", rendered.Height));
         }
         catch (Exception failure)
         {
             // A failed image must not take the application down, and must not
             // vanish without a word either — the user saw themselves copy it.
+            Log.Event(LogEvent.ClipboardImageFailed, failure);
             ImageFailed?.Invoke(failure.Message);
         }
     }

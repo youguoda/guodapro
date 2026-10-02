@@ -39,9 +39,12 @@ public sealed class FreeDictionaryApi : IDictionaryApi, IDisposable
             var json = await response.Content.ReadAsStringAsync(cancellation);
             return Parse(json, word);
         }
-        catch (Exception)
+        catch (Exception failure)
         {
-            // 网络、超时、坏 JSON：静默放弃是端口的契约。
+            // 网络、超时、坏 JSON：静默放弃是端口的契约。404（无此词）不走
+            // 这里、也不留痕；留下的是基础设施类失败——正是 O-24 要的
+            // "回退链为何总是走慢路"的那条证据（2026-09-27 实测不可达）。
+            Log.Event(LogEvent.DictionaryLookupFailed, failure, ("leg", 0));
             return null;
         }
     }
@@ -71,7 +74,8 @@ public sealed class FreeDictionaryApi : IDictionaryApi, IDisposable
         }
         catch (Exception)
         {
-            // JsonException/InvalidOperationException 都只是“这张卡拼不出来”。
+            // expected: JsonException/InvalidOperationException 都只是"这张
+            // 卡拼不出来"。
             return null;
         }
     }

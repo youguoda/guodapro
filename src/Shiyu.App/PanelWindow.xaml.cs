@@ -223,7 +223,7 @@ public partial class PanelWindow : Window
         }
         catch (Exception)
         {
-            // 组装端口失败与查词失败同类：静默没有卡。
+            // expected: 组装端口失败与查词失败同类：静默没有卡。
             return null;
         }
 
@@ -238,7 +238,7 @@ public partial class PanelWindow : Window
         }
         catch (Exception)
         {
-            // 端口契约本不该抛；抛了也一样是"没有卡"。
+            // expected: 端口契约本不该抛；抛了也一样是"没有卡"。
             return null;
         }
         finally
@@ -260,6 +260,7 @@ public partial class PanelWindow : Window
         }
         catch (Exception)
         {
+            // expected: 换代竞态或取卡失败——没有卡上屏，翻译不受影响。
             card = null;
         }
 
@@ -282,7 +283,8 @@ public partial class PanelWindow : Window
         }
         catch (Exception)
         {
-            // 应用关停的竞态里 Invoke 会抛：一张迟到的卡不值得带崩进程。
+            // expected: 应用关停的竞态里 Invoke 会抛——一张迟到的卡
+            // 不值得带崩进程。
         }
     }
 

@@ -94,6 +94,7 @@ public sealed class TranslationSession(ITranslationBackend backend)
         {
             // Anything reaching the panel as an unhandled exception would take
             // the whole application down with it. The user gets a message.
+            Log.Event(LogEvent.TranslationFailed, unexpected);
             State = TranslationState.Failed;
             Error = unexpected.Message;
         }

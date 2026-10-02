@@ -202,7 +202,7 @@ public sealed class RelayBackend(
         }
         catch (Exception)
         {
-            // 状态码本身仍值得报告。
+            // expected: 读错误体失败——状态码本身仍值得报告。
         }
 
         return detail ?? status switch

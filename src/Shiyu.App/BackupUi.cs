@@ -102,10 +102,11 @@ public sealed class BackupUi(
                 {
                     refusal = restoreSettingsJson(settings);
                 }
-                catch (Exception)
+                catch (Exception failure)
                 {
                     // The import itself has landed; only the settings
                     // stumbled, and the summary must not claim otherwise.
+                    Log.Event(LogEvent.BackupOperationFailed, failure, ("stage", 2));
                     refusal = "条目已导入，但设置恢复没有完成。";
                 }
 
@@ -348,11 +349,12 @@ public sealed class BackupUi(
                 window.Close();
                 MessageBox.Show(owner, failure.Message, "备份", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
-            catch (Exception)
+            catch (Exception failure)
             {
                 // The import itself is transactional (O-03): whatever it
                 // wrote, it wrote all of it or none. This path is the none,
                 // so "nothing was touched" is the truth it says it is.
+                Log.Event(LogEvent.BackupOperationFailed, failure);
                 window.Close();
                 MessageBox.Show(owner, "备份操作失败了，现有数据没有被动过。", "备份", MessageBoxButton.OK, MessageBoxImage.Warning);
             }

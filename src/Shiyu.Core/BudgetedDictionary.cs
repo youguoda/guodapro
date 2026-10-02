@@ -23,7 +23,8 @@ public sealed class BudgetedDictionary(IDictionaryApi inner, TimeSpan? budget = 
         }
         catch (Exception)
         {
-            // 含预算到期的 OperationCanceledException：静默放弃是契约。
+            // expected: 含预算到期的 OperationCanceledException——静默放弃
+            // 是预算这条腿的契约。
             return null;
         }
     }

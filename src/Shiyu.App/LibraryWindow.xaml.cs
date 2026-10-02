@@ -306,8 +306,11 @@ public partial class LibraryWindow : Window
 
                 DetailImage.Visibility = Visibility.Visible;
             }
-            catch (Exception)
+            catch (Exception failure) when (
+                failure is IOException or UnauthorizedAccessException
+                or NotSupportedException or System.IO.FileFormatException)
             {
+                // expected: 原图损坏或已被清理——收起图片区，条目本身照常。
                 DetailImage.Visibility = Visibility.Collapsed;
             }
         }

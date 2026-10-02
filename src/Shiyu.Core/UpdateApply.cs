@@ -81,8 +81,12 @@ public static class UpdateApply
                 File.Copy(entry, target, overwrite: true);
             }
         }
-        catch (Exception)
+        catch (Exception failure)
         {
+            // 换装失败走回滚，调用方（finalizer）自有 trace；但 O-24 要求
+            // 任何路径都留一行——本进程通常还没挂 sink，这里是自记录的
+            // 保险，挂了 sink 的宿主照收。
+            Log.Event(LogEvent.UpdateApplyFailed, failure, ("stage", 2));
             Restore(backupDirectory, installDirectory);
             return ApplyOutcome.RolledBack;
         }
@@ -107,11 +111,11 @@ public static class UpdateApply
                 File.Copy(entry, target, overwrite: true);
             }
         }
-        catch (Exception)
+        catch (Exception failure) when (
+            failure is IOException or UnauthorizedAccessException)
         {
-            // Restore itself failing means antivirus quarantined mid-swap or
-            // worse; the backup directory is left in place on purpose so
-            // whatever is missing can be recovered by hand.
+            // expected: 回滚自己失败意味着杀软在换装途中隔离了文件或更糟；
+            // 备份目录被特意留下，缺什么可手工找回。失败路径不得再抛。
         }
     }
 }
