@@ -48,7 +48,7 @@ public class SettingsStoreTests : IDisposable
     }
 
     [Fact]
-    public void Concurrent_updates_on_the_same_field_are_all_counted()
+    public async Task Concurrent_updates_on_the_same_field_are_all_counted()
     {
         var store = new SettingsStore(new AppSettings { ImageRetentionDays = 0 });
 
@@ -62,7 +62,7 @@ public class SettingsStoreTests : IDisposable
             }
         })).ToArray();
 
-        Task.WaitAll(done);
+        await Task.WhenAll(done);
 
         Assert.Equal(500, store.Current.ImageRetentionDays);
         Assert.Equal(500, AppSettings.Load(SettingsPath).ImageRetentionDays);

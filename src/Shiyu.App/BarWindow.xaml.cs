@@ -1,4 +1,5 @@
 ﻿using System.Collections.ObjectModel;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
@@ -55,11 +56,12 @@ internal partial class BarWindow : Window
     public event Action? GeometryChanged;
 
     /// <summary>
-    /// Raised when the bar changes a setting itself (the header's pin, 票 39);
-    /// the owner writes it down. The settings page flows the other way, through
-    /// <see cref="ApplySettings"/> — one value, two editors, no loop.
+    /// 窄条头部的图钉想要的置顶状态（票 39 / O-20）：只上报一个布尔值，
+    /// 由拥有者经 SettingsStore 落一个字段。窗口自己不再写设置——它手里
+    /// 那份快照曾经能把别人的改动整份抹掉（S1/S2）。置顶的实际生效走
+    /// <see cref="ApplySettings"/> 回流。
     /// </summary>
-    public event Action<AppSettings>? SettingsChanged;
+    public event Action<bool>? TopmostWanted;
 
     public BarWindow(
         EntryStore store,
@@ -120,13 +122,25 @@ internal partial class BarWindow : Window
     /// <summary>New settings apply on the spot: density clamps change, hotkey label follows.</summary>
     public void ApplySettings(AppSettings settings)
     {
+        // Geometry saves travel through the settings store now too (O-20),
+        // and they arrive here like any other change; a mere move must not
+        // rebuild the cards — that would also drop the selection.
+        var affectsLayout =
+            settings.BarTextLines != _settings.BarTextLines
+            || settings.BarImageHeight != _settings.BarImageHeight
+            || settings.BarFileCount != _settings.BarFileCount
+            || !settings.BarActions.SequenceEqual(_settings.BarActions);
+
         _settings = settings;
 
         // A changed dwell or a disabled hover takes effect on the next event;
         // a preview already up keeps its own rules until it closes.
         _previewPolicy = new PreviewPolicy(settings.PreviewHoverDelayMs, () => Environment.TickCount64);
         ApplyTopmost(settings.BarAlwaysOnTop);
-        Rebuild();
+        if (affectsLayout)
+        {
+            Rebuild();
+        }
     }
 
     // --- the pin (票 39) ---------------------------------------------------------
@@ -135,14 +149,13 @@ internal partial class BarWindow : Window
     /// The header pin. Topmost is the resident bar's working posture; turning
     /// it off is a deliberate act, written to the settings the moment it
     /// happens so the posture survives the restart. It is a mode, not a layer:
-    /// it never joins the Esc stack.
+    /// it never joins the Esc stack. Only the wish is reported — the change
+    /// lands through the store and returns via ApplySettings, so a failed
+    /// save never leaves the pin asserting something untrue.
     /// </summary>
     private void OnTopmostToggle(object sender, RoutedEventArgs e)
     {
-        var wanted = !Topmost;
-        _settings = _settings with { BarAlwaysOnTop = wanted };
-        ApplyTopmost(wanted);
-        SettingsChanged?.Invoke(_settings);
+        TopmostWanted?.Invoke(!Topmost);
     }
 
     private void ApplyTopmost(bool topmost)

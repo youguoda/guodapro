@@ -19,15 +19,22 @@ namespace Shiyu.App;
 /// </summary>
 public partial class SettingsWindow : Window
 {
-    private readonly AppSettings _current;
-    private readonly Action<AppSettings> _apply;
+    private readonly SettingsStore _store;
     private readonly BackupUi? _backup;
+
+    /// <summary>开窗（或上次跟随）时的设置基线：保存时只写与它不同的项（O-20）。</summary>
+    private AppSettings _baseline;
 
     private readonly Dictionary<string, ItemState> _edited = [];
     private readonly Dictionary<string, FrameworkElement> _rows = [];
     private readonly Dictionary<string, TextBox> _numberBoxes = [];
     private readonly Dictionary<string, ScrollViewer> _pageScrollers = [];
     private readonly Dictionary<string, int> _pageTabIndex = [];
+
+    // 外部变化的"跟随"要把新值推进控件，建行时把每种形状的控件记下来。
+    private readonly Dictionary<string, TextBox> _textBoxes = [];
+    private readonly Dictionary<string, CheckBox> _toggles = [];
+    private readonly Dictionary<string, ToggleButton[]> _segmented = [];
 
     private TextBox? _directoryBox;
     private TextBlock? _directoryWarning;
@@ -36,13 +43,19 @@ public partial class SettingsWindow : Window
     /// <summary>The page the user last had open, kept per session.</summary>
     private static int _lastTabIndex;
 
-    public SettingsWindow(AppSettings current, Action<AppSettings> apply, BackupUi? backup = null)
+    public SettingsWindow(SettingsStore store, BackupUi? backup = null)
     {
         InitializeComponent();
 
-        _current = current;
-        _apply = apply;
+        _store = store;
+        _baseline = store.Current;
         _backup = backup;
+
+        // 别处的写入（图钉、导入、引导完成）即时反映到本窗：没动过的
+        // 编辑器跟随最新值，动过的保留用户手里的值——开窗快照从此不再
+        // 是回滚的根源（S1/S3/S4）。
+        store.Changed += OnSettingsChanged;
+        Closed += (_, _) => store.Changed -= OnSettingsChanged;
 
         Backdrop.Attach(this, () => BackdropKind.Mica);
 
@@ -321,10 +334,10 @@ public partial class SettingsWindow : Window
             SettingsControl.Number => NumberFor(item, state),
             SettingsControl.Password => SecretFor(item, state),
             SettingsControl.Directory => DirectoryFor(item, state),
-            SettingsControl.Multiline => TextFor(item, state, multiline: true),
-            SettingsControl.Actions => TextFor(item, state, multiline: false),
+            SettingsControl.Multiline => TextFor(item, state),
+            SettingsControl.Actions => TextFor(item, state),
             SettingsControl.Hotkey => HotkeyCapture(item, state),
-            SettingsControl.Text => TextFor(item, state, multiline: false),
+            SettingsControl.Text => TextFor(item, state),
             SettingsControl.ReadOnly => ReadOnlyFor(item),
             SettingsControl.Custom => CustomFor(item),
             _ => new TextBlock(),
@@ -342,7 +355,7 @@ public partial class SettingsWindow : Window
     {
         var box = new TextBox
         {
-            Text = SettingsBindings.ReadText(item.Id, _current) ?? string.Empty,
+            Text = SettingsBindings.ReadText(item.Id, _baseline) ?? string.Empty,
             Padding = new Thickness(4),
             VerticalContentAlignment = VerticalAlignment.Center,
             Cursor = Cursors.Hand,
@@ -350,6 +363,7 @@ public partial class SettingsWindow : Window
         };
         box.SetResourceReference(BackgroundProperty, "Brush.SurfaceInput");
         state.Text = box.Text;
+        _textBoxes[item.Id] = box;
 
         box.GotFocus += (_, _) => box.SetResourceReference(BorderBrushProperty, "Brush.Accent");
         box.LostFocus += (_, _) => box.SetResourceReference(BorderBrushProperty, "Brush.Border");
@@ -418,9 +432,14 @@ public partial class SettingsWindow : Window
         // onboarding render the same tree with the same hands. The choice of
         // translation road also decides whether the own-key rows below it are
         // worth anyone's attention.
-        return ItemEditors.Segmented(
-            item, _current, state,
+        var editor = ItemEditors.Segmented(
+            item, _baseline, state,
             changed: _ => ApplyBackendKindRows());
+
+        _segmented[item.Id] = editor is StackPanel panel
+            ? panel.Children.OfType<ToggleButton>().ToArray()
+            : [];
+        return editor;
     }
 
     /// <summary>
@@ -443,10 +462,22 @@ public partial class SettingsWindow : Window
     private FrameworkElement ToggleFor(SettingsItem item, ItemState state)
     {
         // Built by the shared factory: settings and onboarding render the
-        // same tree with the same hands.
-        return ItemEditors.Toggle(
-            item, _current, state,
+        // same tree with the same hands. The checkbox may sit under a hint,
+        // so it is picked back out of either shape for the follow-along.
+        var editor = ItemEditors.Toggle(
+            item, _baseline, state,
             changed: () => ApplyParentVisibility(item.Id, state.Toggle));
+
+        if (editor is CheckBox box)
+        {
+            _toggles[item.Id] = box;
+        }
+        else if (editor is StackPanel panel)
+        {
+            _toggles[item.Id] = panel.Children.OfType<CheckBox>().First();
+        }
+
+        return editor;
     }
 
     private void ApplyParentVisibility(string parentId, bool on)
@@ -464,12 +495,13 @@ public partial class SettingsWindow : Window
     {
         var box = new TextBox
         {
-            Text = SettingsBindings.ReadText(item.Id, _current) ?? string.Empty,
+            Text = SettingsBindings.ReadText(item.Id, _baseline) ?? string.Empty,
             Width = 70,
             VerticalContentAlignment = VerticalAlignment.Center,
         };
         box.SetResourceReference(BackgroundProperty, "Brush.SurfaceInput");
         state.Text = box.Text;
+        _textBoxes[item.Id] = box;
 
         void MarkDirty(bool dirty)
         {
@@ -515,12 +547,21 @@ public partial class SettingsWindow : Window
         return box;
     }
 
-    private FrameworkElement TextFor(SettingsItem item, ItemState state, bool multiline)
-        => ItemEditors.Text(item, _current, state);
+    private FrameworkElement TextFor(SettingsItem item, ItemState state)
+    {
+        var editor = ItemEditors.Text(item, _baseline, state);
+
+        // The shared factory wraps the box under a hint; either way the box
+        // itself is what a follow-along needs to push into.
+        _textBoxes[item.Id] = editor is TextBox box
+            ? box
+            : ((StackPanel)editor).Children.OfType<TextBox>().First();
+        return editor;
+    }
 
     private FrameworkElement SecretFor(SettingsItem item, ItemState state)
     {
-        var (editor, box) = ItemEditors.Password(item, _current, state);
+        var (editor, box) = ItemEditors.Password(item, _baseline, state);
         _secretBox = box;
         return editor;
     }
@@ -529,12 +570,13 @@ public partial class SettingsWindow : Window
     {
         var box = new TextBox
         {
-            Text = SettingsBindings.ReadText(item.Id, _current) ?? string.Empty,
+            Text = SettingsBindings.ReadText(item.Id, _baseline) ?? string.Empty,
             Padding = new Thickness(4),
             VerticalContentAlignment = VerticalAlignment.Center,
         };
         box.SetResourceReference(BackgroundProperty, "Brush.SurfaceInput");
         state.Text = box.Text;
+        _textBoxes[item.Id] = box;
         box.TextChanged += (_, _) =>
         {
             state.Text = box.Text;
@@ -586,7 +628,7 @@ public partial class SettingsWindow : Window
     private FrameworkElement ReadOnlyFor(SettingsItem item)
         => new TextBlock
         {
-            Text = SettingsBindings.ReadText(item.Id, _current) ?? string.Empty,
+            Text = SettingsBindings.ReadText(item.Id, _baseline) ?? string.Empty,
             VerticalAlignment = VerticalAlignment.Center,
         };
 
@@ -608,7 +650,9 @@ public partial class SettingsWindow : Window
         };
         run.Click += (_, _) =>
         {
-            var wizard = new OnboardingWindow(_current, updated => { _apply(updated); })
+            // 基线取点击那一刻的最新值，落笔走同一个 store（O-20）：引导
+            // 与设置窗互相只写自己改过的项，谁也不再整份覆盖谁（S4）。
+            var wizard = new OnboardingWindow(_store.Current, _store)
             {
                 Owner = this,
             };
@@ -864,28 +908,30 @@ public partial class SettingsWindow : Window
             return;
         }
 
-        var updated = _current;
-        foreach (var item in AllItems().Where(item => item.Control
-                     is SettingsControl.Segmented
-                     or SettingsControl.Toggle
-                     or SettingsControl.Number
-                     or SettingsControl.Text
-                     or SettingsControl.Password
-                     or SettingsControl.Hotkey
-                     or SettingsControl.Actions
-                     or SettingsControl.Multiline
-                     or SettingsControl.Directory))
+        // Only what the user changed is written, and onto the latest settings
+        // (O-20): fields someone else changed while this window was open —
+        // the bar's pin, an import, the wizard — survive the save (S1/S3).
+        var edited = SettingsBindings.ChangedOnly(_baseline, _edited);
+        var actionsChanged = !actions.SequenceEqual(_baseline.BarActions);
+
+        try
         {
-            var state = _edited[item.Id];
-            updated = SettingsBindings.Apply(item.Id, updated, state.Text, state.Choice);
+            _store.Update(
+                latest => actionsChanged
+                    ? edited(latest) with { BarActions = actions }
+                    : edited(latest),
+                AppPaths.SettingsFile);
+        }
+        catch (SettingsSaveException failure)
+        {
+            // The store refused the change: memory and disk still hold the
+            // pre-save settings, so "try again" is an honest instruction.
+            SaveStatus.Text = failure.Message + " 可以重试保存。";
+            return;
         }
 
-        updated = updated with { BarActions = actions };
-
         var startupOk = StartupRegistration.Set(
-            updated.StartWithWindows, Environment.ProcessPath ?? string.Empty);
-
-        _apply(updated);
+            _store.Current.StartWithWindows, Environment.ProcessPath ?? string.Empty);
 
         SaveStatus.Text = startupOk
             ? "已保存。"
@@ -897,7 +943,97 @@ public partial class SettingsWindow : Window
             // Follow whatever Windows ended up doing rather than leaving the
             // box asserting something untrue.
             startup.Toggle = StartupRegistration.IsEnabled();
+            startup.Text = startup.Toggle ? "1" : "0";
+            if (_toggles.TryGetValue("store.start-with-windows", out var box))
+            {
+                box.IsChecked = startup.Toggle;
+            }
+
             ApplyParentVisibility("store.start-with-windows", true);
+        }
+    }
+
+    // --- following outside changes (O-20) ---------------------------------------
+
+    /// <summary>
+    /// 别处改了设置（图钉、导入、引导、窄条几何）：本窗跟上去。用户已经
+    /// 动过的编辑器保持他们手里的值——保存时按字段写入；没动过的跟随最新。
+    /// </summary>
+    private void OnSettingsChanged(AppSettings updated)
+    {
+        foreach (var item in AllItems())
+        {
+            if (_edited.TryGetValue(item.Id, out var state)
+                && SettingsBindings.IsUnchanged(item.Id, _baseline, state))
+            {
+                PushValue(item, state, updated);
+            }
+        }
+
+        _baseline = updated;
+    }
+
+    /// <summary>把一项的最新值推进编辑器状态与控件。凭据除外：它永不回显。</summary>
+    private void PushValue(SettingsItem item, ItemState state, AppSettings updated)
+    {
+        switch (item.Control)
+        {
+            case SettingsControl.Toggle:
+            {
+                var on = item.Id == "store.start-with-windows"
+
+                    // This one's truth lives in Windows, not the file.
+                    ? StartupRegistration.IsEnabled()
+                    : SettingsBindings.ReadToggle(item.Id, updated) == true;
+                state.Toggle = on;
+                state.Text = on ? "1" : "0";
+                if (_toggles.TryGetValue(item.Id, out var box) && box.IsChecked != on)
+                {
+                    box.IsChecked = on;
+                }
+
+                break;
+            }
+
+            case SettingsControl.Segmented:
+            {
+                state.Choice = SettingsBindings.ReadChoice(item.Id, updated);
+                if (_segmented.TryGetValue(item.Id, out var buttons))
+                {
+                    foreach (var (button, index) in buttons.Select((button, index) => (button, index)))
+                    {
+                        button.IsChecked = index == state.Choice;
+                    }
+                }
+
+                ApplyBackendKindRows();
+                break;
+            }
+
+            case SettingsControl.Text or SettingsControl.Multiline or SettingsControl.Actions
+                or SettingsControl.Number or SettingsControl.Hotkey or SettingsControl.Directory:
+            {
+                var text = SettingsBindings.ReadText(item.Id, updated) ?? string.Empty;
+                state.Text = text;
+                if (_textBoxes.TryGetValue(item.Id, out var box)
+                    && !string.Equals(box.Text, text, StringComparison.Ordinal))
+                {
+                    box.Text = text;
+
+                    if (item.Control == SettingsControl.Directory)
+                    {
+                        UpdateSyncWarning();
+                    }
+
+                    if (item.Control == SettingsControl.Number)
+                    {
+                        // 程序化写入会点亮"未提交"描边；这里不是用户输入。
+                        box.SetResourceReference(BorderBrushProperty, "Brush.Border");
+                    }
+                }
+
+                break;
+            }
         }
     }
 

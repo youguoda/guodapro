@@ -75,6 +75,16 @@ public partial class PanelWindow : Window
         Backdrop.Attach(this, () => BackdropKind.Acrylic);
     }
 
+    /// <summary>
+    /// 译文语言跟随设置即时换新（O-20）：面板是复用实例，改设置不该等
+    /// 重启——下一次翻译就用新语言，正在流式中的那一次按它开始时的语言走完。
+    /// </summary>
+    public void ApplySettings(AppSettings settings)
+    {
+        _target = settings.TargetLanguage;
+        _source = settings.SourceLanguage;
+    }
+
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
