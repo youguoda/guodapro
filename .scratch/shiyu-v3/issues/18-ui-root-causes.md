@@ -13,7 +13,8 @@
 **验收：**
 - [x] 形式：全仓 grep 不到隐式 TextBlock 样式里的 Foreground/FontFamily；设置窗根有字号（`TextElement.FontSize=Size.Secondary`，与标签同档，消灭"值比标签小"的倒置）；文字无 Opacity 字面量（`TextTokenHygieneTests` 白名单除外，现存三条均为装饰：连接曲线描边、深链水洗层、预览阴影）
 - [x] 构建实跑：Core 测试全绿 688/688（含新增对比度对与两条静态检查）；App Debug 构建 0 错误（仅既有 CS8629 警告）
-- [ ] 像素级：管理窗、设置窗标题栏三个按钮显示为正确字形；分段选中文字对比度 ≥ 4.5:1；删除钮 hover 时呈 Danger 色（取样 #C0392B ±4）——**待票 15 探针合入后执行**
+- [x] 像素级（部分，2026-10-02 探针实例 PrintWindow + ASCII 墨迹图）：管理窗与设置窗标题栏三钮渲染为三个**互不相同**的正确字形（X、方框、横线）——修复前是三个相同的豆腐空框；正文/按钮文字全部正常着墨（TextElement 根前景未丢内容）
+- [ ] 像素级（余）：分段选中文字对比度 ≥ 4.5:1（需选中态）；删除钮 hover 时呈 Danger 色（需 hover 态）——待票 15 探针脚本覆盖状态态后执行
 
 **完成记录（2026-10-01，v3/ui-root）：**
 - R1：`Themes/Controls.xaml` 的隐式 `TextBlock` 样式整体删除（留注释说明理由）；七个 XAML 窗（Bar/Settings/Library/Panel/Preview/QuickBar/Badge）根元素改设 `TextElement.FontFamily / FontSize / Foreground`；代码建窗（`OnboardingWindow`、`GroupManagerWindow`、`UpdateWindow`、`BackupUi` 三处对话框）补根级 `TextElement` 前景（UpdateWindow 连字体一并补齐）。
