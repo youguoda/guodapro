@@ -1,123 +1,241 @@
 <Window x:Class="Shiyu.App.PanelWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:Shiyu.App"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         ShowActivated="False" ShowInTaskbar="False" Topmost="True"
         ResizeMode="NoResize" SizeToContent="Height" Width="420" Opacity="0"
         TextElement.FontFamily="{DynamicResource Font.Ui}"
         TextElement.FontSize="{DynamicResource Type.Body}"
-        TextElement.Foreground="{DynamicResource Brush.Text}">
+        TextElement.Foreground="{DynamicResource Brush.Text}"
+        SizeChanged="OnPanelSizeChanged">
     <!-- 外壳（§4.7，票 20）：只画材质底；圆角 8、轮廓与投影归 DWM
          （Overlay 8 与 DWM 同心，ADR-0012 §5）。DWM 拒收时由
          Backdrop.AttachShell 落自绘描边+阴影与 12 DIP 透明边距。 -->
     <Border x:Name="Shell" CornerRadius="{DynamicResource Radius.Overlay}" Background="{DynamicResource Brush.SurfaceMaterial}"
             BorderThickness="0">
 
-        <StackPanel Margin="14,12">
-            <DockPanel LastChildFill="False" Margin="0,0,0,8">
-                <TextBlock x:Name="DirectionLabel" DockPanel.Dock="Left"
-                           Foreground="{DynamicResource Brush.TextSecondary}"
-                           FontSize="{DynamicResource Type.Caption}" VerticalAlignment="Center" />
-                <Button x:Name="CloseButton" DockPanel.Dock="Right" Content="✕"
-                        FontSize="{DynamicResource Type.Caption}" Padding="6,2" BorderThickness="0"
-                        Background="Transparent" Cursor="Hand" Click="OnClose" ToolTip="关闭（Esc）" />
-                <Button x:Name="SwapButton" DockPanel.Dock="Right" Content="⇄ 换方向"
-                        FontSize="{DynamicResource Type.Body}" Padding="8,2" Margin="0,0,6,0"
-                        BorderThickness="0" Background="Transparent" Cursor="Hand"
-                        Click="OnSwapDirection" />
-                <Button x:Name="SentenceToggle" DockPanel.Dock="Right" Content="逐句对照"
-                        FontSize="{DynamicResource Type.Body}" Padding="8,2" Margin="0,0,6,0"
-                        BorderThickness="0" Background="Transparent" Cursor="Hand"
-                        Click="OnToggleSentenceAlignment" ToolTip="按句对照显示原文与译文（默认整段）" />
-            </DockPanel>
+        <!-- 票 22（UI 报告 §6.2）：头部与 footer 固定，中间走同一个滚动区——
+             译文三态、逐句对照与词典卡都在它里面，词典卡晚到时不再把
+             面板顶出屏幕底部，只是滚出来。 -->
+        <StackPanel Margin="16,12">
 
-            <!-- 原文是译文的"出处"而非第一视觉位：比译文低一档（14/24，次级色），
-                 层级方向与 UI 报告 §6.2"原文小于译文"一致。 -->
+            <!-- 头部：源语言名 · 换方向（挨着它改变的东西）· 目标语言名 ·
+                 模式分段（句子态才有；选中 = accent 字形 + 3×12 指示条，
+                 KindTab，不靠字重）· 关闭 32×32。语言名统一中文（票 22）。 -->
+            <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="SourceLabel" VerticalAlignment="Center"
+                           Foreground="{DynamicResource Brush.TextSecondary}"/>
+                <Button x:Name="SwapButton" Grid.Column="1" Style="{DynamicResource IconButton}"
+                        Cursor="Hand" Click="OnSwapDirection"
+                        ToolTip="交换源语言与目标语言">
+                    <TextBlock Text="&#xE8AB;" FontFamily="{DynamicResource Font.Icon}"
+                               FontSize="{DynamicResource Size.IconS}"/>
+                </Button>
+                <TextBlock x:Name="TargetLabel" Grid.Column="2" VerticalAlignment="Center"
+                           Foreground="{DynamicResource Brush.TextSecondary}"/>
+                <StackPanel x:Name="ModeSegment" Grid.Column="4" Orientation="Horizontal"
+                            VerticalAlignment="Center" Margin="0,0,8,0">
+                    <ToggleButton x:Name="WholeSegment" Style="{DynamicResource KindTab}"
+                                  Height="{DynamicResource Control.Height}" Content="整段"
+                                  Cursor="Hand" Checked="OnModeWholeSegment"
+                                  ToolTip="译文整段流式显示（默认）"/>
+                    <ToggleButton x:Name="SentenceSegment" Style="{DynamicResource KindTab}"
+                                  Height="{DynamicResource Control.Height}" Content="逐句"
+                                  Cursor="Hand" Checked="OnModeSentenceSegment"
+                                  ToolTip="原文与译文按句对照"/>
+                </StackPanel>
+                <Button x:Name="CloseButton" Grid.Column="5" Style="{DynamicResource IconButton}"
+                        Cursor="Hand" Click="OnClose" ToolTip="关闭（Esc）">
+                    <TextBlock Text="&#xE711;" FontFamily="{DynamicResource Font.Icon}"
+                               FontSize="{DynamicResource Size.IconS}"/>
+                </Button>
+            </Grid>
+
+            <!-- 原文是译文的"出处"而非第一视觉位：14/24 次级色，最多两行，
+                 尾部省略、tooltip 全文（§6.2 句子态）。逐句与单词模式下整块
+                 隐藏——逐句的原文在句对里，单词的"原文"就是词头。 -->
             <TextBlock x:Name="OriginalText" FontSize="{DynamicResource Type.Body}"
                        LineHeight="{DynamicResource Line.BodyMulti}"
                        LineStackingStrategy="BlockLineHeight"
                        Foreground="{DynamicResource Brush.TextSecondary}"
-                       TextWrapping="Wrap" MaxHeight="72" />
+                       TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
+                       MaxHeight="48" Margin="0,4,0,0"/>
 
-            <Separator Margin="0,8" />
+            <!-- 单词态的词头行（§6.2）：词头 20 SemiBold（拉丁）+ 音标正体 +
+                 发音钮（读原词，ADR-0012 拍板）。中文释义就是下面的译文槽。 -->
+            <StackPanel x:Name="WordHeader" Visibility="Collapsed" Orientation="Horizontal"
+                        Margin="0,4,0,0">
+                <TextBlock x:Name="CardWord" FontSize="{DynamicResource Type.Headword}"
+                           FontWeight="{DynamicResource Weight.Emphasis}"
+                           VerticalAlignment="Center"/>
+                <TextBlock x:Name="CardPhonetic" Margin="12,0,0,0" VerticalAlignment="Center"
+                           FontSize="{DynamicResource Type.Body}"
+                           Foreground="{DynamicResource Brush.TextSecondary}"/>
+                <Button x:Name="WordSpeakButton" Style="{DynamicResource IconButton}"
+                        Margin="4,0,0,0" VerticalAlignment="Center" Cursor="Hand"
+                        Click="OnSpeakWord" ToolTip="朗读这个词">
+                    <TextBlock Text="&#xE767;" FontFamily="{DynamicResource Font.Icon}"
+                               FontSize="{DynamicResource Size.IconS}"/>
+                </Button>
+            </StackPanel>
 
-            <ScrollViewer x:Name="TranslationScroll" MaxHeight="260"
+            <ScrollViewer x:Name="ContentScroll" MaxHeight="420"
                           VerticalScrollBarVisibility="Auto"
-                          HorizontalScrollBarVisibility="Disabled">
+                          HorizontalScrollBarVisibility="Disabled" Margin="0,8,0,0">
                 <StackPanel>
+                    <!-- ============ 译文槽：三态同位（§6.2 核心行）============
+                         加载 = 两条静态骨架（150ms 内首字到达就不出现，U-23）；
+                         失败 = InfoBar 就地替代译文位，部分译文保留在上方；
+                         空 = 折叠，不白占一行。 -->
+                    <StackPanel x:Name="LoadingSkeleton" Visibility="Collapsed">
+                        <!-- 骨架条：高 12、行距 31（首行顶到 12，次行顶到 31），
+                             StatePressed 色，静止。宽度是 260/170 的示意。 -->
+                        <Border Height="12" Width="260" HorizontalAlignment="Left"
+                                CornerRadius="{DynamicResource Radius.Control}"
+                                Background="{DynamicResource Brush.StatePressed}"/>
+                        <Border Height="12" Width="170" Margin="0,19,0,0" HorizontalAlignment="Left"
+                                CornerRadius="{DynamicResource Radius.Control}"
+                                Background="{DynamicResource Brush.StatePressed}"/>
+                    </StackPanel>
+
+                    <!-- 译文 18/31，第一视觉位；流式中尾部跟一个静态 accent
+                         光标块（2×18，代码里以 InlineUIContainer 挂上）。 -->
                     <TextBlock x:Name="TranslatedText" FontSize="{DynamicResource Type.Content}"
-                               TextWrapping="Wrap" LineHeight="{DynamicResource Line.Content}"
-                               LineStackingStrategy="BlockLineHeight" />
-                    <ItemsControl x:Name="SentencePairs" Visibility="Collapsed" Margin="0,2,0,0">
+                               LineHeight="{DynamicResource Line.Content}"
+                               LineStackingStrategy="BlockLineHeight"
+                               TextWrapping="Wrap"/>
+
+                    <!-- 逐句对照：原文 14/24 次级色 + 译文 18/31，句对间距 12。 -->
+                    <ItemsControl x:Name="SentencePairs" Visibility="Collapsed">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <StackPanel Margin="0,6,0,0">
+                                <StackPanel Margin="0,12,0,0">
                                     <TextBlock Text="{Binding Original}" TextWrapping="Wrap"
                                                FontSize="{DynamicResource Type.Body}"
                                                LineHeight="{DynamicResource Line.BodyMulti}"
                                                LineStackingStrategy="BlockLineHeight"
-                                               Foreground="{DynamicResource Brush.TextSecondary}" />
+                                               Foreground="{DynamicResource Brush.TextSecondary}"/>
                                     <TextBlock Text="{Binding Translated}" TextWrapping="Wrap"
+                                               Margin="0,2,0,0"
                                                FontSize="{DynamicResource Type.Content}"
                                                LineHeight="{DynamicResource Line.Content}"
-                                               LineStackingStrategy="BlockLineHeight" />
+                                               LineStackingStrategy="BlockLineHeight"/>
                                 </StackPanel>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+
+                    <!-- 失败态（U-09）：标题与说明按 §6.2 映射表，人话 + 下一步；
+                         原始异常只进折叠的「详细信息」，绝不进标题与说明。 -->
+                    <local:InfoBar x:Name="ErrorBar" Visibility="Collapsed" Margin="0,10,0,0"
+                                   Severity="Danger" IsClosable="False"/>
+                    <StackPanel x:Name="ErrorActions" Visibility="Collapsed" Orientation="Horizontal"
+                                Margin="0,8,0,0">
+                        <Button x:Name="RetryButton" Click="OnRetry" Cursor="Hand"
+                                ToolTip="用同样的原文再试一次">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE72C;" FontFamily="{DynamicResource Font.Icon}"
+                                           FontSize="{DynamicResource Size.IconS}"
+                                           Foreground="{DynamicResource Brush.TextSecondary}"/>
+                                <TextBlock Text="重试" Margin="6,0,0,0"/>
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="ErrorSettingsButton" Style="{DynamicResource FlyoutButton}"
+                                Margin="12,0,0,0" Click="OnOpenErrorSettings" Cursor="Hand"
+                                ToolTip="打开设置的服务页">
+                            <TextBlock Text="服务设置" Foreground="{DynamicResource Brush.Accent}"/>
+                        </Button>
+                        <Button x:Name="CopyErrorButton" Style="{DynamicResource FlyoutButton}"
+                                Margin="12,0,0,0" Click="OnCopyErrorDetail" Cursor="Hand"
+                                ToolTip="复制原始错误，便于报障">
+                            <TextBlock Text="复制错误详情"/>
+                        </Button>
+                        <Button x:Name="ErrorDetailToggle" Style="{DynamicResource FlyoutButton}"
+                                Margin="12,0,0,0" Click="OnToggleErrorDetail" Cursor="Hand"
+                                ToolTip="展开原始错误信息">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock x:Name="ErrorDetailToggleLabel" Text="详细信息"/>
+                                <TextBlock x:Name="ErrorDetailChevron" Text="&#xE70D;" Margin="6,0,0,0"
+                                           FontFamily="{DynamicResource Font.Icon}"
+                                           FontSize="{DynamicResource Size.IconS}"
+                                           Foreground="{DynamicResource Brush.TextSecondary}"/>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                    <!-- 只在展开时才赋值文本：折叠的原始异常不进 UIA 树
+                         （探针 defect:panel-raw-english-error 的前提）。 -->
+                    <TextBlock x:Name="ErrorDetailText" Visibility="Collapsed" Margin="44,6,0,0"
+                               TextWrapping="Wrap" FontSize="{DynamicResource Type.Caption}"
+                               LineHeight="{DynamicResource Line.CaptionMulti}"
+                               LineStackingStrategy="BlockLineHeight"
+                               Foreground="{DynamicResource Brush.TextTertiary}"/>
+
+                    <!-- 词典（票 35 + §6.2 单词态）：去框——1 DIP Divider 分节，
+                         无 SurfaceSubtle 底。默认每词性 2 条释义 + 1 例句，
+                         其余折叠进「展开全部释义（N）」。 -->
+                    <StackPanel x:Name="DictionaryArea" Visibility="Collapsed" Margin="0,12,0,0">
+                        <Border Style="{DynamicResource Divider}"/>
+                        <ItemsControl x:Name="CardSenses" Margin="0,4,0,0">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type local:SenseGroupView}">
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding PartOfSpeech}" Margin="0,8,0,0"
+                                                   FontSize="{DynamicResource Type.Caption}"
+                                                   Foreground="{DynamicResource Brush.TextSecondary}"/>
+                                        <ItemsControl ItemsSource="{Binding Visible}" Margin="0,2,0,0">
+                                            <ItemsControl.Resources>
+                                                <DataTemplate DataType="{x:Type local:SenseEntry}">
+                                                    <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                                        <TextBlock Text="{Binding Number}" Width="16"
+                                                                   Foreground="{DynamicResource Brush.TextTertiary}"
+                                                                   VerticalAlignment="Top"/>
+                                                        <TextBlock Text="{Binding Text}" TextWrapping="Wrap"
+                                                                   FontSize="{DynamicResource Type.Body}"
+                                                                   LineHeight="{DynamicResource Line.BodyMulti}"
+                                                                   LineStackingStrategy="BlockLineHeight"/>
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                                <DataTemplate DataType="{x:Type local:SenseExample}">
+                                                    <!-- 例句：次级色（三级色在卡面上 4.33:1，票 18）；
+                                                         斜体只给拉丁（U-22：含中文的 TextBlock 永远正体）。 -->
+                                                    <TextBlock Text="{Binding Text}" TextWrapping="Wrap"
+                                                               Margin="16,2,0,0" FontStyle="{Binding ItalicStyle}"
+                                                               FontSize="{DynamicResource Type.Body}"
+                                                               LineHeight="{DynamicResource Line.BodyMulti}"
+                                                               LineStackingStrategy="BlockLineHeight"
+                                                               Foreground="{DynamicResource Brush.TextSecondary}"/>
+                                                </DataTemplate>
+                                                <DataTemplate DataType="{x:Type local:SenseSynonyms}">
+                                                    <TextBlock Text="{Binding Line}" TextWrapping="Wrap"
+                                                               Margin="16,2,0,0"
+                                                               FontSize="{DynamicResource Type.Body}"
+                                                               Foreground="{DynamicResource Brush.TextSecondary}"/>
+                                                </DataTemplate>
+                                            </ItemsControl.Resources>
+                                        </ItemsControl>
+                                        <Button Visibility="{Binding ExpandVisibility}"
+                                                Style="{DynamicResource FlyoutButton}" HorizontalAlignment="Left"
+                                                Padding="8,0" Margin="8,2,0,0" Cursor="Hand"
+                                                Click="OnExpandSense" Tag="{Binding}">
+                                            <TextBlock Text="{Binding ExpandLabel}"
+                                                       Foreground="{DynamicResource Brush.Accent}"/>
+                                        </Button>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
                 </StackPanel>
             </ScrollViewer>
-
-            <!-- 两阶段词典卡：翻译先出，这张卡晚一点补上；没有就从来不出现。 -->
-            <Border x:Name="DictionaryArea" Visibility="Collapsed" Margin="0,10,0,0"
-                    Padding="10,8" CornerRadius="{DynamicResource Radius.Card}"
-                    Background="{DynamicResource Brush.SurfaceSubtle}"
-                    BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1">
-                <StackPanel>
-                    <StackPanel Orientation="Horizontal">
-                        <!-- 词头 20 SemiBold（拉丁）专用档，UI 报告 §6.2 单词态。 -->
-                        <TextBlock x:Name="CardWord" FontSize="{DynamicResource Type.Headword}"
-                                   FontWeight="{DynamicResource Weight.Emphasis}" />
-                        <TextBlock x:Name="CardPhonetic" Margin="8,0,0,0" VerticalAlignment="Center"
-                                   FontSize="{DynamicResource Type.Body}" FontStyle="Italic"
-                                   Foreground="{DynamicResource Brush.TextSecondary}" />
-                    </StackPanel>
-                    <ItemsControl x:Name="CardSenses" Margin="0,4,0,0">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <StackPanel Margin="0,4,0,0">
-                                    <TextBlock Text="{Binding PartOfSpeech}"
-                                               FontSize="{DynamicResource Type.Caption}"
-                                               Foreground="{DynamicResource Brush.Accent}" />
-                                    <ItemsControl ItemsSource="{Binding Definitions}" Margin="8,2,0,0">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate>
-                                                <TextBlock Text="{Binding}" TextWrapping="Wrap"
-                                                           FontSize="{DynamicResource Type.Body}"
-                                                           Margin="0,1" />
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                    <ItemsControl ItemsSource="{Binding Examples}" Margin="8,2,0,0">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate>
-                                                <!-- 例句/同义词走次级色：三级色在卡面上只有 4.33:1（票 18） -->
-                                                <TextBlock Text="{Binding}" TextWrapping="Wrap"
-                                                           FontSize="{DynamicResource Type.Caption}"
-                                                           FontStyle="Italic" Margin="0,1"
-                                                           Foreground="{DynamicResource Brush.TextSecondary}" />
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                    <TextBlock Text="{Binding SynonymsLine}" TextWrapping="Wrap"
-                                               FontSize="{DynamicResource Type.Caption}" Margin="8,2,0,0"
-                                               Foreground="{DynamicResource Brush.TextSecondary}" />
-                                </StackPanel>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </StackPanel>
-            </Border>
 
             <!-- 未配置翻译服务时的引导卡（票 08）：给一条去路，不给一段异常。 -->
             <Border x:Name="SetupCard" Visibility="Collapsed" Margin="0,10,0,0"
@@ -126,13 +244,13 @@
                     BorderBrush="{DynamicResource Brush.Accent}" BorderThickness="1">
                 <StackPanel>
                     <TextBlock Text="还没有配置翻译服务" FontSize="{DynamicResource Type.Body}"
-                               FontWeight="{DynamicResource Weight.Emphasis}" />
+                               FontWeight="{DynamicResource Weight.Emphasis}"/>
                     <TextBlock Text="翻译需要一个你自己的 API 密钥：设置 → 服务里选一家服务商预设（有免费的），点「申请密钥」，粘进来即可。"
                                TextWrapping="Wrap" Margin="0,4,0,0"
                                FontSize="{DynamicResource Type.Caption}"
                                LineHeight="{DynamicResource Line.CaptionMulti}"
                                LineStackingStrategy="BlockLineHeight"
-                               Foreground="{DynamicResource Brush.TextSecondary}" />
+                               Foreground="{DynamicResource Brush.TextSecondary}"/>
                     <Button x:Name="SetupButton" Content="去配置" HorizontalAlignment="Left"
                             Margin="0,8,0,0" Padding="14,4" Cursor="Hand" Click="OnOpenSetup"
                             ToolTip="打开设置的服务页"/>
@@ -143,30 +261,45 @@
                 </StackPanel>
             </Border>
 
-            <!-- 错误反馈 12/20 Danger（UI 报告 §6.3 校验规格同族）。 -->
-            <TextBlock x:Name="StatusText" FontSize="{DynamicResource Type.Caption}"
-                       LineHeight="{DynamicResource Line.CaptionMulti}"
-                       LineStackingStrategy="BlockLineHeight"
-                       Margin="0,8,0,0"
-                       TextWrapping="Wrap" Foreground="{DynamicResource Brush.Danger}"
-                       Visibility="Collapsed" />
-
-            <DockPanel LastChildFill="False" Margin="0,10,0,0">
+            <!-- footer（§6.2）：左提示（加载中"正在翻译 · Esc 取消"）；
+                 右侧 ghost 按钮按频率排：复制 > 朗读 > 存入历史。没有译文
+                 时禁用（U-24）；单词态不放朗读——发音钮在词头旁
+                 （ADR-0012 拍板）。 -->
+            <DockPanel LastChildFill="False" Margin="0,12,0,0">
                 <TextBlock x:Name="HintText" DockPanel.Dock="Left"
                            FontSize="{DynamicResource Type.Caption}"
                            Foreground="{DynamicResource Brush.TextTertiary}"
-                           Text="Esc 关闭" VerticalAlignment="Center" />
-                <Button x:Name="SaveButton" DockPanel.Dock="Right" Content="存入历史" IsEnabled="False"
-                        FontSize="{DynamicResource Type.Body}" Padding="10,4" Margin="0,0,6,0"
-                        Cursor="Hand" Click="OnSaveToHistory"
-                        ToolTip="译文存为一条记录，并关联原文条目"/>
-                <Button x:Name="SpeakButton" DockPanel.Dock="Right" Content="🔊 朗读"
-                        FontSize="{DynamicResource Type.Body}" Padding="10,4" Margin="0,0,6,0"
-                        Cursor="Hand" Click="OnSpeak"
-                        ToolTip="朗读译文；朗读中再点一次即停"/>
-                <Button x:Name="CopyButton" DockPanel.Dock="Right" Content="复制译文"
-                        FontSize="{DynamicResource Type.Body}" Padding="10,4" Cursor="Hand"
-                        Click="OnCopy" />
+                           Text="Esc 关闭" VerticalAlignment="Center"/>
+                <Button x:Name="SaveButton" DockPanel.Dock="Right" Style="{DynamicResource FlyoutButton}"
+                        IsEnabled="False" Cursor="Hand" Click="OnSaveToHistory"
+                        ToolTip="译文存为一条记录，并关联原文条目">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE74E;" FontFamily="{DynamicResource Font.Icon}"
+                                   FontSize="{DynamicResource Size.IconS}"
+                                   Foreground="{DynamicResource Brush.TextSecondary}"/>
+                        <TextBlock x:Name="SaveLabel" Text="存入历史" Margin="6,0,0,0"/>
+                    </StackPanel>
+                </Button>
+                <Button x:Name="SpeakButton" DockPanel.Dock="Right" Style="{DynamicResource FlyoutButton}"
+                        Margin="0,0,6,0" IsEnabled="False" Cursor="Hand" Click="OnSpeak"
+                        ToolTip="朗读译文；朗读中再点一次即停">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE767;" FontFamily="{DynamicResource Font.Icon}"
+                                   FontSize="{DynamicResource Size.IconS}"
+                                   Foreground="{DynamicResource Brush.TextSecondary}"/>
+                        <TextBlock Text="朗读" Margin="6,0,0,0"/>
+                    </StackPanel>
+                </Button>
+                <Button x:Name="CopyButton" DockPanel.Dock="Right" Style="{DynamicResource FlyoutButton}"
+                        IsEnabled="False" Cursor="Hand" Click="OnCopy"
+                        ToolTip="复制译文">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE8C8;" FontFamily="{DynamicResource Font.Icon}"
+                                   FontSize="{DynamicResource Size.IconS}"
+                                   Foreground="{DynamicResource Brush.TextSecondary}"/>
+                        <TextBlock x:Name="CopyLabel" Text="复制" Margin="6,0,0,0"/>
+                    </StackPanel>
+                </Button>
             </DockPanel>
         </StackPanel>
     </Border>
