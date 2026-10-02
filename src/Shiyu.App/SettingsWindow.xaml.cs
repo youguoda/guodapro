@@ -109,7 +109,6 @@ public partial class SettingsWindow : Window
             {
                 Text = "没有匹配的设置项——换个说法试试？",
                 Margin = new Thickness(8, 6, 8, 6),
-                Opacity = 0.8,
             };
             none.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
             ResultsList.Children.Add(none);
@@ -119,6 +118,14 @@ public partial class SettingsWindow : Window
         foreach (var hit in hits)
         {
             var captured = hit;
+            // 面包屑与主标签分层靠令牌色，不乘透明度（票 18/R6）。
+            var breadcrumb = new TextBlock
+            {
+                Text = $"{hit.PageTitle} · {hit.SectionTitle}",
+                FontSize = (double)FindResource("Size.Hint"),
+            };
+            breadcrumb.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
+
             var button = new Button
             {
                 Content = new StackPanel
@@ -126,12 +133,7 @@ public partial class SettingsWindow : Window
                     Children =
                     {
                         new TextBlock { Text = hit.Item.Label },
-                        new TextBlock
-                        {
-                            Text = $"{hit.PageTitle} · {hit.SectionTitle}",
-                            FontSize = (double)FindResource("Size.Hint"),
-                            Opacity = 0.75,
-                        },
+                        breadcrumb,
                     },
                 },
                 Padding = new Thickness(10, 5, 10, 5),
@@ -151,7 +153,6 @@ public partial class SettingsWindow : Window
                 Text = $"已显示前 {SettingsSearch.ResultCap} 项——再具体一点。",
                 Margin = new Thickness(8, 4, 8, 4),
                 FontSize = (double)FindResource("Size.Hint"),
-                Opacity = 0.7,
             };
             cap.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextTertiary");
             ResultsList.Children.Add(cap);
@@ -773,7 +774,6 @@ public partial class SettingsWindow : Window
             Text = hint,
             TextWrapping = TextWrapping.Wrap,
             FontSize = (double)FindResource("Size.Caption"),
-            Opacity = 0.75,
         };
         text.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
         stack.Children.Add(text);

@@ -391,14 +391,14 @@ internal partial class PreviewWindow : Window
                 {
                     Text = path,
                     FontSize = DesignTokens.FontSecondary,
-                    Foreground = (Brush)FindResource("Brush.Text"),
                     VerticalAlignment = VerticalAlignment.Center,
                 };
+                name.SetResourceReference(TextBlock.ForegroundProperty,
+                    dead ? "Brush.TextTertiary" : "Brush.Text");
 
                 if (dead)
                 {
                     name.TextDecorations = System.Windows.TextDecorations.Strikethrough;
-                    name.Opacity = 0.5;
                     name.ToolTip = "路径不存在";
                 }
 
