@@ -423,12 +423,23 @@ public partial class PanelWindow : Window
 
     private async void OnSwapDirection(object sender, RoutedEventArgs e)
     {
-        // Swapping only makes sense between two named languages; with the
-        // source left to the backend there is nothing to swap it with.
-        (_source, _target) = (_target, _source ?? "English");
-        UpdateDirectionLabel();
-        CopyButton.Content = "复制译文";
-        await RunTranslation();
+        // async void 逃出去的异常是进程级崩溃（O-05）。翻译失败本身已被
+        // 会话收敛成状态文字；这里的 catch 罩的是换向组装路径上的意外。
+        try
+        {
+            // Swapping only makes sense between two named languages; with the
+            // source left to the backend there is nothing to swap it with.
+            (_source, _target) = (_target, _source ?? "English");
+            UpdateDirectionLabel();
+            CopyButton.Content = "复制译文";
+            await RunTranslation();
+        }
+        catch (Exception failure)
+        {
+            Log.Event(LogEvent.TranslationFailed, failure, ("swap", 1));
+            StatusText.Text = "翻译失败：" + failure.Message;
+            StatusText.Visibility = Visibility.Visible;
+        }
     }
 
     private void UpdateDirectionLabel(TranslationRequest? attempt = null)

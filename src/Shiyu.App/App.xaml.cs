@@ -59,6 +59,15 @@ public partial class App : Application
     /// </summary>
     private DeferredCapture? _pendingSelection;
 
+    /// <summary>
+    /// 崩溃托盘提示的节流表（O-05）：同类异常 5 分钟内只打扰一次。键是
+    /// 异常类型+消息的指纹，值是上次提示时间；过期项顺手清，表不设上限
+    /// 就成了泄漏。
+    /// </summary>
+    private readonly Dictionary<string, DateTimeOffset> _crashNotices = new();
+
+    private static readonly TimeSpan CrashNoticeInterval = TimeSpan.FromMinutes(5);
+
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
@@ -75,6 +84,11 @@ public partial class App : Application
             Environment.Exit(0);
         }
 
+        // 先于一切业务接线（O-05）：处理器挂上之后，启动路径上的任何闪失
+        // 才有日志与托盘兜底，而不是把进程直接带走——对一个托盘常驻的
+        // 记录工具，崩溃就等于静默停止记录。
+        InstallGlobalExceptionHandlers();
+
         try
         {
             Start();
@@ -84,9 +98,65 @@ public partial class App : Application
             // Shiyu has no window. Without this, a failure to start is a
             // process that silently isn't there — nothing to look at, nothing
             // to read. The file is the only way in.
+            Log.Event(LogEvent.StartupFailed, exception);
             RecordStartupFailure(exception);
             throw;
         }
+    }
+
+    /// <summary>
+    /// 三个进程级兜底（O-05）。UI 线程的异常记日志、托盘说一次、
+    /// <c>Handled=true</c> 挺住继续跑；没人 await 的 Task 记下并认领
+    /// （否则进程退出时它们会变成崩溃对话框）；其余线程的致命异常拦是
+    /// 拦不住的——处理器返回后 CLR 仍会终止进程，sink 是同步写，这里
+    /// 唯一能做的是把现场完整留在盘上再走。
+    /// </summary>
+    private void InstallGlobalExceptionHandlers()
+    {
+        DispatcherUnhandledException += (_, e) =>
+        {
+            Log.Event(LogEvent.AppCrash, e.Exception);
+            NoticeCrashOnce(e.Exception);
+            e.Handled = true;
+        };
+
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            Log.Event(LogEvent.UnobservedTask, e.Exception);
+            e.SetObserved();
+        };
+
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+        {
+            if (e.ExceptionObject is Exception exception)
+            {
+                Log.Event(LogEvent.FatalExit, exception);
+            }
+        };
+    }
+
+    /// <summary>
+    /// 崩溃的托盘提示：同类错误（类型+消息一致）5 分钟内只弹一次——一个
+    /// 每 10 秒闪一次的循环只会教会用户永久关掉通知。别的错误照常说。
+    /// </summary>
+    private void NoticeCrashOnce(Exception exception)
+    {
+        var fingerprint = exception.GetType().FullName + ": " + exception.Message;
+        var now = DateTimeOffset.Now;
+
+        foreach (var stale in _crashNotices.Where(p => now - p.Value > CrashNoticeInterval).ToList())
+        {
+            _crashNotices.Remove(stale.Key);
+        }
+
+        if (_crashNotices.TryGetValue(fingerprint, out var last)
+            && now - last <= CrashNoticeInterval)
+        {
+            return;
+        }
+
+        _crashNotices[fingerprint] = now;
+        _tray?.ShowNotification("拾语", "拾语遇到一个错误，已记录到日志。");
     }
 
     private void Start()
@@ -128,6 +198,25 @@ public partial class App : Application
         {
             AppPaths.UseDirectory(dataDirectory);
         }
+
+        // 数据目录定下来这刻起，一切后续失败都有处可写（O-05）。同步 sink：
+        // 致命异常的最后一行必须在进程倒下之前落盘。
+        Log.Attach(new FileLogSink(AppPaths.DataDirectory));
+
+#if DEBUG
+        // 实机验收用的隐藏命令（票 06）：在 DispatcherTimer.Tick 里抛一个
+        // 异常，验证 UI 线程兜底——进程存活、日志一行、托盘提示一次。仅
+        // 调试构建存在，与 SHIYU_DATA_DIR 同族，绝不进发布。
+        if (Environment.GetEnvironmentVariable("SHIYU_DEBUG_TICK_CRASH") == "1")
+        {
+            var crash = new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(3),
+            };
+            crash.Tick += (_, _) => throw new InvalidOperationException("debug tick crash probe");
+            crash.Start();
+        }
+#endif
 
         // The relay's device identity: an anonymous install id, generated once
         // and stable for the machine's life. Persisted right away — a new id
@@ -295,15 +384,22 @@ public partial class App : Application
                 var updates = new UpdateService(AppPaths.DataDirectory);
                 if (await updates.CheckAsync() is { } release && release.IsNewerThan(UpdateService.Current))
                 {
+                    Log.Event(LogEvent.UpdateChecked, ("found", true));
                     _tray?.ShowNotification(
                         "拾语有新版本",
                         $"v{release.Version.Text} 已发布。右键托盘图标 → 检查更新 安装。");
                 }
+                else
+                {
+                    Log.Event(LogEvent.UpdateChecked, ("found", false));
+                }
             }
-            catch (Exception)
+            catch (Exception failure)
             {
-                // A quiet check that cannot reach the channel says nothing:
-                // there is nothing the user could act on from a balloon.
+                // A quiet check that cannot reach the channel says nothing to
+                // the user — 404 或断网没有可点的动作——但 O-24 要求留下
+                // 一行日志，别让通道坏了只能靠猜。
+                Log.Event(LogEvent.UpdateCheckFailed, failure);
             }
         };
 
@@ -366,15 +462,18 @@ public partial class App : Application
             {
                 try
                 {
-                    service.Sweep(
+                    var result = service.Sweep(
                         TimeSpan.FromDays(days),
                         Settings.ProtectEntries && Settings.ProtectFavorites,
                         Settings.ProtectEntries && Settings.ProtectPinned);
+                    Log.Event(LogEvent.RetentionSwept, ("removed", result.Removed));
                 }
-                catch (Exception)
+                catch (Exception failure)
                 {
                     // Housekeeping failing is not worth interrupting the user
-                    // over; the next sweep will try again.
+                    // over; the next sweep will try again. 留一行日志（O-24）：
+                    // 图片目录悄悄堆满往往只有它知道原因。
+                    Log.Event(LogEvent.RetentionSweepFailed, failure, ("days", days));
                 }
             });
         }
@@ -491,14 +590,22 @@ public partial class App : Application
         try
         {
             _settingsStore!.Update(mutate, AppPaths.SettingsFile);
+            Log.Event(LogEvent.SettingsSaved);
             return true;
         }
         catch (SettingsSaveException failure)
         {
+            Log.Event(LogEvent.SettingsSaveFailed, failure);
             _tray?.ShowNotification("拾语", failure.Message);
             return false;
         }
     }
+
+    /// <summary>
+    /// 子窗口往托盘说一句话的通道：它们没有托盘引用，也不该有——界面上
+    /// "用户点了却什么都没发生"的失败，配得上一句人话（O-24）。
+    /// </summary>
+    internal void TellUser(string message) => _tray?.ShowNotification("拾语", message);
 
     /// <summary>
     /// Opens the settings window landed on one item — the deep link other
@@ -652,15 +759,38 @@ public partial class App : Application
             return;
         }
 
-        // 朗读服务与面板同寿命：一条专用 STA 线程，懒得起、起一次用到底。
-        _speech ??= new SpeechSynthesis();
+        // async void 里逃出去的异常是进程级崩溃（O-05）；同时面板出不来时
+        // 挂着的剪贴板还原就是白借——onDisplayed 用一次性闸门包住，异常
+        // 路径也要保证债被还上（且只还一次）。
+        var displayed = false;
+        void Displayed()
+        {
+            if (!displayed)
+            {
+                displayed = true;
+                onDisplayed?.Invoke();
+            }
+        }
 
-        _panel ??= new PanelWindow(
-            _hotkeys, _writer, () => Settings.BuildTranslationBackend(), Settings,
-            SaveTranslationToHistory,
-            dictionary: BuildDictionary,
-            speech: _speech);
-        await _panel.TranslateAsync(text, onDisplayed);
+        try
+        {
+            // 朗读服务与面板同寿命：一条专用 STA 线程，懒得起、起一次用到底。
+            _speech ??= new SpeechSynthesis();
+
+            _panel ??= new PanelWindow(
+                _hotkeys, _writer, () => Settings.BuildTranslationBackend(), Settings,
+                SaveTranslationToHistory,
+                dictionary: BuildDictionary,
+                speech: _speech);
+            await _panel.TranslateAsync(text, Displayed);
+        }
+        catch (Exception failure)
+        {
+            // 翻译失败本身已被面板收敛成状态；走到这里的是面板之外的意外。
+            Displayed();
+            Log.Event(LogEvent.TranslationFailed, failure, ("panel", 1));
+            _tray?.ShowNotification("拾语", "翻译面板没能打开，已记录到日志。");
+        }
     }
 
     /// <summary>
@@ -765,6 +895,11 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        // 第一件事就是还债（O-05 修正）：划词借走的剪贴板必须在任何可能
+        // 抛出的清理之前归还——原次序里它排在几何保存之后，Save 一抛，
+        // 用户就带着我们借走的内容走了。
+        FlushPendingSelection();
+
         // Reverse order of construction: the tray and the clipboard listener
         // both hold the message window.
         _retention?.Stop();
@@ -775,8 +910,6 @@ public partial class App : Application
         _bar?.Close();
         _quickBar?.CloseForGood();
         _panel?.CloseForGood();
-        // 划词借走的剪贴板随徽标一并了结：退出前把债还上。
-        FlushPendingSelection();
         _badge?.CloseForGood();
         _speech?.Dispose();
         _tray?.Dispose();
@@ -924,6 +1057,7 @@ public partial class App : Application
     {
         if (_capture is not null && !_capture.Restore(deferred))
         {
+            Log.Event(LogEvent.ClipboardRestoreFailed);
             _tray?.ShowNotification("拾语", "取词后未能还原你原本的剪贴板内容。");
         }
     }
