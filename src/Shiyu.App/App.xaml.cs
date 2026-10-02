@@ -61,10 +61,12 @@ public partial class App : Application
     private bool _captureExcludedNotified;
 
     /// <summary>
-    /// 划词路径挂起的剪贴板还原：取词借走了用户剪贴板，还原被推迟到面板
-    /// 显示之后（票 37）。非 null 即"当前徽标是一次划词，且债未还"。
+    /// 划词"借出—还原"的账本（O-27 下沉候选 2）：取词借走用户剪贴板后，
+    /// 还原被推迟到面板显示或徽标淡出（票 37）。何时还、还哪笔，由这台
+    /// Core 状态机裁定并恰好结算一次；App 只把它的裁决交给
+    /// <see cref="RestoreDeferred"/> 执行。
     /// </summary>
-    private DeferredCapture? _pendingSelection;
+    private readonly SelectionDebt _selectionDebt = new();
 
     /// <summary>
     /// 探针模式（票 15）：调试构建 + <c>SHIYU_DATA_DIR</c> 指向隔离目录。
@@ -874,13 +876,11 @@ public partial class App : Application
     /// window each time is work the user would feel.
     ///
     /// 复制路径与划词路径共用这一扇窗：划词取词借走的剪贴板作为
-    /// <paramref name="selection"/> 随徽标一起挂上——任何一次新 Offer 接手前
-    /// 先结算上一笔，徽标换主，旧账要清。
+    /// <paramref name="selection"/> 记入账本——新 Offer 接手前先结算上一笔，
+    /// 徽标换主，旧账要清（复制徽标顶替旧划词徽标时同样清账）。
     /// </summary>
     private void ShowBadge(string text, DeferredCapture? selection = null)
     {
-        FlushPendingSelection();
-
         if (_badge is null)
         {
             _badge = new BadgeWindow();
@@ -888,22 +888,19 @@ public partial class App : Application
             _badge.Dismissed += FlushPendingSelection;
         }
 
-        _pendingSelection = selection;
+        Settle(selection is { } debt ? _selectionDebt.Offer(debt) : _selectionDebt.Dismissed());
         _badge.Offer(text);
     }
 
     /// <summary>
     /// 徽标被点击：复制徽标直达面板；划词徽标在面板显示之后再还原剪贴板
     /// （票 37 的 Glossy 次序——还原可以等，点击到出面板这一段不该再添
-    /// 一次剪贴板写）。挂起的债在此刻转手给面板，<see cref="_pendingSelection"/>
-    /// 清空，避免淡出事件重复还。
+    /// 一次剪贴板写）。债在此刻转手给面板，之后迟到的淡出事件不会重复还。
     /// </summary>
     private void OnBadgeAccepted(string text)
     {
-        var selection = _pendingSelection;
-        _pendingSelection = null;
-
-        ShowPanel(text, onDisplayed: selection is null ? null : () => RestoreDeferred(selection));
+        Settle(_selectionDebt.Accepted());
+        ShowPanel(text, onDisplayed: () => Settle(_selectionDebt.PanelDisplayed()));
     }
 
     /// <summary>Summons the quick bar. One instance, reused: it appears dozens of times
@@ -1104,8 +1101,9 @@ public partial class App : Application
     {
         // 第一件事就是还债（O-05 修正）：划词借走的剪贴板必须在任何可能
         // 抛出的清理之前归还——原次序里它排在几何保存之后，Save 一抛，
-        // 用户就带着我们借走的内容走了。
-        FlushPendingSelection();
+        // 用户就带着我们借走的内容走了。账本把在册的债一次结清（新债
+        // 先还、旧债压轴，最终留在剪贴板里的是用户取词前的原文）。
+        Settle(_selectionDebt.Exit());
 
         // Reverse order of construction: the tray and the clipboard listener
         // both hold the message window.
@@ -1266,13 +1264,14 @@ public partial class App : Application
     }
 
     /// <summary>还掉挂起的划词剪贴板（若有）。幂等：没债就是空操作。</summary>
-    private void FlushPendingSelection()
+    private void FlushPendingSelection() => Settle(_selectionDebt.Dismissed());
+
+    /// <summary>执行账本的裁决：每笔债按序交还原，成败照旧转告用户。</summary>
+    private void Settle(SelectionDebtAction action)
     {
-        var pending = _pendingSelection;
-        _pendingSelection = null;
-        if (pending is not null)
+        foreach (var debt in action.Restore)
         {
-            RestoreDeferred(pending);
+            RestoreDeferred(debt);
         }
     }
 
