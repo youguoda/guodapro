@@ -216,8 +216,9 @@ internal partial class BarWindow
         {
             Child = WithPopupFont(panel),
             Padding = new Thickness(4),
-            CornerRadius = new CornerRadius(6),
         };
+        // 弹层外壳的圆角走 Radius.Overlay（UI 报告 §4.3：菜单/下拉/弹层 8）。
+        border.SetResourceReference(Border.CornerRadiusProperty, "Radius.Overlay");
         border.SetResourceReference(BackgroundProperty, "Brush.Surface");
         border.SetResourceReference(BorderBrushProperty, "Brush.Border");
         border.BorderThickness = new Thickness(1);

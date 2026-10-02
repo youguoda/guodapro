@@ -68,7 +68,7 @@ internal sealed class RowKeyBadge : Border
 {
     public RowKeyBadge()
     {
-        CornerRadius = new CornerRadius(3);
+        SetResourceReference(CornerRadiusProperty, "Radius.Thumb");
         SetResourceReference(BackgroundProperty, "Brush.Accent");
 
         var label = new TextBlock

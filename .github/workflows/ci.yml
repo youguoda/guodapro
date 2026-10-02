@@ -45,6 +45,11 @@ jobs:
       - name: 静默 catch 检查
         run: powershell -NoProfile -ExecutionPolicy Bypass -File tools/checks/no-silent-catch.ps1
 
+      # 票 19：Themes/ 外禁字面量字号/圆角/文字透明度——字面量会绕过令牌与对比度测试。
+      # 豁免须带 token-ok: 注释写明理由。
+      - name: 硬编码令牌检查
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tools/checks/no-hardcoded-tokens.ps1
+
       - name: 单测失败时上传结果
         if: failure() && steps.test.outcome == 'failure'
         uses: actions/upload-artifact@v4

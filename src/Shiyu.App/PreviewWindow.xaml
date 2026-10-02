@@ -22,7 +22,7 @@
       already has, so the window opens at the size it keeps. Content that
       outgrows the box scrolls; the box never moves.
     -->
-    <Border x:Name="Root" CornerRadius="12"
+    <Border x:Name="Root" CornerRadius="{DynamicResource Radius.Window}"
             Background="#F2FFFFFF" BorderBrush="#99D0D7DE" BorderThickness="1"
             Padding="12,10">
         <Border.Effect>

@@ -13,6 +13,9 @@
           Borderless but resizable: the chrome only provides the resize
           border hot-zone; the caption (drag/close/maximize) is ours, and
           its presence fixes maximized windows covering the taskbar.
+          token-ok: WindowChrome CornerRadius 0 switches the system rounding
+          off (this window draws its own shell); a functional zero, not a
+          visual radius choice.
         -->
         <WindowChrome CaptionHeight="0" ResizeBorderThickness="6"
                       GlassFrameThickness="0" CornerRadius="0"

@@ -255,8 +255,9 @@ public partial class SettingsWindow : Window
             Background = (Brush)row.FindResource("Brush.Accent"),
             Opacity = 0,
             IsHitTestVisible = false,
-            CornerRadius = new CornerRadius(4),
         };
+        // 脉冲底块的圆角跟随行卡片的 Radius.Control（4）。
+        wash.SetResourceReference(Border.CornerRadiusProperty, "Radius.Control");
         Grid.SetColumnSpan(wash, 2);
         grid.Children.Add(wash);
 

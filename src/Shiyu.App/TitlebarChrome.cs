@@ -58,6 +58,7 @@ internal static class TitlebarChrome
         var maximized = window.WindowState == WindowState.Maximized;
         shell.Margin = maximized ? new Thickness(0) : new Thickness(10);
         shell.CornerRadius = maximized
+            // token-ok: 最大化时外壳必须去圆角（贴满工作区的功能值 0，非视觉档）。
             ? new CornerRadius(0)
             : (CornerRadius)Application.Current.FindResource("Radius.Window");
         maximizeButton.Content = maximized ? "\uE923" : "\uE922";

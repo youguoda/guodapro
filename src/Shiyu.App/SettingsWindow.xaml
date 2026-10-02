@@ -8,6 +8,9 @@
         TextElement.FontSize="{DynamicResource Type.Body}"
         TextElement.Foreground="{DynamicResource Brush.Text}">
     <WindowChrome.WindowChrome>
+        <!-- token-ok: WindowChrome CornerRadius 0 switches the system rounding
+             off (this window draws its own shell); a functional zero, not a
+             visual radius choice. -->
         <WindowChrome CaptionHeight="0" ResizeBorderThickness="6"
                       GlassFrameThickness="0" CornerRadius="0"
                       UseAeroCaptionButtons="False" />
@@ -92,7 +95,7 @@
                     VerticalAlignment="Top" Margin="0,6,8,0" MaxHeight="320"
                     Background="{DynamicResource Brush.Surface}"
                     BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1"
-                    CornerRadius="6" Padding="4">
+                    CornerRadius="{DynamicResource Radius.Overlay}" Padding="4">
                 <StackPanel x:Name="ResultsList"/>
             </Border>
         </Grid>
