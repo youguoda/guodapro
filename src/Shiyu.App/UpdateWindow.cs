@@ -73,7 +73,7 @@ internal sealed class UpdateWindow : Window
         _latestLabel.SetResourceReference(TextBlock.ForegroundProperty, "Brush.Text");
         _status.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
 
-        _currentLabel.Text = $"当前版本 v{UpdateService.Current.Text}";
+        _currentLabel.Text = $"当前版本 v{UpdateService.CurrentDisplay}";
         _latestLabel.Text = "最新版本 未知";
 
         _notes.SetResourceReference(TextBox.BackgroundProperty, "Brush.SurfaceInput");
@@ -86,8 +86,8 @@ internal sealed class UpdateWindow : Window
             HorizontalAlignment = HorizontalAlignment.Right,
             Margin = new Thickness(0, 12, 0, 0),
         };
-        _check.Click += async (_, _) => await CheckAsync();
-        _install.Click += async (_, _) => await InstallAsync();
+        _check.Click += async (_, _) => await GuardedAsync(CheckAsync);
+        _install.Click += async (_, _) => await GuardedAsync(InstallAsync);
         buttons.Children.Add(_check);
         buttons.Children.Add(_install);
 
@@ -100,7 +100,25 @@ internal sealed class UpdateWindow : Window
         panel.Children.Add(buttons);
         Content = panel;
 
-        Loaded += async (_, _) => await CheckAsync();
+        Loaded += async (_, _) => await GuardedAsync(CheckAsync);
+    }
+
+    /// <summary>
+    /// 点击处理里的任何异常都收敛成一句话（票 09）：一个下载路径上的意外
+    /// 不该带走整个进程——常驻应用崩一次，比一次失败的更新贵得多。
+    /// </summary>
+    private async Task GuardedAsync(Func<Task> action)
+    {
+        try
+        {
+            await action();
+        }
+        catch (Exception failure)
+        {
+            _progress.Value = 0;
+            _status.Text = "操作失败：" + failure.Message;
+            _check.IsEnabled = true;
+        }
     }
 
     private async Task CheckAsync()

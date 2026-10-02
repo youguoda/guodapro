@@ -122,6 +122,14 @@ public sealed record ReleaseManifest(
     public ReleaseAsset? ChecksumFor(string assetName)
         => Assets.FirstOrDefault(asset => asset.Name == assetName + ".sha256");
 
+    /// <summary>
+    /// The signature asset beside the installer (ADR-0010). Unlike the
+    /// checksum this one is not optional in the updater's eyes: a release
+    /// without it is a release the client refuses to install from.
+    /// </summary>
+    public ReleaseAsset? SignatureFor(string assetName)
+        => Assets.FirstOrDefault(asset => asset.Name == assetName + ".sig");
+
     public bool IsNewerThan(UpdateVersion current) => Version.CompareTo(current) > 0;
 }
 

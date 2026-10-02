@@ -135,6 +135,9 @@ internal static class SettingsBindings
             .Where(rule => rule.Value.Length > 0)
             .ToList();
 
-    public static string VersionText
-        => "v" + (System.Reflection.Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3) ?? "0.0.0");
+    /// <summary>
+    /// 关于页的版本展示走 InformationalVersion（带 -rc1 尾巴），不是三段式
+    /// 的 AssemblyVersion——rc 用户得能看见自己装的是 rc（票 09）。
+    /// </summary>
+    public static string VersionText => "v" + UpdateService.CurrentDisplay;
 }

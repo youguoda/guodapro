@@ -7,165 +7,65 @@ using Shiyu.Core;
 namespace Shiyu.App;
 
 /// <summary>
-/// The update channel in motion (ticket 28): check GitHub Releases, download
-/// and verify the installer into the staging area, then hand the swap to a
-/// second process — a running application cannot replace its own files.
-///
-/// The design rule from the ticket is baked into the shape: nothing here ever
-/// writes into the install directory. The data directory holds the staging
-/// area; the install directory is touched only by the finalizer, which
-/// backs it up first and restores on any refusal.
+/// 更新通道的 App 侧薄壳（票 09）：取清单、下载、验签、解压的编排都在
+/// Core 的 <see cref="UpdateOrchestrator"/> 里（可单测）；这里只剩离不开
+/// 这个进程的两件事——报告当前版本，以及把已暂存的更新交给第二个进程
+/// 去替换安装目录（一个运行中的应用换不了自己的文件）。
 /// </summary>
 internal sealed class UpdateService
 {
-    /// <summary>An alternate API base for probes and self-hosted mirrors: SHIYU_UPDATE_API.</summary>
-    private const string ApiOverrideVariable = "SHIYU_UPDATE_API";
-
-    private readonly HttpClient _http = new()
-    {
-        // GitHub refuses anonymous API calls without one.
-        DefaultRequestHeaders =
-        {
-            UserAgent = { new System.Net.Http.Headers.ProductInfoHeaderValue("Shiyu", Current.Text) },
-        },
-    };
-
+    private readonly UpdateOrchestrator _orchestrator;
     private readonly string _dataDirectory;
 
-    private readonly UpdateChannel _channel;
-
-    public UpdateService(string dataDirectory, UpdateChannel? channel = null)
+    public UpdateService(string dataDirectory, UpdateChannel? channel = null, HttpClient? http = null)
     {
         _dataDirectory = dataDirectory;
-        _channel = channel ?? UpdateChannel.Default;
+        _orchestrator = new UpdateOrchestrator(
+            http ?? new HttpClient
+            {
+                // GitHub refuses anonymous API calls without one.
+                DefaultRequestHeaders =
+                {
+                    UserAgent = { new System.Net.Http.Headers.ProductInfoHeaderValue("Shiyu", Current.Text) },
+                },
+            },
+            dataDirectory,
+            channel);
     }
 
+    /// <summary>
+    /// 比较用的版本号：AssemblyVersion 的前三段。它存不下 -rc1 这类尾巴，
+    /// 恰好也是比较时想要的——0.9.0-rc1 在新老比较里就是 0.9.0。
+    /// </summary>
     public static UpdateVersion Current
         => UpdateVersion.Parse(Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3)) ?? new UpdateVersion();
+
+    /// <summary>
+    /// 给用户看的版本：InformationalVersion 带着 -rc1 尾巴（AssemblyVersion
+    /// 存不下它），源链接补在 + 后面的提交哈希不展示。丢了这个尾巴，rc 用户
+    /// 在关于页看到的就是一个说谎的 0.9.0。
+    /// </summary>
+    public static string CurrentDisplay
+    {
+        get
+        {
+            var informational = Assembly.GetEntryAssembly()
+                ?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+                ?.InformationalVersion;
+            var text = informational?.Split('+')[0];
+            return text is { Length: > 0 } ? text : Current.Text;
+        }
+    }
 
     /// <summary>The staged swap has this many attempts to see the old process out.</summary>
     private static readonly TimeSpan OldProcessTimeout = TimeSpan.FromSeconds(15);
 
-    /// <summary>The latest release, or null when the channel said nothing usable.</summary>
-    public async Task<ReleaseManifest?> CheckAsync()
-    {
-        var url = _channel.LatestUrl;
-#if DEBUG
-        // Debug only: a release build takes its update source from nothing
-        // but the compiled-in channel.
-        if (Environment.GetEnvironmentVariable(ApiOverrideVariable) is { Length: > 0 } overrideBase)
-        {
-            url = overrideBase.TrimEnd('/') + "/releases/latest";
-        }
-#endif
+    public Task<ReleaseManifest?> CheckAsync(CancellationToken cancel = default)
+        => _orchestrator.CheckAsync(cancel);
 
-        using var response = await _http.GetAsync(url);
-        if (!response.IsSuccessStatusCode)
-        {
-            return null;
-        }
-
-        return ReleaseManifest.Parse(await response.Content.ReadAsStringAsync());
-    }
-
-    /// <summary>
-    /// Downloads the installer to staging with progress, then verifies it
-    /// (size, checksum when published, archive content) and extracts it. A
-    /// failure at any step clears the whole staging area — the ticket's "no
-    /// half installers" is a directory invariant, not a promise.
-    /// </summary>
-    public async Task<(bool Ok, string Error)> DownloadAsync(
+    public Task<(bool Ok, string Error)> DownloadAsync(
         ReleaseManifest release, IProgress<double>? progress, CancellationToken cancel)
-    {
-        if (release.Asset(_channel.AssetName) is not { } asset)
-        {
-            return (false, $"这个发布（v{release.Version.Text}）没有 {_channel.AssetName}。");
-        }
-
-        UpdateStaging.Reset(_dataDirectory);
-        var root = UpdateStaging.Root(_dataDirectory);
-        Directory.CreateDirectory(root);
-
-        try
-        {
-            var partialPath = UpdateStaging.InstallerPath(_dataDirectory) + ".partial";
-            await DownloadFileAsync(asset.Url, partialPath, asset.Size, progress, cancel);
-            File.Move(partialPath, UpdateStaging.InstallerPath(_dataDirectory), overwrite: true);
-
-            var checksum = await TryDownloadChecksumAsync(release, asset, cancel);
-            var (ok, error) = UpdateStaging.VerifyInstaller(
-                UpdateStaging.InstallerPath(_dataDirectory), asset.Size, checksum);
-
-            if (!ok)
-            {
-                UpdateStaging.Reset(_dataDirectory);
-                return (false, error);
-            }
-
-            UpdateStaging.Extract(UpdateStaging.InstallerPath(_dataDirectory), UpdateStaging.StagedDirectory(_dataDirectory));
-            UpdateStaging.WritePending(_dataDirectory, release);
-            return (true, string.Empty);
-        }
-        catch (OperationCanceledException)
-        {
-            UpdateStaging.Reset(_dataDirectory);
-            return (false, "已取消。");
-        }
-        catch (HttpRequestException failure)
-        {
-            UpdateStaging.Reset(_dataDirectory);
-            return (false, "下载失败：" + failure.Message);
-        }
-        catch (IOException failure)
-        {
-            UpdateStaging.Reset(_dataDirectory);
-            return (false, "写入失败：" + failure.Message);
-        }
-    }
-
-    private async Task<string?> TryDownloadChecksumAsync(ReleaseManifest release, ReleaseAsset asset, CancellationToken cancel)
-    {
-        if (release.ChecksumFor(asset.Name) is not { } checksumAsset)
-        {
-            return null;
-        }
-
-        try
-        {
-            return await _http.GetStringAsync(checksumAsset.Url, cancel);
-        }
-        catch (Exception)
-        {
-            // A checksum that cannot be fetched is treated as absent: the size
-            // and archive checks still guard the swap.
-            return null;
-        }
-    }
-
-    private async Task DownloadFileAsync(
-        string url, string path, long expectedSize, IProgress<double>? progress, CancellationToken cancel)
-    {
-        using var response = await _http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancel);
-        response.EnsureSuccessStatusCode();
-
-        await using var source = await response.Content.ReadAsStreamAsync(cancel);
-        await using var target = File.Create(path);
-
-        var copied = 0L;
-        var buffer = new byte[64 * 1024];
-        int read;
-
-        while ((read = await source.ReadAsync(buffer, cancel)) > 0)
-        {
-            await target.WriteAsync(buffer.AsMemory(0, read), cancel);
-            copied += read;
-
-            if (expectedSize > 0)
-            {
-                progress?.Report((double)copied / expectedSize);
-            }
-        }
-    }
+        => _orchestrator.DownloadAsync(release, progress, cancel);
 
     /// <summary>
     /// Starts the staged copy with the finalizer command and exits this
