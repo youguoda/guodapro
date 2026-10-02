@@ -9,9 +9,23 @@ namespace Shiyu.App;
 /// 托盘与托盘菜单（O-40 拆自 App.xaml.cs）：托盘的建造、菜单事件的转达，
 /// 以及托盘起来那一刻要说的两句话——坏设置文件的隔离通知、公共通道未上
 /// 线的存量迁移提示。
+///
+/// 菜单结构按 UI 报告 §5.2 重排（票 25）：动作 + KeyMap 渲染的加速键列。
+/// 曾经最显眼的 10 行灰显最近剪贴板内容整个退役——它点不了，在共享屏幕
+/// 时还是一份意外的泄露清单。
 /// </summary>
 internal sealed class TrayModule
 {
+    /// <summary>菜单行的稳定标识（回传事件的 Key）。</summary>
+    private const string BarKey = "bar";
+    private const string QuickPasteKey = "quick-paste";
+    private const string TranslateClipboardKey = "translate-clipboard";
+    private const string LibraryKey = "library";
+    private const string SettingsKey = "settings";
+    private const string KeymapKey = "keymap";
+    private const string UpdateKey = "update";
+    private const string QuitKey = "quit";
+
     /// <summary>
     /// Builds the tray and wires its menu. <paramref name="quarantineNotice"/>
     /// is the one sentence the settings load deferred until a tray existed to
@@ -21,18 +35,19 @@ internal sealed class TrayModule
     {
         var tray = new TrayIcon(shell.MessageWindow, "拾语")
         {
-            RecentItems = () => shell.Store.Recent(limit: 10).Select(entry => entry.Text).ToList(),
+            // 每次右键都重建：设置里改了键，下一次点开就是新的列。
+            Menu = () => MenuRows(shell.Settings),
         };
 
         shell.Tray = tray;
 
-        tray.QuitRequested += Application.Current.Shutdown;
-
         // The menu is the manual entrance to everything the hotkeys also reach:
         // each item goes through the shell's relay slots, never at a module.
+        tray.Command += key => Run(shell, key);
+
+        // Left click keeps going straight to the library — the thing the user
+        // most often wants (the reason it survived the §5.2 redesign).
         tray.OpenLibraryRequested += () => shell.ShowLibrary?.Invoke();
-        tray.OpenSettingsRequested += () => shell.ShowSettings?.Invoke();
-        tray.UpdateCheckRequested += () => shell.ShowUpdateWindow?.Invoke();
 
         // An unparseable settings file was renamed aside, not overwritten:
         // that deserves one honest sentence once a tray exists to say it in.
@@ -59,8 +74,60 @@ internal sealed class TrayModule
             {
                 tray.ShowNotification("拾语", hasOwnKey
                     ? "公共翻译通道还未开放，已改用你自己的密钥翻译。"
-                    : "公共翻译通道还未开放；翻译前请在 设置 → 服务 配置自己的密钥（有免费的预设可选）。");
+                    : "公共翻译通道还未开放；翻译前请在 设置 → 翻译 配置自己的密钥（有免费的预设可选）。");
             }
+        }
+    }
+
+    /// <summary>
+    /// §5.2 的菜单结构：三个有键的动作 / 分隔 / 管理历史（设了键才带列）、
+    /// 设置、键位速查 / 分隔 / 检查更新、退出。标签与加速键全部由
+    /// <see cref="KeyMap"/> 从现设置渲染——改键即改菜单。
+    /// </summary>
+    internal static IReadOnlyList<TrayMenuRow> MenuRows(AppSettings settings)
+    =>
+    [
+        new(BarKey, KeyMap.TrayLabel(HotkeyAction.Bar), KeyMap.Combination(HotkeyAction.Bar, settings)),
+        new(QuickPasteKey, KeyMap.TrayLabel(HotkeyAction.QuickBar), KeyMap.Combination(HotkeyAction.QuickBar, settings)),
+        new(TranslateClipboardKey, KeyMap.TrayLabel(HotkeyAction.ClipboardTranslate), KeyMap.Combination(HotkeyAction.ClipboardTranslate, settings)),
+        new(string.Empty, null, null),
+        new(LibraryKey, KeyMap.TrayLabel(HotkeyAction.Library), KeyMap.Combination(HotkeyAction.Library, settings)),
+        new(SettingsKey, "设置…", null),
+        new(KeymapKey, "键位速查…", null),
+        new(string.Empty, null, null),
+        new(UpdateKey, "检查更新…", null),
+        new(QuitKey, "退出拾语", null),
+    ];
+
+    private static void Run(AppShell shell, string key)
+    {
+        switch (key)
+        {
+            case BarKey:
+                shell.ToggleBar?.Invoke();
+                break;
+            case QuickPasteKey:
+                shell.ShowQuickBar?.Invoke();
+                break;
+            case TranslateClipboardKey:
+                shell.TranslateClipboard?.Invoke();
+                break;
+            case LibraryKey:
+                shell.ShowLibrary?.Invoke();
+                break;
+            case SettingsKey:
+                shell.ShowSettings?.Invoke();
+                break;
+            case KeymapKey:
+                // 深链进快捷键页的速查区：托盘问"键怎么按"，直接落到答案上。
+                shell.OpenSettingsAt?.Invoke("hotkeys.cheatsheet");
+                break;
+            case UpdateKey:
+                shell.ShowUpdateWindow?.Invoke();
+                break;
+            case QuitKey:
+                Application.Current.Shutdown();
+                break;
         }
     }
 }

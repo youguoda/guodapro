@@ -3,20 +3,22 @@ using System.Runtime.InteropServices;
 
 namespace Shiyu.Windows;
 
+/// <summary>托盘菜单的一行数据：<see cref="Label"/> 为 null 是分隔线；Key 是回传给 <see cref="Command"/> 的稳定标识。</summary>
+/// <param name="Accelerator">右对齐加速键列的文本（Win32 菜单惯例，\t 分列）；null 或空 = 本行不带键。</param>
+public sealed record TrayMenuRow(string Key, string? Label, string? Accelerator);
+
 /// <summary>
 /// The tray icon and its menu, via <c>Shell_NotifyIcon</c> and a Win32 popup
 /// menu. Deliberately not WinForms' NotifyIcon: loading the whole of Windows
 /// Forms into the process for one tray icon works against the memory budget
 /// this application exists to respect.
+///
+/// The menu is data the app supplies（§5.2 重排，票 25）：动作 + 加速键列，
+/// 不再罗列灰显的最近剪贴板内容——共享屏幕时那是一份意外的泄露清单。
+/// KeyMap 在 App 层把标签与组合键渲染成行，这里只管画与回传。
 /// </summary>
 public sealed class TrayIcon : IDisposable
 {
-    private const uint QuitCommandId = 1;
-    private const uint OpenLibraryCommandId = 2;
-    private const uint OpenSettingsCommandId = 3;
-    private const uint CheckUpdateCommandId = 4;
-    private const uint FirstEntryCommandId = 100;
-
     /// <summary>
     /// Explorer broadcasts this when it restarts, having forgotten every tray
     /// icon. Without re-adding ours here, the icon would vanish for good and
@@ -30,18 +32,19 @@ public sealed class TrayIcon : IDisposable
     private bool _added;
     private bool _disposed;
 
-    /// <summary>Supplies the labels shown above the separator, newest first.</summary>
-    public Func<IReadOnlyList<string>>? RecentItems { get; set; }
+    /// <summary>
+    /// Supplies the whole menu: action rows with their accelerator column and
+    /// separators (Label null), top to bottom, in the shape the UI report
+    /// pins (§5.2). Rebuilt on every open — a hotkey changed in settings
+    /// shows up the very next right click.
+    /// </summary>
+    public Func<IReadOnlyList<TrayMenuRow>>? Menu { get; set; }
 
-    public event Action? QuitRequested;
+    /// <summary>Raised with the clicked row's Key — the one event every menu action comes through.</summary>
+    public event Action<string>? Command;
 
-    /// <summary>Raised on a left click, and from the menu item of the same name.</summary>
+    /// <summary>Raised on a left click: straight to the library, the thing the user most often wants.</summary>
     public event Action? OpenLibraryRequested;
-
-    public event Action? OpenSettingsRequested;
-
-    /// <summary>Raised from the menu item — the manual entrance to the updater.</summary>
-    public event Action? UpdateCheckRequested;
 
     public TrayIcon(MessageWindow window, string tooltip)
     {
@@ -110,33 +113,24 @@ public sealed class TrayIcon : IDisposable
 
         try
         {
-            var items = RecentItems?.Invoke() ?? [];
-
-            if (items.Count == 0)
+            // Command ids are indexes plus one: TrackPopupMenuEx answers the
+            // id, the rows list answers what the id meant.
+            var rows = Menu?.Invoke() ?? [];
+            for (var index = 0; index < rows.Count; index++)
             {
-                NativeMethods.AppendMenuW(
-                    menu, NativeMethods.MfString | NativeMethods.MfGrayed, UIntPtr.Zero, "(还没有记录)");
-            }
-            else
-            {
-                for (var index = 0; index < items.Count; index++)
+                var row = rows[index];
+                if (row.Label is not { Length: > 0 })
                 {
-                    NativeMethods.AppendMenuW(
-                        menu,
-                        NativeMethods.MfString | NativeMethods.MfGrayed,
-                        new UIntPtr(FirstEntryCommandId + (uint)index),
-                        MenuLabel(items[index]));
+                    NativeMethods.AppendMenuW(menu, NativeMethods.MfSeparator, UIntPtr.Zero, null);
+                    continue;
                 }
-            }
 
-            NativeMethods.AppendMenuW(menu, NativeMethods.MfSeparator, UIntPtr.Zero, null);
-            NativeMethods.AppendMenuW(
-                menu, NativeMethods.MfString, new UIntPtr(OpenLibraryCommandId), "打开管理窗口");
-            NativeMethods.AppendMenuW(
-                menu, NativeMethods.MfString, new UIntPtr(OpenSettingsCommandId), "设置…");
-            NativeMethods.AppendMenuW(
-                menu, NativeMethods.MfString, new UIntPtr(CheckUpdateCommandId), "检查更新…");
-            NativeMethods.AppendMenuW(menu, NativeMethods.MfString, new UIntPtr(QuitCommandId), "退出拾语");
+                var text = row.Accelerator is { Length: > 0 } accelerator
+                    ? $"{row.Label}\t{accelerator}"
+                    : row.Label;
+                NativeMethods.AppendMenuW(
+                    menu, NativeMethods.MfString, new UIntPtr((uint)(index + 1)), Escape(text));
+            }
 
             if (!NativeMethods.GetCursorPos(out var cursor))
             {
@@ -155,20 +149,9 @@ public sealed class TrayIcon : IDisposable
 
             NativeMethods.PostMessageW(_window.Handle, NativeMethods.WmNull, IntPtr.Zero, IntPtr.Zero);
 
-            switch ((uint)command)
+            if (command > 0 && command <= rows.Count)
             {
-                case QuitCommandId:
-                    QuitRequested?.Invoke();
-                    break;
-                case OpenLibraryCommandId:
-                    OpenLibraryRequested?.Invoke();
-                    break;
-                case OpenSettingsCommandId:
-                    OpenSettingsRequested?.Invoke();
-                    break;
-                case CheckUpdateCommandId:
-                    UpdateCheckRequested?.Invoke();
-                    break;
+                Command?.Invoke(rows[(int)command - 1].Key);
             }
         }
         finally
@@ -198,15 +181,8 @@ public sealed class TrayIcon : IDisposable
         NativeMethods.Shell_NotifyIconW(NativeMethods.NimModify, ref notification);
     }
 
-    /// <summary>Collapses newlines and clips, so one entry stays one menu row.</summary>
-    private static string MenuLabel(string text)
-    {
-        var collapsed = string.Join(' ', text.Split(
-            ['\r', '\n', '\t'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
-
-        // Ampersands would otherwise be read as keyboard accelerators.
-        return Truncate(collapsed, 60).Replace("&", "&&");
-    }
+    /// <summary>Ampersands would otherwise be read as keyboard accelerators.</summary>
+    private static string Escape(string text) => text.Replace("&", "&&");
 
     private static string Truncate(string text, int maxLength)
         => text.Length <= maxLength ? text : text[..(maxLength - 1)] + "…";
