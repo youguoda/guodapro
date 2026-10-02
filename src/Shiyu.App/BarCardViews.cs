@@ -14,6 +14,50 @@ internal sealed class EntryBodyText : TextBlock
 }
 
 /// <summary>
+/// The card face（票 21 / UI 报告 §6.1 卡片）：a Border that also knows when the
+/// press that will become its "pressed" state is down. The four-state overlay
+/// and the selection ring are siblings laid over it, so no state ever costs
+/// layout — but a plain Border has no pressed notion to bind to, and the
+/// template needs one (hover alone comes free on UIElement).
+///
+/// Presses swallowed by a tray button (marked handled before they bubble)
+/// never reach these class handlers, so an action press never paints the card
+/// underneath.
+/// </summary>
+internal sealed class CardSurface : Border
+{
+    public static readonly DependencyProperty IsPressedProperty = DependencyProperty.Register(
+        nameof(IsPressed), typeof(bool), typeof(CardSurface), new FrameworkPropertyMetadata(false));
+
+    /// <summary>Whether the left button that presses this card is down. Drives the 9% state layer.</summary>
+    public bool IsPressed
+    {
+        get => (bool)GetValue(IsPressedProperty);
+        private set => SetValue(IsPressedProperty, value);
+    }
+
+    protected override void OnMouseLeftButtonDown(System.Windows.Input.MouseButtonEventArgs e)
+    {
+        IsPressed = true;
+        base.OnMouseLeftButtonDown(e);
+    }
+
+    protected override void OnMouseLeftButtonUp(System.Windows.Input.MouseButtonEventArgs e)
+    {
+        IsPressed = false;
+        base.OnMouseLeftButtonUp(e);
+    }
+
+    protected override void OnMouseLeave(System.Windows.Input.MouseEventArgs e)
+    {
+        // The release can happen off-card (no capture is taken here); leaving
+        // is the reliable end of any press this surface still believes in.
+        IsPressed = false;
+        base.OnMouseLeave(e);
+    }
+}
+
+/// <summary>
 /// The timestamp that yields its place to the hover actions. Fades and slides
 /// left when the tray opens, returns when it closes — the two read as one
 /// handover rather than as two separate events.

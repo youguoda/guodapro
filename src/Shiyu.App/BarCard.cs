@@ -31,6 +31,14 @@ internal sealed class BarCard : INotifyPropertyChanged
     public string KindText { get; init; } = string.Empty;
 
     /// <summary>
+    /// 纯文本卡不显示类型标签（§6.1/U-16）：左上扫读位只留给带信息量的
+    /// 标签——"链接""图片 · 1920×1080""3 个文件"。空文本即整组隐藏。
+    /// </summary>
+    public Visibility KindLabelVisibility => string.IsNullOrEmpty(KindText)
+        ? Visibility.Collapsed
+        : Visibility.Visible;
+
+    /// <summary>
     /// The facet glyph beside the kind word (票 39): the same IconGlyph family
     /// the header's type chips use, so a facet and its actions never draw two
     /// symbols for one idea.

@@ -72,11 +72,22 @@ internal partial class BarWindow
             Text = entry.Text,
             Preview = collapsed.Length > 500 ? collapsed[..500] + "…" : collapsed,
             DragHint = "🖱 按住左键拖出：文本入编辑器（带格式）、图片入聊天窗、文件入资源管理器",
+            // 类型标签只带信息量（§6.1/U-16）：纯文本/无子类型的译文之外的
+            // 空白留给空串——模板据 KindLabelVisibility 整组隐藏。
             KindText = entry.Kind switch
             {
-                EntryKind.Image => "图片",
-                EntryKind.Files => "文件",
-                _ => entry.TranslatedFrom is null ? "文本" : "译文 · 译自原文",
+                EntryKind.Image => entry.ImageWidth > 0
+                    ? $"图片 · {entry.ImageWidth}×{entry.ImageHeight}"
+                    : "图片",
+                EntryKind.Files => $"{entry.Files.Count} 个文件",
+                _ => entry.Subtype switch
+                {
+                    EntrySubtype.Link => "链接",
+                    EntrySubtype.Email => "邮箱",
+                    EntrySubtype.Color => "颜色",
+                    EntrySubtype.LocalPath => "路径",
+                    _ => entry.TranslatedFrom is null ? "" : "译文",
+                },
             },
             KindGlyph = entry.Kind switch
             {

@@ -175,11 +175,15 @@
             </Setter>
         </Style>
 
-        <!-- Rows are plain; the card visuals live in the item template. -->
+        <!--
+          Rows are plain; the card visuals live in the item template.
+          栅格对称（§6.1）：主列表右侧有 6 DIP 滚动槽，行右距 2，视觉两侧
+          都是 8；置顶列表永不滚动，行距两侧 8。
+        -->
         <Style TargetType="{x:Type local:BarCardContainer}">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="Padding" Value="0"/>
-            <Setter Property="Margin" Value="8,4"/>
+            <Setter Property="Margin" Value="8,4,2,4"/>
             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
             <Setter Property="Template">
                 <Setter.Value>
@@ -190,13 +194,23 @@
             </Setter>
         </Style>
 
+        <Style x:Key="PinnedCardRow" TargetType="{x:Type local:BarCardContainer}"
+               BasedOn="{StaticResource {x:Type local:BarCardContainer}}">
+            <Setter Property="Margin" Value="8,4"/>
+        </Style>
+
         <DataTemplate x:Key="CardTemplate" DataType="{x:Type local:BarCard}">
-            <!-- 卡片（§4.7）：Surface + 1 DIP CardStroke、圆角 4、间距 8；
-                 选中 = 2 DIP accent 内描边 + Selected 底。 -->
-            <Border x:Name="Card" CornerRadius="{DynamicResource Radius.Control}"
+            <!--
+              卡片（§6.1）：Surface + 1 DIP CardStroke、圆角 4、Padding 12,8。
+              四态走叠加层（hover 5% / pressed 9%，StateOverlay，不改底色不占
+              布局）；选中 = 2 DIP accent 内环（Ring，独立 Border 叠加，正文
+              一像素都不动——选中不再换 BorderThickness）。
+            -->
+            <Grid>
+            <local:CardSurface x:Name="Card" CornerRadius="{DynamicResource Radius.Control}"
                     Background="{DynamicResource Brush.Surface}"
                     BorderBrush="{DynamicResource Brush.CardStroke}" BorderThickness="1"
-                    Padding="10,8" MouseLeftButtonDown="OnCardPressed"
+                    Padding="12,8" MouseLeftButtonDown="OnCardPressed"
                     MouseRightButtonUp="OnCardRightClick"
                     MouseEnter="OnCardMouseEnter" MouseLeave="OnCardMouseLeave"
                     MouseMove="OnCardMouseMove">
@@ -210,7 +224,9 @@
                          it is on the left — the type badge is icon + word, the
                          same glyph family the facet chips use; on the right the
                          timestamp, which yields its place to the hover actions
-                         and takes it back afterwards. -->
+                         and takes it back afterwards.
+                         纯文本不再自报类型（§6.1）：扫读位留给信息量——链接、
+                         "图片 · 1920×1080"、"3 个文件"。 -->
                     <DockPanel Grid.Row="0" Margin="0,0,0,6">
                         <Grid DockPanel.Dock="Left" Width="16" Height="16" Margin="0,0,6,0">
                             <Image Source="{Binding Icon}" Visibility="{Binding IconVisibility}"/>
@@ -232,7 +248,8 @@
                             <local:ActionTray Margin="6,0,0,0"/>
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
-                                    ToolTip="{Binding KindToolTip}">
+                                    ToolTip="{Binding KindToolTip}"
+                                    Visibility="{Binding KindLabelVisibility}">
                             <TextBlock Text="{Binding KindGlyph}" FontFamily="{DynamicResource Font.Icon}"
                                        FontSize="{DynamicResource Size.IconXs}"
                                        Foreground="{DynamicResource Brush.TextSecondary}"
@@ -351,7 +368,16 @@
                                    Visibility="{Binding PinnedVisibility}"/>
                     </StackPanel>
                 </Grid>
-            </Border>
+            </local:CardSurface>
+
+            <!-- 四态叠加层与选中内环：CardSurface 的兄弟层，铺在内容之上，
+                 不进布局、不推动正文一个像素（§6.1"就地显示，零位移"）。 -->
+            <Border x:Name="StateOverlay" Margin="1" CornerRadius="{DynamicResource Radius.Thumb}"
+                    Background="Transparent" IsHitTestVisible="False"/>
+            <Border x:Name="Ring" Margin="1" CornerRadius="{DynamicResource Radius.Thumb}"
+                    BorderBrush="{DynamicResource Brush.Accent}" BorderThickness="2"
+                    Visibility="Collapsed" IsHitTestVisible="False"/>
+            </Grid>
             <DataTemplate.Triggers>
                 <DataTrigger Binding="{Binding Kind}" Value="Image">
                     <Setter TargetName="TextBody" Property="Visibility" Value="Collapsed"/>
@@ -365,10 +391,18 @@
                     <Setter TargetName="TextBody" Property="Visibility" Value="Collapsed"/>
                     <Setter TargetName="ImageBody" Property="Visibility" Value="Collapsed"/>
                 </DataTrigger>
+                <!-- hover 5% / pressed 9%（StateHover/StatePressed 令牌即此配比）。 -->
+                <DataTrigger Binding="{Binding IsMouseOver, ElementName=Card}" Value="True">
+                    <Setter TargetName="StateOverlay" Property="Background"
+                            Value="{DynamicResource Brush.StateHover}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsPressed, ElementName=Card}" Value="True">
+                    <Setter TargetName="StateOverlay" Property="Background"
+                            Value="{DynamicResource Brush.StatePressed}"/>
+                </DataTrigger>
+                <!-- 选中 = 2 DIP accent 内环；底色与描边一概不变。 -->
                 <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                    <Setter TargetName="Card" Property="Background" Value="{DynamicResource Brush.Selected}"/>
-                    <Setter TargetName="Card" Property="BorderBrush" Value="{DynamicResource Brush.Accent}"/>
-                    <Setter TargetName="Card" Property="BorderThickness" Value="2"/>
+                    <Setter TargetName="Ring" Property="Visibility" Value="Visible"/>
                 </DataTrigger>
             </DataTemplate.Triggers>
         </DataTemplate>
@@ -551,6 +585,7 @@
                   run the tray configuration.
                 -->
                 <local:BarCardsList x:Name="PinnedList" ItemTemplate="{StaticResource CardTemplate}"
+                                    ItemContainerStyle="{StaticResource PinnedCardRow}"
                                     Background="Transparent" BorderThickness="0"
                                     HorizontalContentAlignment="Stretch"
                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
