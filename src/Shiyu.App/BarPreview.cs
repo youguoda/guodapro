@@ -5,37 +5,6 @@ using Shiyu.Windows;
 
 namespace Shiyu.App;
 
-/// <summary>
-/// A window's rectangle in physical pixels, read straight from the OS — the
-/// one source that is right on every monitor and scale combination.
-/// </summary>
-internal static class WindowRects
-{
-    [System.Runtime.InteropServices.DllImport("user32.dll")]
-    private static extern bool GetWindowRect(IntPtr handle, out NativeRect rect);
-
-    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
-    private struct NativeRect
-    {
-        public int Left;
-        public int Top;
-        public int Right;
-        public int Bottom;
-    }
-
-    public static bool TryGet(IntPtr handle, out ScreenRect rect)
-    {
-        if (handle != IntPtr.Zero && GetWindowRect(handle, out var native))
-        {
-            rect = new ScreenRect(native.Left, native.Top, native.Right, native.Bottom);
-            return true;
-        }
-
-        rect = default;
-        return false;
-    }
-}
-
 internal partial class BarWindow
 {
     // --- preview panel ---------------------------------------------------------

@@ -1,4 +1,3 @@
-using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
@@ -73,12 +72,8 @@ internal partial class ConnectorWindow : Window
 
         // Clicks pass through the whole sheet — the curve is explanation, not
         // a surface. NOACTIVATE for the same reason the panel carries it.
-        var helper = new WindowInteropHelper(this);
-        var style = GetWindowLongPtr(helper.Handle, GwlExStyle).ToInt64();
-        SetWindowLongPtr(
-            helper.Handle,
-            GwlExStyle,
-            new IntPtr(style | WsExTransparent | NativeNoActivate));
+        // The interop lives in the platform layer (O-39).
+        TransientWindow.MakeClickThrough(new WindowInteropHelper(this).Handle);
     }
 
     /// <summary>
@@ -119,8 +114,8 @@ internal partial class ConnectorWindow : Window
             Show();
         }
 
-        SetWindowPos(helper.Handle, below, left, top, right - left, bottom - top,
-            SwpNoActivate | SwpShowWindow);
+        TransientWindow.PlaceBelow(
+            helper.Handle, below, left, top, right - left, bottom - top);
 
         var (scaleX, scaleY) = ScreenGeometry.ScaleForRect(new ScreenRect(left, top, right, bottom));
 
@@ -158,20 +153,4 @@ internal partial class ConnectorWindow : Window
             Hide();
         }
     }
-
-    private const int GwlExStyle = -20;
-    private const long WsExTransparent = 0x20;
-    private const long NativeNoActivate = 0x0800_0000;
-    private const uint SwpNoActivate = 0x0010;
-    private const uint SwpShowWindow = 0x0040;
-
-    [DllImport("user32.dll")]
-    private static extern IntPtr GetWindowLongPtr(IntPtr handle, int index);
-
-    [DllImport("user32.dll")]
-    private static extern IntPtr SetWindowLongPtr(IntPtr handle, int index, IntPtr value);
-
-    [DllImport("user32.dll")]
-    private static extern bool SetWindowPos(
-        IntPtr handle, IntPtr after, int x, int y, int width, int height, uint flags);
 }

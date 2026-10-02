@@ -47,6 +47,14 @@ public static class DwmEffects
         }
     }
 
+    /// <summary>
+    /// One DWM window attribute, set best-effort (O-39 收口)：dwmapi 的入口
+    /// 只住在这里——App 层的材质外壳（Backdrop）与这里的面板外观共用同一
+    /// 个声明。true 是系统收下了，false 是这台系统不认，调用方自行回退。
+    /// </summary>
+    public static bool TrySetWindowAttribute(IntPtr handle, int attribute, int value)
+        => TrySet(handle, attribute, value);
+
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
 }

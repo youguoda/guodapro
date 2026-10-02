@@ -32,6 +32,30 @@ public static class TransientWindow
     }
 
     /// <summary>
+    /// Marks a sheet the pointer must pass straight through: hit-testing goes
+    /// to whatever is below (WS_EX_TRANSPARENT) and activation never happens
+    /// (WS_EX_NOACTIVATE), while the z-order bits are left alone — ordering is
+    /// the caller's explicit business (the connector layer, O-31).
+    /// </summary>
+    public static void MakeClickThrough(IntPtr handle)
+    {
+        var style = NativeMethods.GetWindowLongPtr(handle, NativeMethods.GwlExStyle).ToInt64();
+        NativeMethods.SetWindowLongPtr(handle, NativeMethods.GwlExStyle, new IntPtr(
+            style | (long)NativeMethods.WsExTransparent | (long)NativeMethods.WsExNoActivate));
+    }
+
+    /// <summary>
+    /// Places a window at an explicit size and position, directly below
+    /// another handle in the z-order, without activating it — visible first,
+    /// pressed under second (O-31).
+    /// </summary>
+    public static void PlaceBelow(
+        IntPtr handle, IntPtr insertAfter, int x, int y, int width, int height)
+        => NativeMethods.SetWindowPos(
+            handle, insertAfter, x, y, width, height,
+            NativeMethods.SwpNoActivate | NativeMethods.SwpShowWindow);
+
+    /// <summary>
     /// Moves a window in physical screen pixels, sidestepping the scaled
     /// coordinate system entirely — which is what makes it behave on a desk
     /// with monitors at different scale factors — and lands it in the given

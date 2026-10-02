@@ -1,7 +1,7 @@
-using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
+using Shiyu.Windows;
 
 namespace Shiyu.App;
 
@@ -152,8 +152,5 @@ internal static class Backdrop
     }
 
     private static bool TrySet(IntPtr handle, int attribute, int value)
-        => DwmSetWindowAttribute(handle, attribute, ref value, sizeof(int)) == 0;
-
-    [DllImport("dwmapi.dll")]
-    private static extern int DwmSetWindowAttribute(IntPtr handle, int attribute, ref int value, int size);
+        => DwmEffects.TrySetWindowAttribute(handle, attribute, value);
 }

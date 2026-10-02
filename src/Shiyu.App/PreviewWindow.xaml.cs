@@ -242,7 +242,7 @@ internal partial class PreviewWindow : Window
         _slide?.Stop();
 
         var handle = new WindowInteropHelper(this).Handle;
-        if (GetWindowRect(handle, out var current))
+        if (Shiyu.Windows.WindowRects.TryGet(handle, out var current))
         {
             var start = new ScreenPoint(current.Left, current.Top);
             var duration = MotionPlan.Duration(animationsAllowed: true);
@@ -284,18 +284,6 @@ internal partial class PreviewWindow : Window
         {
             TransientWindow.MoveTo(handle, target, _band);
         }
-    }
-
-    [System.Runtime.InteropServices.DllImport("user32.dll")]
-    private static extern bool GetWindowRect(IntPtr handle, out NativeRect rect);
-
-    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
-    private struct NativeRect
-    {
-        public int Left;
-        public int Top;
-        public int Right;
-        public int Bottom;
     }
 
     /// <summary>Removes the panel. The fade starts from a painted surface, so it composites.</summary>

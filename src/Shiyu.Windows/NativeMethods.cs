@@ -331,6 +331,9 @@ internal static class NativeMethods
 
     internal const int GwlExStyle = -20;
     internal const uint WsExNoActivate = 0x08000000;
+
+    /// <summary>WS_EX_TRANSPARENT: hit-testing passes through to windows below.</summary>
+    internal const uint WsExTransparent = 0x00000020;
     internal const uint WsExTopmost = 0x00000008;
     internal static readonly IntPtr HwndTopmost = new(-1);
 
@@ -382,6 +385,18 @@ internal static class NativeMethods
 
     [DllImport("user32.dll", SetLastError = true, EntryPoint = "SetWindowLongPtrW")]
     internal static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int index, IntPtr value);
+
+    /// <summary>
+    /// The window's rectangle in physical pixels — the one source that is
+    /// right on every monitor and scale combination (O-39 收口自 App 层)。
+    /// </summary>
+    [DllImport("user32.dll", SetLastError = true)]
+    internal static extern bool GetWindowRect(IntPtr hWnd, out Rect rect);
+
+    /// <summary>Repositions and resizes in physical pixels, repainting when asked.</summary>
+    [DllImport("user32.dll", SetLastError = true)]
+    internal static extern bool MoveWindow(
+        IntPtr hWnd, int x, int y, int width, int height, bool repaint);
 
 
     [DllImport("user32.dll")]

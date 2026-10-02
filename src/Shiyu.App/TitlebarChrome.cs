@@ -71,17 +71,16 @@ internal static class TitlebarChrome
                 (int)(center.X * GetScaleAt(center).ScaleX),
                 (int)(center.Y * GetScaleAt(center).ScaleY));
             var work = ScreenGeometry.WorkAreaAt(screenPoint);
-            MoveWindow(
+
+            // The interop lives in the platform layer (O-39).
+            Shiyu.Windows.WindowRects.Move(
                 new System.Windows.Interop.WindowInteropHelper(window).Handle,
-                work.Left, work.Top, work.Right - work.Left, work.Bottom - work.Top, true);
+                work.Left, work.Top, work.Right - work.Left, work.Bottom - work.Top);
         }
     }
 
     private static (double ScaleX, double ScaleY) GetScaleAt(System.Windows.Point diuPoint)
         => ScreenGeometry.ScaleAt(new Shiyu.Core.ScreenPoint((int)diuPoint.X, (int)diuPoint.Y));
-
-    [DllImport("user32.dll")]
-    private static extern bool MoveWindow(IntPtr handle, int x, int y, int width, int height, bool repaint);
 
     private static bool IsInsideCaptionButton(DependencyObject? source)
     {
