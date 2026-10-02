@@ -5,7 +5,7 @@
         ShowActivated="False" ShowInTaskbar="False" Topmost="True"
         ResizeMode="NoResize" SizeToContent="Height" Width="420" Opacity="0"
         TextElement.FontFamily="{DynamicResource Font.Ui}"
-        TextElement.FontSize="{DynamicResource Size.Body}"
+        TextElement.FontSize="{DynamicResource Type.Body}"
         TextElement.Foreground="{DynamicResource Brush.Text}">
     <Border x:Name="Shell" CornerRadius="{DynamicResource Radius.Window}" Background="{DynamicResource Brush.SurfaceMaterial}"
             BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1">
@@ -17,21 +17,25 @@
             <DockPanel LastChildFill="False" Margin="0,0,0,8">
                 <TextBlock x:Name="DirectionLabel" DockPanel.Dock="Left"
                            Foreground="{DynamicResource Brush.TextSecondary}"
-                           FontSize="{DynamicResource Size.Caption}" VerticalAlignment="Center" />
+                           FontSize="{DynamicResource Type.Caption}" VerticalAlignment="Center" />
                 <Button x:Name="CloseButton" DockPanel.Dock="Right" Content="✕"
-                        FontSize="{DynamicResource Size.Caption}" Padding="6,2" BorderThickness="0"
+                        FontSize="{DynamicResource Type.Caption}" Padding="6,2" BorderThickness="0"
                         Background="Transparent" Cursor="Hand" Click="OnClose" ToolTip="关闭（Esc）" />
                 <Button x:Name="SwapButton" DockPanel.Dock="Right" Content="⇄ 换方向"
-                        FontSize="{DynamicResource Size.Caption}" Padding="8,2" Margin="0,0,6,0"
+                        FontSize="{DynamicResource Type.Body}" Padding="8,2" Margin="0,0,6,0"
                         BorderThickness="0" Background="Transparent" Cursor="Hand"
                         Click="OnSwapDirection" />
                 <Button x:Name="SentenceToggle" DockPanel.Dock="Right" Content="逐句对照"
-                        FontSize="{DynamicResource Size.Caption}" Padding="8,2" Margin="0,0,6,0"
+                        FontSize="{DynamicResource Type.Body}" Padding="8,2" Margin="0,0,6,0"
                         BorderThickness="0" Background="Transparent" Cursor="Hand"
                         Click="OnToggleSentenceAlignment" ToolTip="按句对照显示原文与译文（默认整段）" />
             </DockPanel>
 
-            <TextBlock x:Name="OriginalText" FontSize="{DynamicResource Size.Secondary}"
+            <!-- 原文是译文的"出处"而非第一视觉位：比译文低一档（14/24，次级色），
+                 层级方向与 UI 报告 §6.2"原文小于译文"一致。 -->
+            <TextBlock x:Name="OriginalText" FontSize="{DynamicResource Type.Body}"
+                       LineHeight="{DynamicResource Line.BodyMulti}"
+                       LineStackingStrategy="BlockLineHeight"
                        Foreground="{DynamicResource Brush.TextSecondary}"
                        TextWrapping="Wrap" MaxHeight="72" />
 
@@ -41,19 +45,21 @@
                           VerticalScrollBarVisibility="Auto"
                           HorizontalScrollBarVisibility="Disabled">
                 <StackPanel>
-                    <TextBlock x:Name="TranslatedText" FontSize="{DynamicResource Size.BodyLarge}"
-                               TextWrapping="Wrap" LineHeight="{DynamicResource Line.BodyLarge}"
+                    <TextBlock x:Name="TranslatedText" FontSize="{DynamicResource Type.Content}"
+                               TextWrapping="Wrap" LineHeight="{DynamicResource Line.Content}"
                                LineStackingStrategy="BlockLineHeight" />
                     <ItemsControl x:Name="SentencePairs" Visibility="Collapsed" Margin="0,2,0,0">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <StackPanel Margin="0,6,0,0">
                                     <TextBlock Text="{Binding Original}" TextWrapping="Wrap"
-                                               FontSize="{DynamicResource Size.Secondary}"
+                                               FontSize="{DynamicResource Type.Body}"
+                                               LineHeight="{DynamicResource Line.BodyMulti}"
+                                               LineStackingStrategy="BlockLineHeight"
                                                Foreground="{DynamicResource Brush.TextSecondary}" />
                                     <TextBlock Text="{Binding Translated}" TextWrapping="Wrap"
-                                               FontSize="{DynamicResource Size.BodyLarge}"
-                                               LineHeight="{DynamicResource Line.BodyLarge}"
+                                               FontSize="{DynamicResource Type.Content}"
+                                               LineHeight="{DynamicResource Line.Content}"
                                                LineStackingStrategy="BlockLineHeight" />
                                 </StackPanel>
                             </DataTemplate>
@@ -69,10 +75,11 @@
                     BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1">
                 <StackPanel>
                     <StackPanel Orientation="Horizontal">
-                        <TextBlock x:Name="CardWord" FontSize="{DynamicResource Size.Body}"
+                        <!-- 词头 20 SemiBold（拉丁）专用档，UI 报告 §6.2 单词态。 -->
+                        <TextBlock x:Name="CardWord" FontSize="{DynamicResource Type.Headword}"
                                    FontWeight="{DynamicResource Weight.Emphasis}" />
                         <TextBlock x:Name="CardPhonetic" Margin="8,0,0,0" VerticalAlignment="Center"
-                                   FontSize="{DynamicResource Size.Caption}" FontStyle="Italic"
+                                   FontSize="{DynamicResource Type.Body}" FontStyle="Italic"
                                    Foreground="{DynamicResource Brush.TextSecondary}" />
                     </StackPanel>
                     <ItemsControl x:Name="CardSenses" Margin="0,4,0,0">
@@ -80,13 +87,13 @@
                             <DataTemplate>
                                 <StackPanel Margin="0,4,0,0">
                                     <TextBlock Text="{Binding PartOfSpeech}"
-                                               FontSize="{DynamicResource Size.Caption}"
+                                               FontSize="{DynamicResource Type.Caption}"
                                                Foreground="{DynamicResource Brush.Accent}" />
                                     <ItemsControl ItemsSource="{Binding Definitions}" Margin="8,2,0,0">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
                                                 <TextBlock Text="{Binding}" TextWrapping="Wrap"
-                                                           FontSize="{DynamicResource Size.Caption}"
+                                                           FontSize="{DynamicResource Type.Body}"
                                                            Margin="0,1" />
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
@@ -96,14 +103,14 @@
                                             <DataTemplate>
                                                 <!-- 例句/同义词走次级色：三级色在卡面上只有 4.33:1（票 18） -->
                                                 <TextBlock Text="{Binding}" TextWrapping="Wrap"
-                                                           FontSize="{DynamicResource Size.Hint}"
+                                                           FontSize="{DynamicResource Type.Caption}"
                                                            FontStyle="Italic" Margin="0,1"
                                                            Foreground="{DynamicResource Brush.TextSecondary}" />
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
                                     <TextBlock Text="{Binding SynonymsLine}" TextWrapping="Wrap"
-                                               FontSize="{DynamicResource Size.Hint}" Margin="8,2,0,0"
+                                               FontSize="{DynamicResource Type.Caption}" Margin="8,2,0,0"
                                                Foreground="{DynamicResource Brush.TextSecondary}" />
                                 </StackPanel>
                             </DataTemplate>
@@ -118,41 +125,47 @@
                     Background="{DynamicResource Brush.SurfaceSubtle}"
                     BorderBrush="{DynamicResource Brush.Accent}" BorderThickness="1">
                 <StackPanel>
-                    <TextBlock Text="还没有配置翻译服务" FontSize="{DynamicResource Size.Body}"
+                    <TextBlock Text="还没有配置翻译服务" FontSize="{DynamicResource Type.Body}"
                                FontWeight="{DynamicResource Weight.Emphasis}" />
                     <TextBlock Text="翻译需要一个你自己的 API 密钥：设置 → 服务里选一家服务商预设（有免费的），点「申请密钥」，粘进来即可。"
                                TextWrapping="Wrap" Margin="0,4,0,0"
-                               FontSize="{DynamicResource Size.Caption}"
+                               FontSize="{DynamicResource Type.Caption}"
+                               LineHeight="{DynamicResource Line.CaptionMulti}"
+                               LineStackingStrategy="BlockLineHeight"
                                Foreground="{DynamicResource Brush.TextSecondary}" />
                     <Button x:Name="SetupButton" Content="去配置" HorizontalAlignment="Left"
                             Margin="0,8,0,0" Padding="14,4" Cursor="Hand" Click="OnOpenSetup"
                             ToolTip="打开设置的服务页"/>
                     <TextBlock Text="用公共通道？暂未开放" Margin="0,8,0,0"
-                               FontSize="{DynamicResource Size.Hint}"
+                               FontSize="{DynamicResource Type.Caption}"
                                Foreground="{DynamicResource Brush.TextTertiary}"
                                ToolTip="公共通道将在上线条件满足后开放：自定义域名大陆实测可达、服务端加固完成、运营费用有人承担。"/>
                 </StackPanel>
             </Border>
 
-            <TextBlock x:Name="StatusText" FontSize="{DynamicResource Size.Caption}" Margin="0,8,0,0"
+            <!-- 错误反馈 12/20 Danger（UI 报告 §6.3 校验规格同族）。 -->
+            <TextBlock x:Name="StatusText" FontSize="{DynamicResource Type.Caption}"
+                       LineHeight="{DynamicResource Line.CaptionMulti}"
+                       LineStackingStrategy="BlockLineHeight"
+                       Margin="0,8,0,0"
                        TextWrapping="Wrap" Foreground="{DynamicResource Brush.Danger}"
                        Visibility="Collapsed" />
 
             <DockPanel LastChildFill="False" Margin="0,10,0,0">
                 <TextBlock x:Name="HintText" DockPanel.Dock="Left"
-                           FontSize="{DynamicResource Size.Hint}"
+                           FontSize="{DynamicResource Type.Caption}"
                            Foreground="{DynamicResource Brush.TextTertiary}"
                            Text="Esc 关闭" VerticalAlignment="Center" />
                 <Button x:Name="SaveButton" DockPanel.Dock="Right" Content="存入历史" IsEnabled="False"
-                        FontSize="{DynamicResource Size.Caption}" Padding="10,4" Margin="0,0,6,0"
+                        FontSize="{DynamicResource Type.Body}" Padding="10,4" Margin="0,0,6,0"
                         Cursor="Hand" Click="OnSaveToHistory"
                         ToolTip="译文存为一条记录，并关联原文条目"/>
                 <Button x:Name="SpeakButton" DockPanel.Dock="Right" Content="🔊 朗读"
-                        FontSize="{DynamicResource Size.Caption}" Padding="10,4" Margin="0,0,6,0"
+                        FontSize="{DynamicResource Type.Body}" Padding="10,4" Margin="0,0,6,0"
                         Cursor="Hand" Click="OnSpeak"
                         ToolTip="朗读译文；朗读中再点一次即停"/>
                 <Button x:Name="CopyButton" DockPanel.Dock="Right" Content="复制译文"
-                        FontSize="{DynamicResource Size.Caption}" Padding="10,4" Cursor="Hand"
+                        FontSize="{DynamicResource Type.Body}" Padding="10,4" Cursor="Hand"
                         Click="OnCopy" />
             </DockPanel>
         </StackPanel>

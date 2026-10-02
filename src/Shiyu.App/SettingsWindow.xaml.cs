@@ -137,7 +137,7 @@ public partial class SettingsWindow : Window
             var breadcrumb = new TextBlock
             {
                 Text = $"{hit.PageTitle} · {hit.SectionTitle}",
-                FontSize = (double)FindResource("Size.Hint"),
+                FontSize = (double)FindResource("Type.Caption"),
             };
             breadcrumb.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
 
@@ -167,7 +167,7 @@ public partial class SettingsWindow : Window
             {
                 Text = $"已显示前 {SettingsSearch.ResultCap} 项——再具体一点。",
                 Margin = new Thickness(8, 4, 8, 4),
-                FontSize = (double)FindResource("Size.Hint"),
+                FontSize = (double)FindResource("Type.Caption"),
             };
             cap.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextTertiary");
             ResultsList.Children.Add(cap);
@@ -621,9 +621,11 @@ public partial class SettingsWindow : Window
         {
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 4, 0, 0),
-            FontSize = (double)FindResource("Size.Caption"),
+            FontSize = (double)FindResource("Type.Caption"),
+            LineStackingStrategy = LineStackingStrategy.BlockLineHeight,
             Visibility = Visibility.Collapsed,
         };
+        _directoryWarning.SetResourceReference(TextBlock.LineHeightProperty, "Line.CaptionMulti");
         _directoryWarning.SetResourceReference(TextBlock.ForegroundProperty, "Brush.Danger");
 
         var stack = new StackPanel();
@@ -744,7 +746,7 @@ public partial class SettingsWindow : Window
             {
                 Text = $"{name}  {FormatBytes(bytes)}",
                 Margin = new Thickness(0, 2, 0, 2),
-                FontSize = (double)FindResource("Size.Secondary"),
+                FontSize = (double)FindResource("Type.Caption"),
             };
             row.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
             return row;
@@ -773,8 +775,10 @@ public partial class SettingsWindow : Window
                     Text = "已超过 500 MB——考虑缩短图片保留天数，或导出备份后清空。",
                     TextWrapping = TextWrapping.Wrap,
                     Margin = new Thickness(0, 4, 0, 0),
-                    FontSize = (double)FindResource("Size.Caption"),
+                    FontSize = (double)FindResource("Type.Caption"),
+                    LineStackingStrategy = LineStackingStrategy.BlockLineHeight,
                 };
+                warning.SetResourceReference(TextBlock.LineHeightProperty, "Line.CaptionMulti");
                 warning.SetResourceReference(TextBlock.ForegroundProperty, "Brush.Danger");
                 panel.Children.Add(warning);
             }
@@ -887,8 +891,10 @@ public partial class SettingsWindow : Window
         {
             Text = hint,
             TextWrapping = TextWrapping.Wrap,
-            FontSize = (double)FindResource("Size.Caption"),
+            FontSize = (double)FindResource("Type.Caption"),
+            LineStackingStrategy = LineStackingStrategy.BlockLineHeight,
         };
+        text.SetResourceReference(TextBlock.LineHeightProperty, "Line.CaptionMulti");
         text.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
         stack.Children.Add(text);
         return stack;

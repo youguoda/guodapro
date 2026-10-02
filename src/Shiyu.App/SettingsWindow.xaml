@@ -5,7 +5,7 @@
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         WindowStartupLocation="CenterScreen"
         TextElement.FontFamily="{DynamicResource Font.Ui}"
-        TextElement.FontSize="{DynamicResource Size.Secondary}"
+        TextElement.FontSize="{DynamicResource Type.Body}"
         TextElement.Foreground="{DynamicResource Brush.Text}">
     <WindowChrome.WindowChrome>
         <WindowChrome CaptionHeight="0" ResizeBorderThickness="6"
@@ -14,13 +14,13 @@
     </WindowChrome.WindowChrome>
     <Window.Resources>
         <Style x:Key="SectionHeading" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="{DynamicResource Size.Body}"/>
+            <Setter Property="FontSize" Value="{DynamicResource Type.BodyStrong}"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Foreground" Value="{DynamicResource Brush.Text}"/>
             <Setter Property="Margin" Value="0,14,0,6"/>
         </Style>
         <Style x:Key="FieldLabel" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="{DynamicResource Size.Secondary}"/>
+            <Setter Property="FontSize" Value="{DynamicResource Type.Body}"/>
             <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
         </Style>
@@ -42,16 +42,16 @@
                     Background="Transparent" MouseLeftButtonDown="OnTitleBarDrag">
                 <DockPanel LastChildFill="False" Margin="14,0,0,0">
                     <TextBlock Text="拾语 · 设置" VerticalAlignment="Center"
-                               FontSize="{DynamicResource Size.Secondary}"
+                               FontSize="{DynamicResource Type.Body}"
                                Foreground="{DynamicResource Brush.TextSecondary}"/>
                     <Button x:Name="MinimizeButton" DockPanel.Dock="Right" Width="34" Height="30"
-                            Content="&#xE921;" FontFamily="{DynamicResource Font.Icon}" FontSize="{DynamicResource Size.IconSmall}"
+                            Content="&#xE921;" FontFamily="{DynamicResource Font.Icon}" FontSize="{DynamicResource Size.IconXs}"
                             Style="{StaticResource CaptionButtonStyle}" Click="OnMinimizeClick" ToolTip="最小化"/>
                     <Button x:Name="MaximizeButton" DockPanel.Dock="Right" Width="34" Height="30"
-                            Content="&#xE922;" FontFamily="{DynamicResource Font.Icon}" FontSize="{DynamicResource Size.IconSmall}"
+                            Content="&#xE922;" FontFamily="{DynamicResource Font.Icon}" FontSize="{DynamicResource Size.IconXs}"
                             Style="{StaticResource CaptionButtonStyle}" Click="OnMaximizeRestoreClick" ToolTip="最大化"/>
                     <Button x:Name="CloseButton" DockPanel.Dock="Right" Width="40" Height="30"
-                            Content="&#xE8BB;" FontFamily="{DynamicResource Font.Icon}" FontSize="{DynamicResource Size.IconSmall}"
+                            Content="&#xE8BB;" FontFamily="{DynamicResource Font.Icon}" FontSize="{DynamicResource Size.IconXs}"
                             Style="{StaticResource CloseCaptionButtonStyle}" Click="OnCloseClick" ToolTip="关闭"/>
                 </DockPanel>
             </Border>
@@ -69,7 +69,7 @@
                  TextChanged="OnSearchChanged"/>
         <TextBlock Text="搜索设置…" Grid.Row="0" IsHitTestVisible="False" Margin="10,7,0,0"
                    Foreground="{DynamicResource Brush.TextTertiary}"
-                   FontSize="{DynamicResource Size.Secondary}">
+                   FontSize="{DynamicResource Type.Body}">
             <TextBlock.Style>
                 <Style TargetType="TextBlock">
                     <Style.Triggers>
@@ -100,7 +100,7 @@
         <DockPanel Grid.Row="2" LastChildFill="False" Margin="0,14,0,0">
             <TextBlock x:Name="SaveStatus" DockPanel.Dock="Left" VerticalAlignment="Center"
                        Foreground="{DynamicResource Brush.TextSecondary}"
-                       FontSize="{DynamicResource Size.Secondary}" TextWrapping="Wrap" MaxWidth="330"/>
+                       FontSize="{DynamicResource Type.Body}" TextWrapping="Wrap" MaxWidth="330"/>
             <Button DockPanel.Dock="Right" Content="保存" MinWidth="86" Padding="12,5"
                     Click="OnSave"/>
             <Button DockPanel.Dock="Right" Content="关闭" MinWidth="86" Padding="12,5"

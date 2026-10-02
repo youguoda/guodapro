@@ -5,7 +5,7 @@
         SizeChanged="OnWindowSizeChanged"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         WindowStartupLocation="CenterScreen"
-        FontSize="{DynamicResource Size.Body}"
+        FontSize="{DynamicResource Type.Body}"
         TextElement.FontFamily="{DynamicResource Font.Ui}"
         TextElement.Foreground="{DynamicResource Brush.Text}">
     <WindowChrome.WindowChrome>
@@ -42,16 +42,16 @@
                     Background="Transparent" MouseLeftButtonDown="OnTitleBarDrag">
                 <DockPanel LastChildFill="False" Margin="14,0,0,0">
                     <TextBlock Text="拾语 · 历史" VerticalAlignment="Center"
-                               FontSize="{DynamicResource Size.Secondary}"
+                               FontSize="{DynamicResource Type.Body}"
                                Foreground="{DynamicResource Brush.TextSecondary}"/>
                     <Button x:Name="MinimizeButton" DockPanel.Dock="Right" Width="34" Height="30"
-                            Content="&#xE921;" FontFamily="{DynamicResource Font.Icon}" FontSize="{DynamicResource Size.IconSmall}"
+                            Content="&#xE921;" FontFamily="{DynamicResource Font.Icon}" FontSize="{DynamicResource Size.IconXs}"
                             Style="{StaticResource CaptionButtonStyle}" Click="OnMinimizeClick" ToolTip="最小化"/>
                     <Button x:Name="MaximizeButton" DockPanel.Dock="Right" Width="34" Height="30"
-                            Content="&#xE922;" FontFamily="{DynamicResource Font.Icon}" FontSize="{DynamicResource Size.IconSmall}"
+                            Content="&#xE922;" FontFamily="{DynamicResource Font.Icon}" FontSize="{DynamicResource Size.IconXs}"
                             Style="{StaticResource CaptionButtonStyle}" Click="OnMaximizeRestoreClick" ToolTip="最大化"/>
                     <Button x:Name="CloseButton" DockPanel.Dock="Right" Width="40" Height="30"
-                            Content="&#xE8BB;" FontFamily="{DynamicResource Font.Icon}" FontSize="{DynamicResource Size.IconSmall}"
+                            Content="&#xE8BB;" FontFamily="{DynamicResource Font.Icon}" FontSize="{DynamicResource Size.IconXs}"
                             Style="{StaticResource CaptionButtonStyle}" Click="OnCloseClick" ToolTip="关闭"/>
                 </DockPanel>
             </Border>
@@ -87,7 +87,7 @@
                     VerticalAlignment="Top">
             <TextBlock Text="类型" VerticalAlignment="Center"
                        Foreground="{DynamicResource Brush.TextSecondary}"
-                       FontSize="{DynamicResource Size.Secondary}" />
+                       FontSize="{DynamicResource Type.Body}" />
                 <ComboBox x:Name="KindFilter" Width="92" Margin="6,0,14,0" SelectedIndex="0"
                           SelectionChanged="OnFilterChanged">
                     <ComboBoxItem Content="全部" />
@@ -98,24 +98,24 @@
 
             <TextBlock Text="日期" VerticalAlignment="Center"
                        Foreground="{DynamicResource Brush.TextSecondary}"
-                       FontSize="{DynamicResource Size.Secondary}" />
+                       FontSize="{DynamicResource Type.Body}" />
             <DatePicker x:Name="FilterFrom" Width="124" Margin="6,0"
                         SelectedDateChanged="OnFilterChanged" />
             <TextBlock Text="至" VerticalAlignment="Center"
                        Foreground="{DynamicResource Brush.TextSecondary}"
-                       FontSize="{DynamicResource Size.Secondary}" />
+                       FontSize="{DynamicResource Type.Body}" />
             <DatePicker x:Name="FilterTo" Width="124" Margin="6,0"
                         SelectedDateChanged="OnFilterChanged" />
 
             <TextBlock Text="标签" VerticalAlignment="Center"
                        Foreground="{DynamicResource Brush.TextSecondary}"
-                       FontSize="{DynamicResource Size.Secondary}" Margin="10,0,0,0" />
+                       FontSize="{DynamicResource Type.Body}" Margin="10,0,0,0" />
             <ComboBox x:Name="TagFilter" Width="118" Margin="6,0,10,0"
                       SelectionChanged="OnFilterChanged" />
 
             <TextBlock Text="子类型" VerticalAlignment="Center"
                        Foreground="{DynamicResource Brush.TextSecondary}"
-                       FontSize="{DynamicResource Size.Secondary}" />
+                       FontSize="{DynamicResource Type.Body}" />
             <ComboBox x:Name="SubtypeFilter" Width="76" Margin="6,0,10,0" SelectedIndex="0"
                       SelectionChanged="OnFilterChanged">
                 <ComboBoxItem Content="全部" />
@@ -125,7 +125,7 @@
                 <ComboBoxItem Content="路径" />
             </ComboBox>
 
-            <Button Content="清除筛选" FontSize="{DynamicResource Size.Caption}" Padding="10,4"
+            <Button Content="清除筛选" FontSize="{DynamicResource Type.Body}" Padding="10,4"
                     Cursor="Hand" Click="OnClearFilters" />
         </StackPanel>
 
@@ -167,16 +167,16 @@
                                     <Border CornerRadius="{DynamicResource Radius.Thumb}"
                                             Background="{DynamicResource Brush.Accent}"
                                             Visibility="{Binding FallbackIconVisibility}">
-                                        <TextBlock Text="拾" FontSize="{DynamicResource Size.Hint}"
+                                        <TextBlock Text="拾" FontSize="{DynamicResource Size.IconXs}"
                                                    Foreground="{DynamicResource Brush.TextOnAccent}"
                                                    HorizontalAlignment="Center" VerticalAlignment="Center" />
                                     </Border>
                                 </Grid>
-                                <TextBlock Text="📌" FontSize="{DynamicResource Size.Caption}"
+                                <TextBlock Text="📌" FontSize="{DynamicResource Size.IconXs}"
                                            Margin="0,0,6,0" Visibility="{Binding PinVisibility}" />
                                 <TextBlock Text="{Binding Preview}" TextTrimming="CharacterEllipsis" />
                             </StackPanel>
-                            <TextBlock Text="{Binding Meta}" FontSize="{DynamicResource Size.Caption}"
+                            <TextBlock Text="{Binding Meta}" FontSize="{DynamicResource Type.Caption}"
                                        Foreground="{DynamicResource Brush.TextSecondary}"
                                        Margin="0,4,0,0" />
                         </StackPanel>
@@ -192,22 +192,24 @@
                     Visibility="Collapsed">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel>
-                        <TextBlock x:Name="DetailMeta" FontSize="{DynamicResource Size.Caption}"
+                        <TextBlock x:Name="DetailMeta" FontSize="{DynamicResource Type.Caption}"
                                    Foreground="{DynamicResource Brush.TextSecondary}"
                                    TextWrapping="Wrap" />
                         <Image x:Name="DetailImage" MaxHeight="300" Margin="0,10,0,0"
                                HorizontalAlignment="Left" Stretch="Uniform"
                                RenderOptions.BitmapScalingMode="HighQuality"
                                Visibility="Collapsed" />
+                        <!-- 管理窗详情栏正文：被阅读的内容，Type.Content 18（ADR-0012 排版 2）。 -->
                         <TextBox x:Name="DetailText" IsReadOnly="True" IsReadOnlyCaretVisible="True"
                                  TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
                                  MinHeight="100" MaxHeight="380" Margin="0,10,0,0"
                                  Background="Transparent" BorderThickness="0"
+                                 FontSize="{DynamicResource Type.Content}"
                                  FontFamily="{DynamicResource Font.Mono}" />
                         <ItemsControl x:Name="DetailFiles" Margin="0,10,0,0" Visibility="Collapsed">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <TextBlock Text="{Binding}" FontSize="{DynamicResource Size.Secondary}"
+                                    <TextBlock Text="{Binding}" FontSize="{DynamicResource Type.ContentMono}"
                                                Foreground="{DynamicResource Brush.TextSecondary}"
                                                TextTrimming="CharacterEllipsis" Margin="0,2"
                                                ToolTip="{Binding}" />
@@ -247,7 +249,7 @@
                     HorizontalAlignment="Right">
             <TextBlock Text="对所选条目：" VerticalAlignment="Center"
                        Foreground="{DynamicResource Brush.TextSecondary}"
-                       FontSize="{DynamicResource Size.Secondary}" />
+                       FontSize="{DynamicResource Type.Body}" />
             <Button x:Name="AgentSummariseButton" Content="总结" Tag="Summarise" Style="{StaticResource Toolbutton}" Click="OnRunAgentAction" />
             <Button x:Name="AgentMergeButton" Content="合并成笔记" Tag="MergeIntoNote" Style="{StaticResource Toolbutton}" Click="OnRunAgentAction" />
             <Button x:Name="AgentRewriteButton" Content="改写" Tag="Rewrite" Style="{StaticResource Toolbutton}" Click="OnRunAgentAction" />
@@ -276,21 +278,22 @@
             <StackPanel>
                 <DockPanel LastChildFill="False" Margin="0,0,0,8">
                     <TextBlock x:Name="AgentTitle" DockPanel.Dock="Left"
-                               FontSize="{DynamicResource Size.Secondary}"
+                               FontSize="{DynamicResource Type.Body}"
                                Foreground="{DynamicResource Brush.TextSecondary}"
                                VerticalAlignment="Center" />
                     <Button DockPanel.Dock="Right" Content="✕"
-                            FontSize="{DynamicResource Size.Caption}" Padding="6,2"
+                            FontSize="{DynamicResource Type.Caption}" Padding="6,2"
                             BorderThickness="0" Background="Transparent" Cursor="Hand"
                             Click="OnCloseAgentPanel" />
                     <Button x:Name="AgentCopyButton" DockPanel.Dock="Right" Content="复制结果"
-                            FontSize="{DynamicResource Size.Caption}" Padding="10,2"
+                            FontSize="{DynamicResource Type.Body}" Padding="10,2"
                             Margin="0,0,6,0" Cursor="Hand" Click="OnCopyAgentOutput" />
                 </DockPanel>
 
+                <!-- AI 结果是被阅读的正文：Type.Content 18/31（ADR-0012 排版 2）。 -->
                 <TextBlock x:Name="AgentOutput" TextWrapping="Wrap"
-                           FontSize="{DynamicResource Size.Secondary}"
-                           MaxHeight="150" LineHeight="{DynamicResource Line.Secondary}"
+                           FontSize="{DynamicResource Type.Content}"
+                           MaxHeight="150" LineHeight="{DynamicResource Line.Content}"
                            LineStackingStrategy="BlockLineHeight" />
 
                 <ItemsControl x:Name="SuggestedTags" Margin="0,8,0,0">
@@ -300,7 +303,7 @@
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
                             <Button Content="{Binding}" Margin="0,0,6,6" Padding="8,2"
-                                    FontSize="{DynamicResource Size.Caption}"
+                                    FontSize="{DynamicResource Type.Body}"
                                     Cursor="Hand" Click="OnAcceptSuggestedTag"
                                     ToolTip="点击把这个标签加到所选条目" />
                         </DataTemplate>
