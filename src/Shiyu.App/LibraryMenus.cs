@@ -116,6 +116,10 @@ public partial class LibraryWindow
             HorizontalContentAlignment = HorizontalAlignment.Stretch,
         };
         row.SetResourceReference(StyleProperty, "MenuRowButton");
+        // 内容是面板（字形+文案+键帽），UIA 派生不出名字——就地按同一份
+        // label/keyHint 合成（票 27 / U-29），格式与 KeyMap.AutomationName 一致。
+        System.Windows.Automation.AutomationProperties.SetName(
+            row, keyHint is { Length: > 0 } ? $"{label}（{keyHint}）" : label);
         if (danger)
         {
             row.SetResourceReference(Control.ForegroundProperty, "Brush.Danger");

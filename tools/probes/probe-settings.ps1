@@ -72,6 +72,43 @@ try {
     } else {
         Add-Check 'defect:settings-segment-contrast' 'PASS' $detail
     }
+
+    # Ticket 27 / U-29: the nav buttons (panel content, and collapsed to
+    # glyphs under 760 DIP), the search box and the settings-card icons must
+    # all carry names. Assert a few known ones, then sweep: every interactive
+    # element on the page must be named - an unnamed control is one Narrator
+    # reads as "button".
+    $navWin = $null
+    foreach ($w in (Get-UiaWindowsOfPid $p.Id)) {
+        $r = $w.Current.BoundingRectangle
+        if ([Math]::Abs($r.Width - 880 * $rect.Scale) -le 20) { $navWin = $w; break }
+    }
+    $navTree = if ($navWin) { Get-UiaTree $navWin } else { @() }
+
+    $wanted = @(
+        (New-Zh @(0x5E38,0x89C4)),              # nav: general
+        (New-Zh @(0x5FEB,0x6377,0x952E)),       # nav: hotkeys
+        (New-Zh @(0x5173,0x4E8E)),              # nav: about
+        (New-Zh @(0x641C,0x7D22,0x8BBE,0x7F6E)),# search box
+        (New-Zh @(0x4E3B,0x9898))               # theme card icon named its label
+    )
+    $nameMiss = @()
+    foreach ($want in $wanted) {
+        if (-not ($navTree | Where-Object { $_.Name -eq $want })) { $nameMiss += $want }
+    }
+    Add-Check 'a11y:settings-known-names' `
+        $(if ($nameMiss.Count -eq 0) { 'PASS' } else { 'FAIL' }) `
+        ("{0} of {1} known names found" -f ($wanted.Count - $nameMiss.Count), $wanted.Count)
+
+    # ScrollBar template parts (9-px RepeatButtons) are excluded: their peers
+    # belong to the scroll bar as a whole, which UIA already exposes.
+    $interactive = @($navTree | Where-Object {
+        $_.Type -in @('Button','CheckBox','RadioButton','ComboBox','ListItem','TabItem') `
+        -and $_.ClassName -ne 'RepeatButton' })
+    $unnamed = @($interactive | Where-Object { [string]::IsNullOrWhiteSpace($_.Name) })
+    Add-Check 'a11y:settings-all-controls-named' `
+        $(if ($unnamed.Count -eq 0) { 'PASS' } else { 'FAIL' }) `
+        ("{0} interactive elements, {1} unnamed" -f $interactive.Count, $unnamed.Count)
 } finally {
     Stop-ProbeApp $p
 }

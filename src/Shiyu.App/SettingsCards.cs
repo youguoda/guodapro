@@ -94,6 +94,10 @@ internal sealed class SettingsCardView
 
         var (words, error) = Words(label, hint);
 
+        // 开关一类的编辑器自己不带字（标签在卡片左列）：控件名绑卡片标签，
+        // 讲述人念"开机自启 开关"而不是一个无名"按钮"（票 27 / U-29）。
+        System.Windows.Automation.AutomationProperties.SetName(editor, label);
+
         var icon = new TextBlock
         {
             Text = GlyphOf(iconGlyph),
@@ -104,6 +108,9 @@ internal sealed class SettingsCardView
         icon.SetResourceReference(TextElement.FontSizeProperty, "Size.IconM");
         icon.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
         icon.Margin = new Thickness(0, 0, 16, 0);
+        // 图标是私有区字形，屏幕阅读器念不出（票 27 / U-29）：名字给卡片的
+        // 标签——图标与标签同指一张卡，念出来的是同一件事。
+        System.Windows.Automation.AutomationProperties.SetName(icon, label);
         Grid.SetColumn(icon, 0);
         grid.Children.Add(icon);
 
@@ -206,6 +213,9 @@ internal sealed class SettingsCardView
         error.SetResourceReference(TextElement.FontSizeProperty, "Type.Caption");
         error.SetResourceReference(TextBlock.LineHeightProperty, "Line.CaptionMulti");
         error.SetResourceReference(TextBlock.ForegroundProperty, "Brush.Danger");
+        // 子行错误同款：Assertive 活区（票 27 / U-29）。
+        System.Windows.Automation.AutomationProperties.SetLiveSetting(
+            error, System.Windows.Automation.AutomationLiveSetting.Assertive);
         errorRow.Children.Add(errorGlyph);
         errorRow.Children.Add(error);
         stack.Children.Add(errorRow);
@@ -287,6 +297,9 @@ internal sealed class SettingsCardView
         error.SetResourceReference(TextElement.FontSizeProperty, "Type.Caption");
         error.SetResourceReference(TextBlock.LineHeightProperty, "Line.CaptionMulti");
         error.SetResourceReference(TextBlock.ForegroundProperty, "Brush.Danger");
+        // 校验错误是 Assertive 活区（票 27 / U-29）：出错就是该立刻听见的事。
+        System.Windows.Automation.AutomationProperties.SetLiveSetting(
+            error, System.Windows.Automation.AutomationLiveSetting.Assertive);
         errorRow.Children.Add(errorGlyph);
         errorRow.Children.Add(error);
         words.Children.Add(errorRow);

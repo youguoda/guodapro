@@ -200,7 +200,7 @@ public class KeyMapTests
             "编号直达：窄条 1–9、0（列表前 10 行）",
             "切换类型：窄条 ←→",
             "只看收藏：窄条 Alt+S",
-            "循环标签：窄条 Tab",
+            "标签：窄条 Tab",
             "显示键帽：窄条 按住 Ctrl · 设置 按住 Ctrl",
             "键位速查：设置 ? 或 F1",
             "切换设置页：设置 Ctrl+1–6",
@@ -215,5 +215,46 @@ public class KeyMapTests
         // §5.2 一套动词跨窗同键：搜索在两窗都是 Ctrl+F。
         var search = KeyMap.Find("search")!;
         Assert.Equal(search.Bar, search.Settings);
+    }
+
+    /// <summary>票 27 / U-29：图标钮的自动化名由这张表渲染，格式「动作名（键）」。</summary>
+    [Fact]
+    public void Automation_names_compose_the_action_name_with_the_surface_key()
+    {
+        Assert.Equal("复制（C）", KeyMap.AutomationName("copy"));
+        Assert.Equal("复制（C）", KeyMap.AutomationName("copy", KeySurface.Library));
+        Assert.Equal("搜索（Ctrl+F）", KeyMap.AutomationName("search", KeySurface.Settings));
+        Assert.Equal("分层退出（Esc）", KeyMap.AutomationName("escape"));
+    }
+
+    [Fact]
+    public void The_library_surface_overrides_only_the_rows_whose_key_really_differs()
+    {
+        // 标签在窄条是 Tab、管理窗是 T（Tab 留给焦点导航）；其余动作两窗同键，
+        // 行里不写 Library 列，回落 Bar——回落而不是复制，改键只改一处。
+        Assert.Equal("标签（Tab）", KeyMap.AutomationName("tag"));
+        Assert.Equal("标签（T）", KeyMap.AutomationName("tag", KeySurface.Library));
+
+        foreach (var id in new[] { "copy", "pin", "favorite", "note", "group", "delete" })
+        {
+            Assert.Equal(
+                KeyMap.AutomationName(id),
+                KeyMap.AutomationName(id, KeySurface.Library));
+        }
+    }
+
+    [Fact]
+    public void A_row_without_a_key_names_the_action_alone()
+    {
+        // 粘贴的键是 Enter、名字自带括注，自动化名不再叠一层括号——
+        // 没有键（窄条列空）的行只给动作名。这里用未设 Bar 键的行验证格式。
+        Assert.Equal("打开搜索结果（主动作）", KeyMap.AutomationName("open-result", KeySurface.Bar));
+    }
+
+    [Fact]
+    public void An_unknown_id_falls_back_to_itself_rather_than_empty()
+    {
+        // 空名字在 UIA 树里等于无名可念；宁可念 id，不让按钮变哑巴。
+        Assert.Equal("no-such-action", KeyMap.AutomationName("no-such-action"));
     }
 }

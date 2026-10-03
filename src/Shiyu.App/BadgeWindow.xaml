@@ -5,6 +5,7 @@
         ShowActivated="False" ShowInTaskbar="False" Topmost="True"
         ResizeMode="NoResize" SizeToContent="WidthAndHeight"
         Focusable="False" Opacity="0"
+        AutomationProperties.Name="翻译这段选中的文字"
         TextElement.FontFamily="{DynamicResource Font.Ui}"
         TextElement.Foreground="{DynamicResource Brush.Text}">
     <!-- 胶囊（§4.7，票 20）：高 32（Control.Height）、圆角 Radius.Pill=16。
