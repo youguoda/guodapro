@@ -308,9 +308,14 @@
                          "图片 · 1920×1080"、"3 个文件"。 -->
                     <DockPanel Grid.Row="0" Margin="0,0,0,6">
                         <!-- 来源图标 18×18（§6.1 卡片）：位图是最快的识别线索；
-                             键帽就盖在它上面，同 18 单位。 -->
-                        <Grid DockPanel.Dock="Left" Width="18" Height="18" Margin="0,0,6,0">
-                            <Image Source="{Binding Icon}" Visibility="{Binding IconVisibility}"/>
+                             键帽就盖在它上面，同 18 单位。HighQuality + 像素
+                             对齐：源是 32px 帧，125%/150% 缩放下缩小渲染，
+                             默认 Linear 缩放边缘发糊（2026-10-04 走查）。 -->
+                        <Grid DockPanel.Dock="Left" Width="18" Height="18" Margin="0,0,6,0"
+                              UseLayoutRounding="True">
+                            <Image Source="{Binding Icon}" Visibility="{Binding IconVisibility}"
+                                   RenderOptions.BitmapScalingMode="HighQuality"
+                                   SnapsToDevicePixels="True"/>
                             <Border CornerRadius="{DynamicResource Radius.Thumb}"
                                     Background="{DynamicResource Brush.Accent}"
                                     Visibility="{Binding FallbackIconVisibility}">
@@ -398,10 +403,11 @@
                                         <!-- DockPanel 而非水平 StackPanel（视觉走查 2026-10-01）：
                                              StackPanel 里省略号拿不到宽，长文件名把"路径不存在"
                                              推出卡片右缘。文件名占剩余宽，失效标记钉在右端。 -->
-                                        <DockPanel Margin="0,1">
+                                        <DockPanel Margin="0,1" UseLayoutRounding="True">
                                             <Image Source="{Binding Icon}" Width="16" Height="16"
                                                    Margin="0,0,6,0" VerticalAlignment="Center"
-                                                   RenderOptions.BitmapScalingMode="HighQuality"/>
+                                                   RenderOptions.BitmapScalingMode="HighQuality"
+                                                   SnapsToDevicePixels="True"/>
                                             <TextBlock x:Name="RowDead" DockPanel.Dock="Right" Text="（路径不存在）"
                                                        FontSize="{DynamicResource Type.Caption}"
                                                        Foreground="{DynamicResource Brush.Danger}"

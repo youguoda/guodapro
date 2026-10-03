@@ -34,7 +34,14 @@ public sealed class AppIconCache
             return cached;
         }
 
-        var icon = Decode(_store.ApplicationIcon(sourceApp), pixelWidth: 16);
+        // Decode at the stored frame's native size (SHGFI_LARGEICON = 32).
+        // The icon shows at 18 DIP: 27 physical px at 150%, 22.5 at 125% —
+        // every monitor scale renders it by shrinking, never upsampling.
+        // The old DecodePixelWidth=16 forced 32→16 at rest and 16→27 at
+        // draw time, two lossy passes that read as blur (user report
+        // 2026-10-04). One cached copy serves all monitors: the render-side
+        // HighQuality scaling resamples per window DPI.
+        var icon = Decode(_store.ApplicationIcon(sourceApp), pixelWidth: 32);
         _cache[sourceApp] = icon;
         return icon;
     }

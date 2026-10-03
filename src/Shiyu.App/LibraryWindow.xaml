@@ -53,9 +53,11 @@
                     <Image Source="{Binding Thumbnail}" Stretch="UniformToFill"
                            RenderOptions.BitmapScalingMode="HighQuality"/>
                 </Border>
-                <Grid Grid.Column="2" Width="18" Height="18" Margin="0,0,6,0" VerticalAlignment="Center">
+                <Grid Grid.Column="2" Width="18" Height="18" Margin="0,0,6,0" VerticalAlignment="Center"
+                      UseLayoutRounding="True">
                     <Image Source="{Binding Icon}" Visibility="{Binding IconVisibility}"
-                           RenderOptions.BitmapScalingMode="HighQuality"/>
+                           RenderOptions.BitmapScalingMode="HighQuality"
+                           SnapsToDevicePixels="True"/>
                     <Border CornerRadius="{DynamicResource Radius.Small}"
                             Background="{DynamicResource Brush.Accent}"
                             Visibility="{Binding FallbackIconVisibility}">
