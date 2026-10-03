@@ -124,7 +124,10 @@ internal sealed class SettingsCardView
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             Grid.SetRowSpan(icon, 2);
-            Grid.SetRowSpan(words, 2);
+            // words 只占第 0 行：Auto 行高由"独占该行的子元素"撑起——words
+            // 若也跨两行，第 0 行没有任何独占子元素，高度塌成 0，标题整块
+            // 掉进第 1 行与编辑器首行叠印（用户截图实录，2026-10-03）。
+            Grid.SetRow(words, 0);
             editor.VerticalAlignment = VerticalAlignment.Top;
             editor.HorizontalAlignment = HorizontalAlignment.Stretch;
             editor.Margin = new Thickness(0, 10, 0, 0);
