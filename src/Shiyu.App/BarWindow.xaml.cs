@@ -120,6 +120,26 @@ internal partial class BarWindow : Window
         // entry Touching its way back to the top never showed (O-37).
         _store.Changed += OnStoreChanged;
 
+        // 预览/连接窗是独立顶层窗，不是本窗的视觉孩子：本窗无论经哪条路
+        // 不可见或关闭（Alt+F4、系统收窗、未来新增的隐藏路径），它们都
+        // 不能比宿主活得久（用户实录：窄条关了预览弹窗留在桌面上）。
+        // Dismiss/失焦路径已各自清理；这里是结构兜底，不替代它们。
+        IsVisibleChanged += (_, e) =>
+        {
+            if (!(bool)e.NewValue)
+            {
+                _preview?.TakeDown();
+                _connector?.HideCurve();
+            }
+        };
+        Closed += (_, _) =>
+        {
+            _preview?.TakeDown();
+            _preview?.Close();
+            _connector?.HideCurve();
+            _connector?.Close();
+        };
+
         _previewPolicy = new PreviewPolicy(settings.PreviewHoverDelayMs, () => Environment.TickCount64);
         _refreshPolicy = new BarRefreshPolicy(settings.LightweightWhenHidden);
 
