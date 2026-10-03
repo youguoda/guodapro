@@ -36,6 +36,7 @@
                            Foreground="{DynamicResource Brush.TextSecondary}"/>
                 <Button x:Name="SwapButton" Grid.Column="1" Style="{DynamicResource IconButton}"
                         Cursor="Hand" Click="OnSwapDirection"
+                        AutomationProperties.Name="交换源语言与目标语言"
                         ToolTip="交换源语言与目标语言">
                     <TextBlock Text="&#xE8AB;" FontFamily="{DynamicResource Font.Icon}"
                                FontSize="{DynamicResource Size.IconS}"/>
@@ -54,7 +55,8 @@
                                   ToolTip="原文与译文按句对照"/>
                 </StackPanel>
                 <Button x:Name="CloseButton" Grid.Column="5" Style="{DynamicResource IconButton}"
-                        Cursor="Hand" Click="OnClose" ToolTip="关闭（Esc）">
+                        Cursor="Hand" Click="OnClose" ToolTip="关闭（Esc）"
+                        AutomationProperties.Name="关闭">
                     <TextBlock Text="&#xE711;" FontFamily="{DynamicResource Font.Icon}"
                                FontSize="{DynamicResource Size.IconS}"/>
                 </Button>
@@ -82,7 +84,8 @@
                            Foreground="{DynamicResource Brush.TextSecondary}"/>
                 <Button x:Name="WordSpeakButton" Style="{DynamicResource IconButton}"
                         Margin="4,0,0,0" VerticalAlignment="Center" Cursor="Hand"
-                        Click="OnSpeakWord" ToolTip="朗读这个词">
+                        Click="OnSpeakWord" ToolTip="朗读这个词"
+                        AutomationProperties.Name="朗读这个词">
                     <TextBlock Text="&#xE767;" FontFamily="{DynamicResource Font.Icon}"
                                FontSize="{DynamicResource Size.IconS}"/>
                 </Button>
@@ -141,7 +144,8 @@
                     <StackPanel x:Name="ErrorActions" Visibility="Collapsed" Orientation="Horizontal"
                                 Margin="0,8,0,0">
                         <Button x:Name="RetryButton" Click="OnRetry" Cursor="Hand"
-                                ToolTip="用同样的原文再试一次">
+                                ToolTip="用同样的原文再试一次"
+                                AutomationProperties.Name="重试">
                             <StackPanel Orientation="Horizontal">
                                 <TextBlock Text="&#xE72C;" FontFamily="{DynamicResource Font.Icon}"
                                            FontSize="{DynamicResource Size.IconS}"
@@ -161,7 +165,8 @@
                         </Button>
                         <Button x:Name="ErrorDetailToggle" Style="{DynamicResource FlyoutButton}"
                                 Margin="12,0,0,0" Click="OnToggleErrorDetail" Cursor="Hand"
-                                ToolTip="展开原始错误信息">
+                                ToolTip="展开原始错误信息"
+                                AutomationProperties.Name="详细信息">
                             <StackPanel Orientation="Horizontal">
                                 <TextBlock x:Name="ErrorDetailToggleLabel" Text="详细信息"/>
                                 <TextBlock x:Name="ErrorDetailChevron" Text="&#xE70D;" Margin="6,0,0,0"
@@ -272,7 +277,8 @@
                            Text="Esc 关闭" VerticalAlignment="Center"/>
                 <Button x:Name="SaveButton" DockPanel.Dock="Right" Style="{DynamicResource FlyoutButton}"
                         IsEnabled="False" Cursor="Hand" Click="OnSaveToHistory"
-                        ToolTip="译文存为一条记录，并关联原文条目">
+                        ToolTip="译文存为一条记录，并关联原文条目"
+                        AutomationProperties.Name="存入历史">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="&#xE74E;" FontFamily="{DynamicResource Font.Icon}"
                                    FontSize="{DynamicResource Size.IconS}"
@@ -282,7 +288,8 @@
                 </Button>
                 <Button x:Name="SpeakButton" DockPanel.Dock="Right" Style="{DynamicResource FlyoutButton}"
                         Margin="0,0,6,0" IsEnabled="False" Cursor="Hand" Click="OnSpeak"
-                        ToolTip="朗读译文；朗读中再点一次即停">
+                        ToolTip="朗读译文；朗读中再点一次即停"
+                        AutomationProperties.Name="朗读">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="&#xE767;" FontFamily="{DynamicResource Font.Icon}"
                                    FontSize="{DynamicResource Size.IconS}"
@@ -292,7 +299,8 @@
                 </Button>
                 <Button x:Name="CopyButton" DockPanel.Dock="Right" Style="{DynamicResource FlyoutButton}"
                         IsEnabled="False" Cursor="Hand" Click="OnCopy"
-                        ToolTip="复制译文">
+                        ToolTip="复制译文"
+                        AutomationProperties.Name="复制">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="&#xE8C8;" FontFamily="{DynamicResource Font.Icon}"
                                    FontSize="{DynamicResource Size.IconS}"

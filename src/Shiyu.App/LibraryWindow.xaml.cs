@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
@@ -131,6 +132,21 @@ public partial class LibraryWindow : Window
             Border.BorderBrushProperty, "Brush.Accent");
         SearchBox.LostKeyboardFocus += (_, _) => SearchPill.SetResourceReference(
             Border.BorderBrushProperty, "Brush.StrokeStrong");
+
+        // 票 27 / U-29：图标钮与复合内容钮的自动化名。命令栏的名字从 KeyMap
+        // 取（名称单源）——按住 Ctrl 原位换键帽时可见文字消失，这个名字是
+        // 键帽教学期间屏幕阅读器唯一的真相；「筛选」「更多操作」没有 KeyMap
+        // 行（复合内容 UIA 派生不出名字），就地一句。
+        AutomationProperties.SetName(SearchBox, "搜索历史");
+        AutomationProperties.SetName(FilterButton, "筛选");
+        AutomationProperties.SetName(CopyButton, KeyMap.AutomationName("copy", KeySurface.Library));
+        AutomationProperties.SetName(PinButton, KeyMap.AutomationName("pin", KeySurface.Library));
+        AutomationProperties.SetName(FavoriteButton, KeyMap.AutomationName("favorite", KeySurface.Library));
+        AutomationProperties.SetName(TagButton, KeyMap.AutomationName("tag", KeySurface.Library));
+        AutomationProperties.SetName(DeleteButton, KeyMap.AutomationName("delete", KeySurface.Library));
+        AutomationProperties.SetName(MoreButton, "更多操作");
+        // 轻反馈/撤销条是动态文本（LibraryToast）：Polite 活区，说了不打断。
+        AutomationProperties.SetLiveSetting(ToastText, AutomationLiveSetting.Polite);
 
         EntryList.ListScrolled += OnListScrolled;
         EntryList.ItemsSource = _items;

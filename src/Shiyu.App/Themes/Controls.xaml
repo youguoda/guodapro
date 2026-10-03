@@ -849,6 +849,7 @@
                                     <ContentPresenter VerticalAlignment="Center"/>
                                     <Button x:Name="PART_CloseButton" Width="24" Height="24"
                                             Style="{StaticResource IconButton}" ToolTip="关闭"
+                                            AutomationProperties.Name="关闭"
                                             Focusable="False">
                                         <TextBlock Text="&#xE711;" FontFamily="{DynamicResource Font.Icon}"
                                                    FontSize="{DynamicResource Size.IconS}"/>

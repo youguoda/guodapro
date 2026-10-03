@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Interop;
@@ -797,6 +798,9 @@ public partial class PanelWindow : Window
         _saveTranslation(_original, translated);
         SaveButton.IsEnabled = false;
         SaveLabel.Text = "已存入";
+        // 票 27：轻反馈让屏幕阅读器也听见（Polite——不打断）。
+        AutomationProperties.SetName(SaveButton, "已存入");
+        AutomationProperties.SetLiveSetting(SaveButton, AutomationLiveSetting.Polite);
     }
 
     private void OnCopy(object sender, RoutedEventArgs e)
@@ -806,7 +810,15 @@ public partial class PanelWindow : Window
             return;
         }
 
-        CopyLabel.Text = _clipboard.SetText(_session.Text) ? "已复制" : "复制失败";
+        var copied = _clipboard.SetText(_session.Text);
+        CopyLabel.Text = copied ? "已复制" : "复制失败";
+
+        // 票 27 / U-29：状态变化同步给屏幕阅读器——名字跟着按钮走（内容是
+        // 面板，UIA 派生不出名字），轻反馈 Polite、失败 Assertive。
+        AutomationProperties.SetName(CopyButton, CopyLabel.Text);
+        AutomationProperties.SetLiveSetting(
+            CopyButton,
+            copied ? AutomationLiveSetting.Polite : AutomationLiveSetting.Assertive);
 
         // 「已复制」1.5 秒后回落（§6.2）：按钮说真话，但只说一会儿。
         _copyReset?.Stop();
@@ -824,6 +836,7 @@ public partial class PanelWindow : Window
         _copyReset?.Stop();
         _copyReset = null;
         CopyLabel.Text = "复制";
+        AutomationProperties.SetName(CopyButton, "复制");
     }
 
     // === 定位与夹回 ==========================================================

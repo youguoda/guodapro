@@ -12,6 +12,12 @@ public enum KeySurface
 
     /// <summary>设置窗（SettingsWindow）：搜索、导航、速查。</summary>
     Settings,
+
+    /// <summary>
+    /// 管理窗（LibraryWindow，票 27 起 KeyMap 有它的列）：与窄条一套动词，
+    /// 两处有意不同——没有粘贴目标（Enter 是复制）、Tab 留给焦点导航（标签 T）。
+    /// </summary>
+    Library,
 }
 
 /// <summary>
@@ -22,6 +28,7 @@ public enum KeySurface
 /// <param name="Glyph">Fluent 字形码位（"E8C8"），速查行左缘图标；可空。</param>
 /// <param name="Bar">窄条里的按键（"C"、"Ctrl+F"、"按住 Space"）。</param>
 /// <param name="Settings">设置窗里的按键。</param>
+/// <param name="Library">管理窗的按键；与窄条同键的行省略（回落 Bar），只在真正不同的地方写（标签 T）。</param>
 /// <param name="Badge">
 /// 按住 Ctrl 时键帽的短形（默认取 <see cref="Bar"/> 原文）：搜索的完整键是
 /// Ctrl+F，而键帽浮出时 Ctrl 正被按住，帽上只写 F。
@@ -33,6 +40,7 @@ public sealed record KeyMapRow(
     string? Glyph = null,
     string? Bar = null,
     string? Settings = null,
+    string? Library = null,
     string? Badge = null,
     string? Condition = null);
 
@@ -67,10 +75,11 @@ public static class KeyMap
         new("preview", "预览全文", "E823", Bar: "按住 Space"),
         new("numbered", "编号直达", null, Bar: "1–9、0", Condition: "列表前 10 行"),
 
-        // 窄条筛选行。
+        // 窄条筛选行。标签在管理窗是 T（Tab 留给焦点导航，§5.2），动作同名
+        // 同键——名字只留一个（"标签"），两窗的自动化名都从这里出。
         new("kind", "切换类型", "E8A9", Bar: "←→"),
         new("favorite-filter", "只看收藏", "E734", Bar: "Alt+S"),
-        new("tag", "循环标签", "E8EC", Bar: "Tab"),
+        new("tag", "标签", "E8EC", Bar: "Tab", Library: "T"),
 
         // 两窗共用的教学与速查动作（§5.2 四级教学 L1）。
         new("hints", "显示键帽", "E765", Bar: "按住 Ctrl", Settings: "按住 Ctrl"),
@@ -158,4 +167,29 @@ public static class KeyMap
     /// <summary>One row by action id, or null for an unknown id.</summary>
     public static KeyMapRow? Find(string id)
         => Rows.FirstOrDefault(row => row.Id == id);
+
+    /// <summary>
+    /// 辅助技术念出的控件名（票 27 / U-29）：动作名带键，"复制（C）"。
+    /// 键取该窗那一列（管理窗与窄条不同键的行由 Library 列覆盖，同键行回落
+    /// Bar）；没有键的行只有动作名。名称单源：凡挂在图标钮上的
+    /// <c>AutomationProperties.Name</c> 一律从这里取，界面不另写一份——
+    /// 尤其是管理窗命令栏：按住 Ctrl 换键帽时可见文字消失，名字是键帽教学
+    /// 期间屏幕阅读器唯一的真相。
+    /// </summary>
+    public static string AutomationName(string id, KeySurface surface = KeySurface.Bar)
+    {
+        if (Find(id) is not { } row)
+        {
+            return id;
+        }
+
+        var key = surface switch
+        {
+            KeySurface.Settings => row.Settings,
+            KeySurface.Library => row.Library ?? row.Bar,
+            _ => row.Bar,
+        };
+
+        return key is { Length: > 0 } ? $"{row.Name}（{key}）" : row.Name;
+    }
 }

@@ -1,4 +1,6 @@
 using System.Windows;
+using System.Windows.Automation;
+using System.Windows.Automation.Peers;
 using System.Windows.Controls;
 
 namespace Shiyu.App;
@@ -24,6 +26,13 @@ internal enum InfoBarSeverity
 /// 可带动作（<see cref="ContentControl.Content"/>）与关闭钮。底色与描边画在
 /// 两个不承载文字的兄弟 Border 上再用透明度压淡——文字永远全不透明，
 /// 对比度测试才管得住它（票 18/R6 的纪律）。
+///
+/// 可访问性（票 27 / U-29，票 22 留尾）：ContentControl 的默认 peer 只枚举
+/// <see cref="ContentControl.Content"/>，模板里的标题/正文 TextBlock 从不进
+/// UIA 树——讲述人只听见一条无名横幅。解法是把「状态 + 标题 + 正文」合成
+/// 一句话挂在自己的 <see cref="AutomationProperties.Name"/> 上（标题可读），
+/// 并按档位挂 LiveSetting：错误/警示 Assertive，其余 Polite（状态变化会
+/// 被朗读）。
 /// </summary>
 internal sealed class InfoBar : ContentControl
 {
@@ -50,7 +59,7 @@ internal sealed class InfoBar : ContentControl
 
     public static readonly DependencyProperty SeverityProperty = DependencyProperty.Register(
         nameof(Severity), typeof(InfoBarSeverity), typeof(InfoBar),
-        new FrameworkPropertyMetadata(InfoBarSeverity.Info));
+        new FrameworkPropertyMetadata(InfoBarSeverity.Info, (d, _) => ((InfoBar)d).SyncAutomation()));
 
     public InfoBarSeverity Severity
     {
@@ -81,6 +90,16 @@ internal sealed class InfoBar : ContentControl
 
     public InfoBar() => SetResourceReference(StyleProperty, "InfoBar");
 
+    /// <summary>
+    /// ContentControl 默认不建 peer（票 22 留尾的根因）：整条在 UIA 控件视图
+    /// 里不存在，模板 TextBlock 又因 IsControlElement=false 被控件视图排除
+    /// ——讲述人两头都读不到错误标题。给一个真正的 peer，条子才在树里，
+    /// <see cref="AutomationProperties.Name"/>（合成的状态+标题+正文）与
+    /// LiveSetting 才有人递给客户端。
+    /// </summary>
+    protected override AutomationPeer OnCreateAutomationPeer()
+        => new InfoBarAutomationPeer(this);
+
     public override void OnApplyTemplate()
     {
         base.OnApplyTemplate();
@@ -88,6 +107,17 @@ internal sealed class InfoBar : ContentControl
         {
             close.Click += (_, _) => IsOpen = false;
         }
+
+        SyncAutomation();
+    }
+
+    private sealed class InfoBarAutomationPeer(InfoBar owner) : FrameworkElementAutomationPeer(owner)
+    {
+        protected override string GetClassNameCore() => nameof(InfoBar);
+
+        /// <summary>状态条的第一身份是一句会被朗读的文本，不是容器。</summary>
+        protected override AutomationControlType GetAutomationControlTypeCore()
+            => AutomationControlType.Text;
     }
 
     private void OnMessageChanged()
@@ -97,5 +127,31 @@ internal sealed class InfoBar : ContentControl
         {
             IsOpen = false;
         }
+
+        SyncAutomation();
+    }
+
+    /// <summary>把状态、标题、正文合成屏幕阅读器念的一句话，并按档位定 LiveSetting。</summary>
+    private void SyncAutomation()
+    {
+        var severity = Severity switch
+        {
+            InfoBarSeverity.Success => "成功",
+            InfoBarSeverity.Caution => "警告",
+            InfoBarSeverity.Danger => "错误",
+            _ => "提示",
+        };
+
+        var title = Title?.Trim() ?? string.Empty;
+        var message = Message?.Trim() ?? string.Empty;
+
+        AutomationProperties.SetName(
+            this,
+            message.Length == 0 ? $"{severity}：{title}" : $"{severity}：{title}。{message}");
+        AutomationProperties.SetLiveSetting(
+            this,
+            Severity is InfoBarSeverity.Danger or InfoBarSeverity.Caution
+                ? AutomationLiveSetting.Assertive
+                : AutomationLiveSetting.Polite);
     }
 }

@@ -665,6 +665,21 @@ function Test-UserPresent {
     return (($a[0] -ne $b[0]) -or ($a[1] -ne $b[1]))
 }
 
+# --- a11y name checks ----------------------------------------------------------
+
+# A string built from Unicode code points at runtime: probe scripts stay
+# ASCII-only (see header), yet a11y assertions must match Chinese UI names
+# exactly. Full-width parens for the "action (key)" name format: 0xFF08/0xFF09.
+function New-Zh([int[]]$Codes) {
+    return -join ($Codes | ForEach-Object { [char]$_ })
+}
+
+# "action (key)" - the KeyMap.AutomationName format, composed without a
+# non-ASCII literal: action codes + full-width ( + ASCII key + full-width ).
+function New-ZhKeyName([int[]]$ActionCodes, [string]$Key) {
+    return (New-Zh $ActionCodes) + [string][char]0xFF08 + $Key + [string][char]0xFF09
+}
+
 # --- check bookkeeping -------------------------------------------------------
 
 if (-not $script:Checks) {

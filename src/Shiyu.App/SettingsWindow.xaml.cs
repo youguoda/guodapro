@@ -140,6 +140,8 @@ public partial class SettingsWindow : Window
         InputProps.SetPlaceholder(_searchBox, "搜索设置");
         InputProps.SetRightGutter(_searchBox, 56);
         _searchBox.ToolTip = "搜索设置——支持你自己的说法，比如\u201c多久删\u201d";
+        // 票 27 / U-29：搜索框有占位符而占位符不是值，屏幕阅读器要一个不变的名字。
+        System.Windows.Automation.AutomationProperties.SetName(_searchBox, "搜索设置");
         _searchBox.TextChanged += OnSearchChanged;
         _searchBox.PreviewKeyDown += OnSearchKeyDown;
 
@@ -239,6 +241,9 @@ public partial class SettingsWindow : Window
             ToolTip = page.Title,
         };
         button.SetResourceReference(StyleProperty, "NavToggle");
+        // 内容是面板派生不出名字；导航收窄成图标条时文字隐去，名字还在
+        // （票 27 / U-29）——与 tooltip 同一个来源（page.Title），不另写。
+        System.Windows.Automation.AutomationProperties.SetName(button, page.Title);
 
         var host = new Grid();
         host.Children.Add(button);
@@ -597,6 +602,9 @@ public partial class SettingsWindow : Window
         };
         InputProps.SetPlaceholder(box, "未设置");
         box.SetResourceReference(BackgroundProperty, "Brush.SurfaceInput");
+        // 只读的录制框：名字说出它是干什么的（票 27 / U-29），值（组合键
+        // 文本）仍由 UIA 的 Value 通道自己念。
+        System.Windows.Automation.AutomationProperties.SetName(box, item.Label + "快捷键");
         state.Text = box.Text;
         _textBoxes[item.Id] = box;
 

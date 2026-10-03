@@ -362,6 +362,8 @@ public partial class LibraryWindow
         };
         chip.SetResourceReference(StyleProperty, "FlyoutButton");
         chip.SetResourceReference(Control.BackgroundProperty, "Brush.SurfaceSubtle");
+        // 复合内容派生不出名字；动作与 tooltip 同一句话（票 27 / U-29）。
+        System.Windows.Automation.AutomationProperties.SetName(chip, $"移除标签 {tag}");
         chip.Click += (_, _) => RemoveTagFromSelection(tag);
 
         var panel = new StackPanel { Orientation = Orientation.Horizontal };

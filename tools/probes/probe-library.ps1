@@ -49,6 +49,28 @@ try {
         $(if ($rows.Count -ge 5) { 'PASS' } else { 'FAIL' }) `
         ("list items realized: {0} (seeded 17)" -f $rows.Count)
 
+    # Ticket 27 / U-29: the command bar's icon buttons must be named. The
+    # names come from KeyMap (name single source) in the "action (key)"
+    # format - and they must survive the Ctrl-held keycap swap, which is why
+    # they live on AutomationProperties.Name rather than on the content.
+    $wanted = @(
+        (New-ZhKeyName @(0x590D,0x5236) 'C'),   # copy (C)
+        (New-ZhKeyName @(0x7F6E,0x9876) 'P'),   # pin (P)
+        (New-ZhKeyName @(0x6536,0x85CF) 'S'),   # favorite (S)
+        (New-ZhKeyName @(0x6807,0x7B7E) 'T'),   # tag (T) - library key, not Tab
+        (New-ZhKeyName @(0x5220,0x9664) 'D'),   # delete (D)
+        (New-Zh @(0x7B5B,0x9009)),              # filter (icon + text composite)
+        (New-Zh @(0x66F4,0x591A,0x64CD,0x4F5C)),# more (... menu)
+        (New-Zh @(0x641C,0x7D22,0x5386,0x53F2)) # search box
+    )
+    $nameMiss = @()
+    foreach ($want in $wanted) {
+        if (-not ($tree | Where-Object { $_.Name -eq $want })) { $nameMiss += $want }
+    }
+    Add-Check 'a11y:library-command-names' `
+        $(if ($nameMiss.Count -eq 0) { 'PASS' } else { 'FAIL' }) `
+        ("{0} of {1} command-bar names present in the UIA tree" -f ($wanted.Count - $nameMiss.Count), $wanted.Count)
+
     # The bottom bar: every button-sized control in the lowest band. The
     # defect puts two groups in one grid row so their rects intersect.
     $bandTop = $rect.T + $rect.H - [int](130 * $rect.Scale)
