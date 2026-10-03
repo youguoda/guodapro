@@ -706,6 +706,21 @@
     </Style>
 
     <!--
+      ListBox 裸样式：WPF 默认样式自带系统白底（Aero2 的 WindowBrush），
+      亮色下与页面底无异、暗色下把整列染白（视觉走查 2026-10-03：管理窗
+      暗色正文白底白字）。列表底一律透明，透出窗口根层的 SurfaceMaterial。
+      具名 + 隐式双份：WPF 隐式样式不沿基类回退，LibraryList 这类派生
+      列表必须显式引用 BareList（DynamicResource 跨字典）。
+    -->
+    <Style x:Key="BareList" TargetType="ListBox">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text}"/>
+        <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+    </Style>
+    <Style TargetType="ListBox" BasedOn="{StaticResource BareList}"/>
+
+    <!--
       ListBoxItem（隐式，ListRow §4.7）：无底无框、圆角 4、选中 =
       Selected 底 + 左缘 3×16 指示条、hover StateHover。触发器只看
       IsSelected 本身，不依赖 IsSelectionActive——失焦后选中态不塌。
@@ -724,13 +739,19 @@
                                 Background="{DynamicResource Brush.Selected}" Opacity="0" Margin="1"/>
                         <Border x:Name="Hover" CornerRadius="{DynamicResource Radius.Control}"
                                 Background="{DynamicResource Brush.StateHover}" Opacity="0" Margin="1"/>
-                        <StackPanel Orientation="Horizontal" Margin="{TemplateBinding Padding}">
-                            <Border x:Name="Indicator" Width="3" Height="16" CornerRadius="1.5"
+                        <!-- DockPanel 而非水平 StackPanel（视觉走查 2026-10-01）：
+                             StackPanel 沿排列方向给子元素无限宽，行模板里的
+                             TextTrimming / * 列全部失效——长条目按自然宽排版
+                             （实测 2309 DIP），被列表视口硬切半个字，行尾状态字形
+                             被推出视口不可见。DockPanel 让 ContentPresenter 拿到
+                             减去指示条后的有限宽，行模板的约束从此有效。 -->
+                        <DockPanel Margin="{TemplateBinding Padding}">
+                            <Border x:Name="Indicator" DockPanel.Dock="Left" Width="3" Height="16" CornerRadius="1.5"
                                     Background="{DynamicResource Brush.Accent}"
                                     Margin="2,0,8,0" VerticalAlignment="Center" Visibility="Collapsed"
                                     IsHitTestVisible="False"/>
                             <ContentPresenter/>
-                        </StackPanel>
+                        </DockPanel>
                     </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsSelected" Value="True">

@@ -48,7 +48,7 @@ public partial class SettingsWindow : Window
     private readonly Dictionary<string, SettingsCardView> _cards = [];
     private readonly Dictionary<string, TextBox> _numberBoxes = [];
     private readonly Dictionary<string, StackPanel> _pageBodies = [];
-    private readonly List<(string PageId, ToggleButton Button, TextBlock Label)> _nav = [];
+    private readonly List<(string PageId, ToggleButton Button, TextBlock Label, TextBlock Glyph)> _nav = [];
 
     /// <summary>导航项右缘的 1–6 键帽，与 <see cref="_nav"/> 同序（含关于）——按住 Ctrl 浮出（§5.2 L1）。</summary>
     private readonly List<ContentControl> _navCaps = [];
@@ -250,7 +250,7 @@ public partial class SettingsWindow : Window
         host.Children.Add(indicator);
         indicator.IsHitTestVisible = false;
 
-        _nav.Add((page.Id, button, label));
+        _nav.Add((page.Id, button, label, glyph));
         _navCaps.Add(cap);
         button.Click += (_, _) => SelectPage(page.Id);
         return host;
@@ -286,7 +286,7 @@ public partial class SettingsWindow : Window
 
     private void SelectPage(string pageId)
     {
-        foreach (var (id, button, _) in _nav)
+        foreach (var (id, button, _, _) in _nav)
         {
             button.IsChecked = id == pageId;
         }
@@ -303,7 +303,7 @@ public partial class SettingsWindow : Window
 
     private void UpdateNavSelectionVisuals()
     {
-        foreach (var (_, button, label) in _nav)
+        foreach (var (_, button, label, _) in _nav)
         {
             var selected = button.IsChecked == true;
             label.FontWeight = selected ? FontWeights.SemiBold : FontWeights.Regular;
@@ -324,9 +324,15 @@ public partial class SettingsWindow : Window
         var collapsed = ActualWidth < NavCollapseWidth;
         NavColumn.Width = new GridLength(collapsed ? NavIcons : NavWide);
 
-        foreach (var (_, button, label) in _nav)
+        foreach (var (_, button, label, glyph) in _nav)
         {
             label.Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible;
+
+            // 收成图标条时 12+12 的字形边距会把 16 宽的字形挤出只剩 24 宽
+            // 的按钮（视觉走查 2026-10-03：整条图标一个都没画出来）：去边距、
+            // 居中；展开时恢复原几何（字形墨左起 + 40 处文字）。
+            glyph.Margin = collapsed ? new Thickness(0) : new Thickness(12, 0, 12, 0);
+            glyph.HorizontalAlignment = collapsed ? HorizontalAlignment.Center : HorizontalAlignment.Stretch;
         }
 
         // 收起时搜索框跟着收（Ctrl+F 会先把导航展开再聚焦）。
@@ -1576,9 +1582,11 @@ public partial class SettingsWindow : Window
         }
 
         NavColumn.Width = new GridLength(NavWide);
-        foreach (var (_, _, label) in _nav)
+        foreach (var (_, _, label, glyph) in _nav)
         {
             label.Visibility = Visibility.Visible;
+            glyph.Margin = new Thickness(12, 0, 12, 0);
+            glyph.HorizontalAlignment = HorizontalAlignment.Stretch;
         }
 
         if (_searchBox.Parent is FrameworkElement wrap)

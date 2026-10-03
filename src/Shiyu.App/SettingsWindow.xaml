@@ -15,7 +15,12 @@
       spike 配方），DWM 在底下画 Mica，标题栏、圆角、阴影、贴靠布局都是
       系统的。旧配方（分层窗口 + 自绘壳）整体退役。
     -->
-    <Grid>
+    <!--
+      根底 = SurfaceMaterial（与库窗同款，视觉走查 2026-10-03）：裸区
+      不再单独指望 DWM Mica——材质未实际渲染时这层 94% 不透明的主题淡
+      染兜底，暗色主题下正文不再透出桌面亮底。
+    -->
+    <Grid Background="{DynamicResource Brush.SurfaceMaterial}">
         <Grid.ColumnDefinitions>
             <ColumnDefinition x:Name="NavColumn" Width="240" MinWidth="48"/>
             <ColumnDefinition x:Name="ContentColumn" Width="*"/>

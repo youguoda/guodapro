@@ -27,19 +27,33 @@
           复选框静止不存在（RowProps.ShowCheck，多选才出现）；置顶/收藏的
           字形只在真有那个状态时出现——字形与状态一致（§6 北极星 3）。
         -->
+        <!--
+          行骨架必须是 Grid 而不是水平 StackPanel（视觉走查 2026-10-01）：
+          StackPanel 沿排列方向给子元素无限宽度，Preview 的省略号永远不
+          触发——长标题一路按自然宽排版（实测 2309 DIP），被列缘硬切半个
+          字，收藏星被推到两千米外不可见。Grid 的 * 列把宽度收回来。
+        -->
         <DataTemplate x:Key="EntryRowTemplate">
-            <StackPanel Orientation="Horizontal" Margin="2,0">
-                <CheckBox x:Name="RowCheck" Margin="0,0,8,0" VerticalAlignment="Center"
+            <Grid Margin="2,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <CheckBox x:Name="RowCheck" Grid.Column="0" Margin="0,0,8,0" VerticalAlignment="Center"
                           Focusable="False" Visibility="Collapsed"
                           IsChecked="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}"/>
-                <Border Width="64" Height="48" Margin="0,0,10,0"
+                <Border Grid.Column="1" Width="64" Height="48" Margin="0,0,10,0"
+                        Padding="1"
                         CornerRadius="{DynamicResource Radius.Small}"
                         Background="{DynamicResource Brush.SurfaceSubtle}"
                         Visibility="{Binding ThumbnailVisibility}">
-                    <Image Source="{Binding Thumbnail}" Stretch="Uniform"
+                    <Image Source="{Binding Thumbnail}" Stretch="UniformToFill"
                            RenderOptions.BitmapScalingMode="HighQuality"/>
                 </Border>
-                <Grid Width="18" Height="18" Margin="0,0,6,0" VerticalAlignment="Center">
+                <Grid Grid.Column="2" Width="18" Height="18" Margin="0,0,6,0" VerticalAlignment="Center">
                     <Image Source="{Binding Icon}" Visibility="{Binding IconVisibility}"
                            RenderOptions.BitmapScalingMode="HighQuality"/>
                     <Border CornerRadius="{DynamicResource Radius.Small}"
@@ -50,24 +64,26 @@
                                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
                 </Grid>
-                <StackPanel VerticalAlignment="Center">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock x:Name="PinGlyph" Text="&#xE77A;" Margin="0,0,6,0"
+                <StackPanel Grid.Column="3" VerticalAlignment="Center">
+                    <!-- 同理用 DockPanel：置顶字形占 Auto，标题拿剩余宽，省略号才有宽可省。 -->
+                    <DockPanel>
+                        <TextBlock x:Name="PinGlyph" DockPanel.Dock="Left" Text="&#xE77A;" Margin="0,0,6,0"
                                    FontFamily="{DynamicResource Font.Icon}"
                                    FontSize="{DynamicResource Size.IconXs}"
                                    Foreground="{DynamicResource Brush.Accent}"
                                    Visibility="{Binding PinVisibility}"/>
                         <TextBlock Text="{Binding Preview}" TextTrimming="CharacterEllipsis"/>
-                    </StackPanel>
+                    </DockPanel>
                     <TextBlock Text="{Binding Meta}" FontSize="{DynamicResource Type.Caption}"
                                Foreground="{DynamicResource Brush.TextSecondary}"
+                               TextTrimming="CharacterEllipsis"
                                Margin="0,4,0,0"/>
                 </StackPanel>
-                <TextBlock x:Name="StarGlyph" Text="&#xE735;" Margin="10,0,0,0"
+                <TextBlock x:Name="StarGlyph" Grid.Column="4" Text="&#xE735;" Margin="10,0,0,0"
                            FontFamily="{DynamicResource Font.Icon}" FontSize="{DynamicResource Size.IconS}"
                            Foreground="{DynamicResource Brush.TextSecondary}"
                            VerticalAlignment="Center" Visibility="{Binding StarVisibility}"/>
-            </StackPanel>
+            </Grid>
             <DataTemplate.Triggers>
                 <DataTrigger Binding="{Binding Path=(local:RowProps.ShowCheck), RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
                     <Setter TargetName="RowCheck" Property="Visibility" Value="Visible"/>
@@ -124,7 +140,15 @@
         </Style>
     </Window.Resources>
 
-    <Grid x:Name="RootGrid" ClipToBounds="True">
+    <!--
+      根底 = SurfaceMaterial（票 03 的"材质上叠品牌淡染"配方，视觉走查
+      2026-10-03 补上）：这扇窗的裸区此前完全指望 DWM Mica 画底，而材质
+      未实际渲染时（TrySet 成功≠视觉生效，实测暗色主题下整片正文透出
+      桌面亮底，白字不可读），现在常画一层 94% 不透明的主题淡染——材质
+      生效时纹理仍隐约透出，失效时底色兜底，两个主题都可读。
+    -->
+    <Grid x:Name="RootGrid" ClipToBounds="True"
+          Background="{DynamicResource Brush.SurfaceMaterial}">
         <Grid.RowDefinitions>
             <RowDefinition Height="48"/>
             <RowDefinition Height="40"/>
@@ -261,6 +285,7 @@
                 <!-- 列表侧：滚动列表 + 吸顶分组头（浮层）+ 撤销条（浮层） -->
                 <Grid Grid.Column="0">
                     <local:LibraryList x:Name="EntryList"
+                                       Style="{DynamicResource BareList}"
                                        SelectionMode="Extended"
                                        HorizontalContentAlignment="Stretch"
                                        ScrollViewer.HorizontalScrollBarVisibility="Disabled"

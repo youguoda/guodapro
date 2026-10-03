@@ -359,12 +359,14 @@
                                    LineStackingStrategy="BlockLineHeight"
                                    Foreground="{DynamicResource Brush.Text}"
                                    ToolTip="{Binding DragToolTip}"/>
+                        <!-- Padding=1：图贴满时高质量缩放在底缘会采样出一条 1px
+                             暗线（视觉走查 2026-10-03），一 DIP 缓冲隔开采样边。 -->
                         <Border x:Name="ImageBody" Height="{Binding ImageHeight}"
-                                ClipToBounds="True"
+                                ClipToBounds="True" Padding="1"
                                 CornerRadius="{DynamicResource Radius.Control}"
                                 Background="{DynamicResource Brush.SurfaceSubtle}"
                                 Visibility="{Binding ImageVisibility}">
-                            <Image Source="{Binding Thumbnail}" Stretch="Uniform"
+                            <Image Source="{Binding Thumbnail}" Stretch="UniformToFill"
                                    RenderOptions.BitmapScalingMode="HighQuality"/>
                         </Border>
                         <!-- Files: type icon per row, dead paths struck through
@@ -373,31 +375,34 @@
                              A copy made only of pictures previews as one. -->
                         <StackPanel x:Name="FilesBody" Visibility="{Binding FilesVisibility}">
                             <Border Height="{Binding ImageHeight}"
-                                    ClipToBounds="True"
+                                    ClipToBounds="True" Padding="1"
                                     CornerRadius="{DynamicResource Radius.Control}"
                                     Background="{DynamicResource Brush.SurfaceSubtle}"
                                     Visibility="{Binding FilePreviewVisibility}"
                                     Margin="0,0,0,4">
-                                <Image Source="{Binding FilePreviewSource}" Stretch="Uniform"
+                                <Image Source="{Binding FilePreviewSource}" Stretch="UniformToFill"
                                        RenderOptions.BitmapScalingMode="HighQuality"/>
                             </Border>
                             <ItemsControl ItemsSource="{Binding FileRows}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <StackPanel Orientation="Horizontal" Margin="0,1">
+                                        <!-- DockPanel 而非水平 StackPanel（视觉走查 2026-10-01）：
+                                             StackPanel 里省略号拿不到宽，长文件名把"路径不存在"
+                                             推出卡片右缘。文件名占剩余宽，失效标记钉在右端。 -->
+                                        <DockPanel Margin="0,1">
                                             <Image Source="{Binding Icon}" Width="16" Height="16"
                                                    Margin="0,0,6,0" VerticalAlignment="Center"
                                                    RenderOptions.BitmapScalingMode="HighQuality"/>
-                                            <TextBlock x:Name="RowName" Text="{Binding Name}"
-                                                       FontSize="{DynamicResource Type.Body}"
-                                                       Foreground="{DynamicResource Brush.Text}"
-                                                       TextTrimming="CharacterEllipsis"/>
-                                            <TextBlock x:Name="RowDead" Text="（路径不存在）"
+                                            <TextBlock x:Name="RowDead" DockPanel.Dock="Right" Text="（路径不存在）"
                                                        FontSize="{DynamicResource Type.Caption}"
                                                        Foreground="{DynamicResource Brush.Danger}"
                                                        Margin="6,0,0,0" VerticalAlignment="Center"
                                                        Visibility="{Binding DeadVisibility}"/>
-                                        </StackPanel>
+                                            <TextBlock x:Name="RowName" Text="{Binding Name}"
+                                                       FontSize="{DynamicResource Type.Body}"
+                                                       Foreground="{DynamicResource Brush.Text}"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                        </DockPanel>
                                         <DataTemplate.Triggers>
                                             <DataTrigger Binding="{Binding Dead}" Value="True">
                                                 <Setter TargetName="RowName" Property="TextDecorations"
@@ -584,6 +589,7 @@
                             <ToggleButton x:Name="KindChipAll" Tag="0"
                                           Style="{StaticResource KindSegmentChip}"
                                           Cursor="Hand" Click="OnKindChipClicked"
+                                          AutomationProperties.Name="类型：全部"
                                           ToolTip="全部">
                                 <Grid>
                                     <TextBlock Text="&#xE8A9;" FontFamily="{DynamicResource Font.Icon}"
@@ -599,6 +605,7 @@
                             <ToggleButton x:Name="KindChipText" Tag="1"
                                           Style="{StaticResource KindSegmentChip}"
                                           Cursor="Hand" Click="OnKindChipClicked"
+                                          AutomationProperties.Name="类型：文本"
                                           ToolTip="只看文本">
                                 <Grid>
                                     <TextBlock Text="&#xE8D2;" FontFamily="{DynamicResource Font.Icon}"
@@ -611,6 +618,7 @@
                             <ToggleButton x:Name="KindChipImage" Tag="2"
                                           Style="{StaticResource KindSegmentChip}"
                                           Cursor="Hand" Click="OnKindChipClicked"
+                                          AutomationProperties.Name="类型：图片"
                                           ToolTip="只看图片">
                                 <Grid>
                                     <TextBlock Text="&#xE8B9;" FontFamily="{DynamicResource Font.Icon}"
@@ -623,6 +631,7 @@
                             <ToggleButton x:Name="KindChipFiles" Tag="3"
                                           Style="{StaticResource KindSegmentChip}"
                                           Cursor="Hand" Click="OnKindChipClicked"
+                                          AutomationProperties.Name="类型：文件"
                                           ToolTip="只看文件">
                                 <Grid>
                                     <TextBlock Text="&#xE8B7;" FontFamily="{DynamicResource Font.Icon}"
@@ -637,6 +646,7 @@
                         <Grid x:Name="FavoriteHost">
                             <ToggleButton x:Name="FavoriteOnly" Style="{StaticResource StarToggleStyle}"
                                           Checked="OnFilterChanged" Unchecked="OnFilterChanged"
+                                          AutomationProperties.Name="只看收藏"
                                           ToolTip="只看收藏"/>
                             <ContentControl x:Name="FavoriteKeyBadge" Style="{DynamicResource KeyCap}"
                                             Content="Alt+S" HorizontalAlignment="Center"
@@ -644,12 +654,15 @@
                                             IsHitTestVisible="False"/>
                         </Grid>
                         <Border Width="1" Height="16" Margin="8,8" Background="{DynamicResource Brush.Divider}"/>
-                        <!-- 标签 ghost 下拉（U-04）：替换 Aero2 ComboBox；Tab 循环照旧。 -->
+                        <!-- 标签 ghost 下拉（U-04）：替换 Aero2 ComboBox；Tab 循环照旧。
+                             按住 Ctrl 时内容整组折起、只留键帽（视觉走查 2026-10-03：
+                             帽盖在图标+箭头的复合脚印上会从两侧露出碎片——类型片
+                             是"帽替字形"，这里同样让帽替整个内容）。 -->
                         <Grid MaxWidth="112">
                             <Button x:Name="TagFilter" Style="{StaticResource GhostDropdown}"
                                     MinWidth="48" Click="OnTagFilterClicked"
                                     ToolTip="标签筛选">
-                                <StackPanel Orientation="Horizontal">
+                                <StackPanel x:Name="TagContent" Orientation="Horizontal">
                                     <TextBlock Text="&#xE8EC;" FontFamily="{DynamicResource Font.Icon}"
                                                FontSize="{DynamicResource Size.IconS}" VerticalAlignment="Center"/>
                                     <TextBlock x:Name="TagName" Text="" MaxWidth="56"
@@ -669,6 +682,7 @@
                     <StackPanel Orientation="Horizontal" Grid.Column="2">
                         <Button x:Name="SubtypeButton"
                                 Style="{DynamicResource IconButton}" Click="OnSubtypeButtonClicked"
+                                AutomationProperties.Name="子类型筛选"
                                 ToolTip="按子类型筛选：链接 / 邮箱 / 颜色 / 路径">
                             <TextBlock Text="&#xE71C;" FontFamily="{DynamicResource Font.Icon}"
                                        FontSize="{DynamicResource Size.IconS}"/>
@@ -708,7 +722,8 @@
                       类型/收藏/标签/漏斗/✕，分组自己的事归分组行——头部管分组
                       本身，卡片管卡片的归属（票 39 的分工不变）。
                     -->
-                    <Button x:Name="GroupMenuButton" Width="26" Height="24" Margin="8,0,0,0"
+                        <Button x:Name="GroupMenuButton" Width="26" Height="24" Margin="8,0,0,0"
+                                AutomationProperties.Name="分组菜单"
                             Style="{DynamicResource IconButton}" Click="OnGroupMenuClicked"
                             ToolTip="分组：切换抽屉、删除分组、新建分组（头部管分组本身，卡片管卡片的归属）">
                         <TextBlock Text="&#xE712;" FontFamily="{DynamicResource Font.Icon}"

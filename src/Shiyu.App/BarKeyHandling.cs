@@ -72,6 +72,11 @@ internal partial class BarWindow
         FavoriteKeyBadge.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
         TagKeyBadge.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
 
+        // 帽替内容（见 BarWindow.xaml 的同名注释）：标签下拉的复合脚印
+        // （图标+名称+箭头）比键帽宽，帽盖上去会露碎片——帽在时收起内容，
+        // 按钮收缩成帽本身的大小。
+        TagContent.Visibility = on ? Visibility.Collapsed : Visibility.Visible;
+
         foreach (var container in RealizedContainers())
         {
             ApplyKeyHintsTo(
