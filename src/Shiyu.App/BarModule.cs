@@ -3,14 +3,15 @@ using Shiyu.Core;
 namespace Shiyu.App;
 
 /// <summary>
-/// 窄条模块（O-40 拆自 App.xaml.cs）：常驻窄条与快速条的显隐、几何的防抖
-/// 保存——几何保存进设置走 store，视觉状态从 ApplySettings 广播回来。
+/// 窄条模块（O-40 拆自 App.xaml.cs）：常驻窄条与快速粘贴两种呼出意图的
+/// 显隐、几何的防抖保存——几何保存进设置走 store，视觉状态从
+/// ApplySettings 广播回来。票 26 之后两种意图共用同一扇 BarWindow：
+/// 差别（锚插入符、贴完即隐、失焦即隐）住在窗口的粘贴模式里。
 /// </summary>
 internal sealed class BarModule
 {
     private AppShell? _shell;
     private BarWindow? _bar;
-    private QuickBarWindow? _quickBar;
     private System.Windows.Threading.DispatcherTimer? _geometrySave;
 
     public void Attach(AppShell shell)
@@ -29,60 +30,77 @@ internal sealed class BarModule
     /// </summary>
     public void Toggle()
     {
+        if (EnsureBar() is null)
+        {
+            return;
+        }
+
+        _bar!.Toggle();
+
+        // 呼出与收起都算「用过这个键」：试一试的清单只问用户会不会唤起窄条。
+        _shell!.NoteBarSummoned();
+    }
+
+    /// <summary>
+    /// 快速粘贴（票 26 并入，原 QuickBarWindow 的位）：以粘贴模式呼出同一扇
+    /// 窄条——一个名词、两种呼出意图（ADR-0012 #8）。窗口在首次任一意图时
+    /// 建一次：一天几十次的呼出不该每次都付一扇窗的造价。
+    /// </summary>
+    public void ShowQuickPaste()
+    {
+        if (EnsureBar() is null)
+        {
+            return;
+        }
+
+        _bar!.SummonForPaste();
+    }
+
+    /// <summary>
+    /// The one construction site（票 26 抽出：常驻与粘贴模式共用一扇窗，构造
+    /// 与接线只此一份）。装配守卫同原 Toggle：没有可写剪贴板与取词平台时，
+    /// 粘贴无从谈起，安静返回。
+    /// </summary>
+    private BarWindow? EnsureBar()
+    {
         var shell = _shell!;
 
         if (shell.Writer is null || shell.Capture is null)
         {
-            return;
+            return null;
         }
 
-        if (_bar is null)
+        if (_bar is { } bar)
         {
-            _bar = new BarWindow(
-                shell.Store, shell.Icons, shell.Writer, shell.Capture, shell.Settings,
-                shell.FileIcons, shell.FileProbe);
-            _bar.GeometryChanged += OnBarGeometryChanged;
-
-            // 引导「试一试」的两个信号（票 25/§5.3）：呼出与粘贴都经壳中转，
-            // 窄条不知道引导，引导不知道窄条。
-            _bar.Pasted += shell.NoteBarPasted;
-
-            // 深链进设置的数据页：条不知道设置的内部，只知道条目 Id。
-            _bar.DataSettingsRequested += itemId => shell.OpenSettingsAt?.Invoke(itemId);
-            _bar.DeadDragNotice += notice => shell.TellUser(notice);
-
-            // 品牌钮打开管理窗（票 21 §6.1 第 1 行）：窄条管"拿回"，
-            // 整理归管理窗。
-            _bar.LibraryRequested += () => shell.ShowLibrary?.Invoke();
-
-            // The header's pin reports only what it wants (票 39/O-20): this
-            // side turns it into a one-field update through the store, and
-            // the pin's visual state comes back via ApplySettings when the
-            // store broadcasts — the bar never writes settings itself again,
-            // so its snapshot can no longer erase anyone else's changes (S1/S2).
-            _bar.TopmostWanted += wanted =>
-                shell.TryUpdateSettings(s => s with { BarAlwaysOnTop = wanted });
+            return bar;
         }
 
-        _bar.Toggle();
+        _bar = new BarWindow(
+            shell.Store, shell.Icons, shell.Writer, shell.Capture, shell.Settings,
+            shell.FileIcons, shell.FileProbe);
+        _bar.GeometryChanged += OnBarGeometryChanged;
 
-        // 呼出与收起都算「用过这个键」：试一试的清单只问用户会不会唤起窄条。
-        shell.NoteBarSummoned();
-    }
+        // 引导「试一试」的两个信号（票 25/§5.3）：呼出与粘贴都经壳中转，
+        // 窄条不知道引导，引导不知道窄条。
+        _bar.Pasted += shell.NoteBarPasted;
 
-    /// <summary>Summons the quick bar. One instance, reused: it appears dozens of times
-    /// a day and building a window each time is work the user would feel.</summary>
-    public void ShowQuickBar()
-    {
-        var shell = _shell!;
+        // 深链进设置的数据页：条不知道设置的内部，只知道条目 Id。
+        _bar.DataSettingsRequested += itemId => shell.OpenSettingsAt?.Invoke(itemId);
+        _bar.DeadDragNotice += notice => shell.TellUser(notice);
 
-        if (shell.Capture is null)
-        {
-            return;
-        }
+        // 品牌钮打开管理窗（票 21 §6.1 第 1 行）：窄条管"拿回"，
+        // 整理归管理窗。
+        _bar.LibraryRequested += () => shell.ShowLibrary?.Invoke();
 
-        _quickBar ??= new QuickBarWindow(shell.Store, shell.Capture);
-        _quickBar.Summon();
+        // The header's pin reports only what it wants (票 39/O-20): this
+        // side turns it into a one-field update through the store, and the
+        // pin's visual state comes back via ApplySettings when the
+        // store broadcasts — the bar never writes settings itself again,
+        // so its snapshot can no longer erase anyone else's changes (S1/S2).
+        _bar.TopmostWanted += wanted =>
+            shell.TryUpdateSettings(s => s with { BarAlwaysOnTop = wanted });
+
+        return _bar;
     }
 
     /// <summary>
@@ -131,11 +149,10 @@ internal sealed class BarModule
         });
     }
 
-    /// <summary>原 OnExit 的中段：先落几何（与退出时完全同一函数），再关两扇条窗。</summary>
+    /// <summary>原 OnExit 的中段：先落几何（与退出时完全同一函数），再关条窗。</summary>
     public void Shutdown()
     {
         SaveBarGeometry(this, EventArgs.Empty);
         _bar?.Close();
-        _quickBar?.CloseForGood();
     }
 }

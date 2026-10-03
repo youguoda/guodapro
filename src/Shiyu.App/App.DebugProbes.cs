@@ -99,7 +99,9 @@ public partial class App
                 break;
 
             case "quickbar":
-                shell.ShowQuickBar?.Invoke();
+                // 票 26 合并后 quickbar 命令映射到粘贴模式的窄条：探针仍能
+                // 检"快速粘贴"这条意图，定位参数（384 DIP）在探针脚本里同步。
+                shell.ShowQuickPaste?.Invoke();
                 break;
 
             case "library":

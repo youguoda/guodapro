@@ -12,6 +12,57 @@ public static class ScreenGeometry
             : new ScreenPoint(0, 0);
 
     /// <summary>
+    /// The text caret of whatever window is in the foreground（票 26 的锚点：
+    /// 键盘呼出的快速粘贴要贴着插入符出现）. Asked through GetGUIThreadInfo,
+    /// which answers for any thread — including other processes' — so the
+    /// query works exactly where it is needed, on the app the user was typing
+    /// in.
+    ///
+    /// 取不到就给 null，调用方退回鼠标：一个没有可见系统插入符的应用
+    /// （浏览器内容区、多数现代编辑器都自绘光标）不该把浮层锚到客户区
+    /// 原点去。锚点取插入符矩形的左下角——文字生长的地方。
+    /// </summary>
+    public static ScreenPoint? CaretPosition()
+    {
+        const int CaretVisible = 0x0002; // GUIF_CARETVISIBLE
+
+        var foreground = NativeMethods.GetForegroundWindow();
+        if (foreground == IntPtr.Zero)
+        {
+            return null;
+        }
+
+        var thread = NativeMethods.GetWindowThreadProcessId(foreground, out _);
+        if (thread == 0)
+        {
+            return null;
+        }
+
+        var info = new NativeMethods.GuiThreadInfo
+        {
+            cbSize = System.Runtime.InteropServices.Marshal.SizeOf<NativeMethods.GuiThreadInfo>(),
+        };
+
+        if (!NativeMethods.GetGUIThreadInfo(thread, ref info)
+            || (info.flags & CaretVisible) == 0
+            || info.hWndCaret == IntPtr.Zero)
+        {
+            return null;
+        }
+
+        var left = new NativeMethods.Point { X = info.rcCaret.Left, Y = info.rcCaret.Top };
+        var bottom = new NativeMethods.Point { X = info.rcCaret.Left, Y = info.rcCaret.Bottom };
+
+        if (!NativeMethods.ClientToScreen(info.hWndCaret, ref left)
+            || !NativeMethods.ClientToScreen(info.hWndCaret, ref bottom))
+        {
+            return null;
+        }
+
+        return new ScreenPoint(left.X, bottom.Y);
+    }
+
+    /// <summary>
     /// The usable area of the screen the point is on — the work area, not the
     /// full monitor, so a badge never hides behind the taskbar.
     /// </summary>

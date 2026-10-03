@@ -66,6 +66,13 @@ internal partial class BarWindow : Window
     private AppSettings _settings;
     private ForegroundWindow _returnTo;
 
+    /// <summary>
+    /// 当前呼出意图（票 26 合并后，ADR-0012 #8 的两种）：粘贴模式 = 锚插入符
+    /// 出现、贴完/失焦即隐；常驻模式 = 原行为，失焦不消失。Enter/编号粘贴、
+    /// Esc、筛选与键帽两种模式同一套——差别的只有"什么时候走"。
+    /// </summary>
+    private bool _pasteMode;
+
     /// <summary>Raised when the window is moved or resized; the owner persists geometry, throttled its own way.</summary>
     public event Action? GeometryChanged;
 
@@ -301,6 +308,43 @@ internal partial class BarWindow : Window
         // verdict, O-37).
         RunRefresh(_refreshPolicy.Shown());
         MoveBesideCursorIfWanted();
+        ShowFocused();
+    }
+
+    /// <summary>
+    /// 以粘贴模式呼出（票 26 合并后，快速粘贴的唯一入口）：意图是"出现在
+    /// 我要贴的地方，贴完就走"。锚点取文本插入符——键盘呼出时用户正打字的
+    /// 地方——取不到退回鼠标；无视「呼出时移到鼠标旁」开关，这是两种意图里
+    /// 更急的一种。搜索词清零（会话永远从全部历史开始，系统 Win+V 的心智），
+    /// 搜索框预聚焦，↑↓/Enter/编号沿用常驻键位；失焦即隐是本模式专属。
+    /// </summary>
+    public void SummonForPaste()
+    {
+        _pasteMode = true;
+
+        // The caret must be read before this window activates itself: after
+        // Activate the foreground is us and the query would never answer
+        // again. The return-target is noted in the same breath, same reason.
+        _returnTo = ForegroundWindow.Current();
+        var anchor = ScreenGeometry.CaretPosition() ?? ScreenGeometry.CursorPosition();
+
+        // A fresh session starts unfiltered. Clearing arms the debounce; the
+        // summon reads now instead (the same disarm the old quick bar did),
+        // and the filter's query follows the box without a second rebuild —
+        // Shown's reload is the one and only.
+        SearchBox.Clear();
+        _searchDebounce.Stop();
+        _browser.Query = string.Empty;
+        UpdateFilterChrome();
+
+        RunRefresh(_refreshPolicy.Shown());
+        PlaceBeside(anchor);
+        ShowFocused();
+    }
+
+    /// <summary>The tail both summons share: show at full opacity, take the keyboard, aim the search box.</summary>
+    private void ShowFocused()
+    {
         Show();
         Activate();
         SearchBox.Focus();
@@ -327,22 +371,30 @@ internal partial class BarWindow : Window
             return;
         }
 
-        var cursor = ScreenGeometry.CursorPosition();
-        var workArea = ScreenGeometry.WorkAreaAt(cursor);
+        PlaceBeside(ScreenGeometry.CursorPosition());
+    }
+
+    /// <summary>
+    /// The shared placement body（票 26 从 MoveBesideCursorIfWanted 抽出）：
+    /// 锚点成了参数——常驻问设置后给鼠标，粘贴模式给插入符。
+    /// </summary>
+    private void PlaceBeside(ScreenPoint anchor)
+    {
+        var workArea = ScreenGeometry.WorkAreaAt(anchor);
 
         // The scale comes from the monitor itself (GetDpiForMonitor), not from
         // WPF: on the first summon the PresentationSource does not exist yet,
         // and its silent 1.0 fallback made Place see DIU-sized dimensions —
         // no flip, no clamp, the bar's real bottom off the work area (ticket
         // 30's screenshot probe).
-        var (scaleX, scaleY) = ScreenGeometry.ScaleAt(cursor);
+        var (scaleX, scaleY) = ScreenGeometry.ScaleAt(anchor);
 
         // Declared Width/Height, never Actual*: nothing has been laid out on
         // the first summon, so the Actual values are 0.
         var width = Width;
         var height = Math.Min(Height, workArea.Height / scaleY);
         var placed = BadgePlacement.Place(
-            cursor,
+            anchor,
             (int)Math.Ceiling(width * scaleX),
             (int)Math.Ceiling(height * scaleY),
             workArea);
@@ -368,6 +420,11 @@ internal partial class BarWindow : Window
     /// </summary>
     public void Dismiss(BarHideReason reason = BarHideReason.Toggled)
     {
+        // Cleared first: Hide() deactivates the window, and the Deactivated
+        // handler must not read the paste mode that is already ending as a
+        // reason to hide (and NOT restore focus) a second time.
+        _pasteMode = false;
+
         RunPreviewCommand(_previewPolicy.BarHidden());
 
         // Instant hide, matching the instant summon. Fading a layered window
@@ -466,6 +523,15 @@ internal partial class BarWindow : Window
     {
         if (IsVisible)
         {
+            if (_pasteMode)
+            {
+                // Ctrl+Shift+B while the paste-mode bar is up means "now I
+                // want to stay and browse": switch to resident in place, not
+                // dismiss under the very key that asked for the bar.
+                _pasteMode = false;
+                return;
+            }
+
             Dismiss();
         }
         else

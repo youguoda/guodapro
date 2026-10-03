@@ -107,7 +107,7 @@ internal sealed class TrayModule
                 shell.ToggleBar?.Invoke();
                 break;
             case QuickPasteKey:
-                shell.ShowQuickBar?.Invoke();
+                shell.ShowQuickPaste?.Invoke();
                 break;
             case TranslateClipboardKey:
                 shell.TranslateClipboard?.Invoke();

@@ -6,7 +6,7 @@ public enum HotkeyAction
     /// <summary>划词翻译：抓前台选中文字并翻译。</summary>
     CaptureSelection,
 
-    /// <summary>唤出快速条。</summary>
+    /// <summary>快速粘贴：以粘贴模式呼出窄条（票 26 合并后唯一的轻量呼出意图）。</summary>
     QuickBar,
 
     /// <summary>唤出/收起常驻窄条。</summary>
@@ -26,8 +26,8 @@ public sealed record HotkeyBinding(HotkeyAction Action, HotkeySpec Spec);
 /// 把设置里的四个热键字符串变成一份注册方案（O-27 下沉候选 3）。
 ///
 /// 这曾是三份各自为政的实现：设置窗校验四键互异、引导只校验三个（漏了
-/// 快速条——用户把窄条设成 Ctrl+Shift+V 时，保存照常通过，随后 App 注册
-/// 失败，托盘误报"已被其他软件占用"，而占住它的是拾语自己的快速条）、
+/// 快速粘贴——用户把窄条设成 Ctrl+Shift+V 时，保存照常通过，随后 App 注册
+/// 失败，托盘误报"已被其他软件占用"，而占住它的是拾语自己的快速粘贴）、
 /// App 注册循环各写各的解析。现在三处都问这一份：
 ///
 /// - 解析四键（<see cref="HotkeySpec.Parse"/>，裸键缺修饰键在此就被拒绝）；
@@ -41,7 +41,7 @@ public static class HotkeyPlan
         new Dictionary<HotkeyAction, string>
         {
             [HotkeyAction.CaptureSelection] = "划词翻译",
-            [HotkeyAction.QuickBar] = "快速条",
+            [HotkeyAction.QuickBar] = "快速粘贴",
             [HotkeyAction.Bar] = "窄条",
             [HotkeyAction.ClipboardTranslate] = "翻译剪贴板",
             [HotkeyAction.Library] = "打开管理窗",

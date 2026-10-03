@@ -12,6 +12,14 @@ public enum BarHideReason
     /// 受测的不变式，而不是又一次靠记得。
     /// </summary>
     Pasted,
+
+    /// <summary>
+    /// 粘贴模式失焦即隐（票 26）：用户点了别处。收尾规格与其它原因相同
+    /// （轻量开就进轻量）；差别只在调用侧——这条路径只隐藏，不把焦点
+    /// 拽回原应用（UI 报告 §3.7 问题 1）。原因单列，为的是这条差别将来
+    /// 若要受测，不必回头改调用方的语义。
+    /// </summary>
+    FocusLost,
 }
 
 /// <summary>What the policy wants the window to do after an event.</summary>

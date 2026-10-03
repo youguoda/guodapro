@@ -66,7 +66,9 @@ internal sealed class AppShell
     // --- 跨模块中转位：宿主装配完成时接线，模块经它们找彼此 ---
 
     public Action? ToggleBar { get; set; }
-    public Action? ShowQuickBar { get; set; }
+
+    /// <summary>快速粘贴（票 26）：以粘贴模式呼出窄条——贴完/失焦即隐的呼出意图。</summary>
+    public Action? ShowQuickPaste { get; set; }
     public Action? TranslateSelection { get; set; }
     public Action? TranslateClipboard { get; set; }
 

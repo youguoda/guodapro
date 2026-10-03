@@ -198,6 +198,30 @@ internal static class NativeMethods
     [DllImport("user32.dll", SetLastError = true)]
     internal static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
 
+    /// <summary>
+    /// GetGUIThreadInfo's answer (票 26 的插入符锚点): only the caret fields
+    /// matter here. rcCaret is in the CLIENT coordinates of hwndCaret.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct GuiThreadInfo
+    {
+        public int cbSize;
+        public int flags;
+        public IntPtr hWndActive;
+        public IntPtr hWndFocus;
+        public IntPtr hWndCapture;
+        public IntPtr hWndMenuOwner;
+        public IntPtr hWndMoveSize;
+        public IntPtr hWndCaret;
+        public Rect rcCaret;
+    }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    internal static extern bool GetGUIThreadInfo(uint idThread, ref GuiThreadInfo info);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    internal static extern bool ClientToScreen(IntPtr hWnd, ref Point point);
+
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     internal static extern IntPtr LoadIconW(IntPtr instance, IntPtr iconName);
 

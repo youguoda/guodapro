@@ -48,7 +48,7 @@ internal sealed class AppModules
 
         // 跨模块中转位：模块间不互相引用，经 shell 找彼此。
         shell.ToggleBar = modules.Bar.Toggle;
-        shell.ShowQuickBar = modules.Bar.ShowQuickBar;
+        shell.ShowQuickPaste = modules.Bar.ShowQuickPaste;
         shell.TranslateSelection = modules.Selection.TranslateSelection;
         shell.TranslateClipboard = modules.Selection.TranslateClipboard;
         shell.ShowPanel = modules.Translation.ShowPanel;

@@ -166,8 +166,40 @@ internal partial class BarWindow
     /// Losing focus while Ctrl is still down — Ctrl+Tab, a notification
     /// stealing the click — means the release event never arrives. The
     /// badges come in now, or they stay forever.
+    ///
+    /// 粘贴模式另有含义（票 26）：失焦即隐——点别处就是"用完了"。只隐藏，
+    /// 不还原前台：焦点此刻正落在用户点下去的窗口上，Restore 只会把它
+    /// 抢回来（UI 报告 §3.7 问题 1）。收尾规格与其余隐藏原因相同（轻量
+    /// 开就进轻量），差异只在这一个"不拽回"。
     /// </summary>
-    private void OnLostFocus(object sender, EventArgs e) => SetKeyHints(false);
+    private void OnLostFocus(object sender, EventArgs e)
+    {
+        if (_pasteMode && IsVisible)
+        {
+            HideAfterFocusLost();
+            return;
+        }
+
+        SetKeyHints(false);
+    }
+
+    /// <summary>
+    /// The paste mode's focus-loss exit: the full hide teardown (preview down,
+    /// teaching row down, refresh policy's Hidden — reason FocusLost so the
+    /// "every reason pays the same" invariant stays testable), minus the
+    /// foreground restore the deliberate exits do.
+    /// </summary>
+    private void HideAfterFocusLost()
+    {
+        // Dismiss clears the flag itself; doing it here first keeps this path
+        // terminal even if a re-entrant Deactivated arrives mid-hide.
+        _pasteMode = false;
+
+        RunPreviewCommand(_previewPolicy.BarHidden());
+        DismissFirstUseHint();
+        Hide();
+        RunRefresh(_refreshPolicy.Hidden(BarHideReason.FocusLost));
+    }
 
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
@@ -176,7 +208,15 @@ internal partial class BarWindow
             SetKeyHints(true);
             return;
         }
-        switch (e.Key)
+
+        // 中文 IME 打开时，字母键以 Key.ImeProcessed 报达（真实键在
+        // ImeProcessedKey 里）——键位模型认"用户按了哪个键"，不认输入法
+        // 替他转的这一手。票 24 在管理窗（LibraryKeys）做了同一归一，代码
+        // 里留了指给窄条的档；这里是那一笔的兑现：字母动作在中文输入法
+        // 下也得活着。
+        var key = e.Key == Key.ImeProcessed ? e.ImeProcessedKey : e.Key;
+
+        switch (key)
         {
             case Key.Escape:
                 e.Handled = true;

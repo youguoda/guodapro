@@ -385,10 +385,10 @@
     </Style>
 
     <!--
-      SearchBox（§4.7 胶囊，窄条与快速条共用一个搜索控件）：高 32 真
-      胶囊（圆角 = 高度/2 = Radius.Pill），左放大镜 16，占位次级色，
-      聚焦描边转 Accent 1 DIP；右端可放键帽/清除钮（InputProps.RightGutter
-      让出文字空间）。
+      SearchBox（§4.7 胶囊；票 26 合并后只剩窄条一个表面，常驻与粘贴
+      模式共用同一框）：高 32 真胶囊（圆角 = 高度/2 = Radius.Pill），
+      左放大镜 16，占位次级色，聚焦描边转 Accent 1 DIP；右端可放
+      键帽/清除钮（InputProps.RightGutter 让出文字空间）。
     -->
     <Style x:Key="SearchBox" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
         <Setter Property="Template">

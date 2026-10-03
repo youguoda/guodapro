@@ -294,13 +294,13 @@ public static class SettingsSchema
                     Icon: "E77F"),
                 new SettingsItem(
                     "hotkey.quickbar", "快速粘贴", SettingsControl.Hotkey,
-                    Hint: "呼出轻量粘贴条：选中即粘贴，粘贴后消失。",
-                    Keywords: ["快速条", "快速粘贴", "快捷键"],
+                    Hint: "以粘贴模式呼出窄条：在插入符旁出现（取不到退鼠标），打字过滤、Enter 或编号键粘贴后消失，失焦即隐；Ctrl+Shift+B 的窄条是常驻的，用来翻看与整理。",
+                    Keywords: ["快速粘贴", "粘贴", "快捷键"],
                     Icon: "E8C8"),
                 new SettingsItem(
                     "winv.takeover", "也用 Win+V 呼出", SettingsControl.Toggle,
                     Parent: "hotkey.quickbar",
-                    Hint: "让 Win+V 唤起拾语窄条，代替系统剪贴板面板。默认关闭；关闭即刻还原，拾语退出或被强杀时 Win+V 自动回到系统行为。与「快速粘贴」热键并存：两者都开时，Win+V 与该热键都能唤起。其它 Win 组合键不受影响。",
+                    Hint: "让 Win+V 以粘贴模式呼起窄条，代替系统剪贴板面板——选一条、粘贴、消失。默认关闭；关闭即刻还原，拾语退出或被强杀时 Win+V 自动回到系统行为。与「快速粘贴」热键并存：两者都开时，Win+V 与该热键都唤起粘贴模式。其它 Win 组合键不受影响。",
                     Keywords: ["win", "winv", "接管", "系统", "剪贴板", "面板", "热键"],
                     Icon: "E765"),
                 new SettingsItem(
