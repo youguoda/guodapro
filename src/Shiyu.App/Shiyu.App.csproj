@@ -18,6 +18,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- The about page's 拾 mark as the exe/window/taskbar icon (user
+         request 2026-10-04). Nine PNG-in-ICO frames, 16..256. -->
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
   </PropertyGroup>
 
 </Project>
