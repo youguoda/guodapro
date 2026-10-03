@@ -2,7 +2,7 @@
 
 **来源：** UI 报告 §3.8、§6.4、§6.5、U-12、U-13；优化报告 O-34；样稿 `docs/review/mockups/library.png`
 **Blocked by:** 19
-**Status:** ready-for-agent
+**Status:** ready-for-human（v3/lib24 分支 8782d72/d771601/f355c2c：917+3 测试绿、run-all 24 项 23 PASS/0 FAIL/1 SKIP——connector SKIP 为既有基线、双静态绿、Debug/Release 0 错误；人工目验项列于票尾）
 
 **What to build:**
 - **窗口：** 系统窗框，1100 × 640；宽度 ≥ 960 时双栏，更窄时单栏。
@@ -18,6 +18,15 @@
 - **键盘模型：** Ctrl+F、↑↓、Enter 复制、C、P、S、N、G、D/Delete、Z/Ctrl+Z、T 标签、Space 预览、F1 速查、Esc 逐层（UI 报告 §5.2）。
 
 **验收：**
-- [ ] 宽 720–1400 之间任意宽度都没有控件重叠
-- [ ] 只用键盘完成"搜索 → 选择 → 复制 → 删除 → 撤销"
-- [ ] "清空全部历史"不再是一级按钮，并走确认对话框
+- [x] 宽 720–1400 之间任意宽度都没有控件重叠（probe-library 新增 `library-width-sweep-overlap`：720/940/1400 DIP 三档全控件两两零重叠，自动化回归守卫）
+- [ ] 只用键盘完成"搜索 → 选择 → 复制 → 删除 → 撤销"（探针已烟测 arrows/D/Z 一段：计数 17→16→17；整段含 Ctrl+F/Enter/复制的人工走查列在票尾）
+- [x] "清空全部历史"不再是一级按钮，并走确认对话框（收进「⋯」底部 Danger 组；ContentDialog 取消默认焦点，按钮文案"清空 n 条"；按时间段删除的范围选择搬进对话框、条数实时）
+
+**人工目验项（ready-for-human）：**
+- 键盘全流程走查：Ctrl+F 搜索 → ↑↓/Shift 连选 → Enter 复制（注意 tooltip：无粘贴目标）→ D 删除 → Z 撤销 → Esc 逐层（预览→搜索词→token 逐个弹，最后一层不关窗）→ Ctrl+W 关窗。
+- 双栏折叠：在 960 DIP 附近来回拖窗口宽，双栏↔单栏切换；单栏下按住 Space 看全屏预览。
+- AI 动作：配好自备密钥后，「⋯ › AI 处理」四动作 + 批量翻译，输出在详情栏的 Agent 结果区（含建议标签点选、复制结果）。
+- 按住 Ctrl：命令栏五钮原位换键帽；F1 / ? 键位速查表。
+- 备注 N / 归组 G / 标签 T 三个弹层，以及撤销条 5 秒进度线悬停暂停。
+
+**实现要点（给复核）：** Esc 分层与日期分组在 Core（`LibraryKeyboard`/`HistoryGroups`，+6 单测）；窗口分五个文件（主/列表/详情/弹层/键盘）；IME 打开时字母键以 `Key.ImeProcessed` 报达，管理窗已归一到真实键——窄条同形问题留给票 25 的 KeyMap 收编。
