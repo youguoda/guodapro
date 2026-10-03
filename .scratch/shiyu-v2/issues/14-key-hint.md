@@ -20,7 +20,7 @@
 
 **Blocked by:** 12, 15
 
-**Status:** ready-for-human
+**Status:** done (succession via v3 - see docs/manual-test-v5.md)
 
 - [x] 按住修饰键，可用快捷键的图标原地换成按键徽标；松开复原
 - [x] 前十行显示 1–9 与 0，按下对应数字直接作用于该行
@@ -57,3 +57,5 @@ Tab 徽标叠在各自控件右缘。托盘按钮有字母的（复/开/钉/删�
 
 **待人工**：重启后按住 Ctrl——行图标变数字、搜索框出现 F、类型/标签出现
 ←→/Tab、悬停某行看托盘字母；Ctrl+Tab 切走再回来确认徽标不残留。
+
+**Acceptance succession (2026-10-03, ticket 28):** closed via v3 - machine-testable parts are covered by the probe suite (28 checks, 0 fail) and 938+3 automated tests; human-judgement items live in docs/manual-test-v5.md.

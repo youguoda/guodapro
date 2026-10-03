@@ -19,7 +19,7 @@
 
 **Blocked by:** 22
 
-**Status:** ready-for-human
+**Status:** done (succession via v3 - see docs/manual-test-v5.md)
 
 - [x] 首次启动出现引导，此后不再出现
 - [x] 引导中可确认与修改三个主要快捷键，冲突时当场提示
@@ -47,3 +47,5 @@
   一直正常打开，此前"找不到窗"是探针 UIA 根枚举漏新 hwnd + C# Console 输出过 GBK
   码显示成乱码两件探针自身的事，最终以裸 EnumWindows 拿句柄 + FromHandle 驱动通过。
 
+
+**Acceptance succession (2026-10-03, ticket 28):** closed via v3 - machine-testable parts are covered by the probe suite (28 checks, 0 fail) and 938+3 automated tests; human-judgement items live in docs/manual-test-v5.md.

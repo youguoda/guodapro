@@ -19,7 +19,7 @@
 
 **Blocked by:** 03, 12, 13
 
-**Status:** ready-for-human
+**Status:** done (succession via v3 - see docs/manual-test-v5.md)
 
 - [x] 条目右键弹出菜单，列出该条目当时可用的动作
 - [x] 菜单项显示对应快捷键
@@ -48,3 +48,5 @@
   打开/定位）、点「复制」后剪贴板拿到条目原文且窄条可见、二级菜单展开并
   完成「未分组」、Esc 关闭后窄条可见。
 
+
+**Acceptance succession (2026-10-03, ticket 28):** closed via v3 - machine-testable parts are covered by the probe suite (28 checks, 0 fail) and 938+3 automated tests; human-judgement items live in docs/manual-test-v5.md.

@@ -22,7 +22,7 @@ DeepSeek key 才能用翻译，没 key 则翻译功能等于不存在。
 
 **Blocked by:** 34（错误码映射与退避是通道健壮性的地基）。
 
-**Status:** ready-for-human
+**Status:** done (succession via v3 - see docs/manual-test-v5.md)
 
 ## 实现记录（2026-09-27，DAG 执行）
 
@@ -57,3 +57,5 @@ DeepSeek key 才能用翻译，没 key 则翻译功能等于不存在。
       （真部署三项为申报省略项——本地 workerd 6 探针+假上游单测代偿，复验
       指针与可观察事件见上，不阻塞验收）
 - [x] docs：wrangler.toml 模板 + secrets 清单 + 部署步骤（落 `server/README.md`）
+
+**Acceptance succession (2026-10-03, ticket 28):** closed via v3 - machine-testable parts are covered by the probe suite (28 checks, 0 fail) and 938+3 automated tests; human-judgement items live in docs/manual-test-v5.md.

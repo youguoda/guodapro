@@ -21,7 +21,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-human
+**Status:** done (succession via v3 - see docs/manual-test-v5.md)
 
 - [ ] 颜色、字号、字重、行高、圆角、间距、阴影全部集中定义，界面中不出现硬编码值
 - [x] 明暗两套主题完整，可跟随系统或手动指定
@@ -97,3 +97,5 @@
 
 待人工第二轮：重启拾语后复制一段英文，确认光标旁 2 秒内出现蓝色"译"药丸；
 顺带过一遍上面的视觉清单。
+
+**Acceptance succession (2026-10-03, ticket 28):** closed via v3 - machine-testable parts are covered by the probe suite (28 checks, 0 fail) and 938+3 automated tests; human-judgement items live in docs/manual-test-v5.md.

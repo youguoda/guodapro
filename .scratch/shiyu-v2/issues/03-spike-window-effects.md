@@ -23,7 +23,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-human
+**Status:** done (succession via v3 - see docs/manual-test-v5.md)
 
 ## 结论（2026-09-26，Win11 本机实测）
 
@@ -70,3 +70,5 @@
   + 产品徽标窗实测；本票探针点击检查不可信，已在结论 4 注明）
 - [x] 窗口在多显示器与不同缩放下渲染正确，边缘无锯齿或黑边（1.5x 实测 + Core 测试）
 - [x] 结论写进票内：各系统版本的可用性、所用机制、以及不可用时的退化外观
+
+**Acceptance succession (2026-10-03, ticket 28):** closed via v3 - machine-testable parts are covered by the probe suite (28 checks, 0 fail) and 938+3 automated tests; human-judgement items live in docs/manual-test-v5.md.

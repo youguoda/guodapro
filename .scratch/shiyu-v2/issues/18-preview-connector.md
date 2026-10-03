@@ -17,7 +17,7 @@
 
 **Blocked by:** 01, 17
 
-**Status:** ready-for-human
+**Status:** done (succession via v3 - see docs/manual-test-v5.md)
 
 ## 实现记录（2026-09-26）
 
@@ -50,3 +50,5 @@
 - [x] 系统开启减少动画时，过渡关闭但连接关系仍然清晰
 - [x] 多显示器与不同缩放下坐标正确
 - [x] 覆盖层存在期间，曲线之外的区域不阻挡下层应用的鼠标操作
+
+**Acceptance succession (2026-10-03, ticket 28):** closed via v3 - machine-testable parts are covered by the probe suite (28 checks, 0 fail) and 938+3 automated tests; human-judgement items live in docs/manual-test-v5.md.

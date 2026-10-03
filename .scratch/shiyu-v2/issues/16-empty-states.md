@@ -17,7 +17,7 @@
 
 **Blocked by:** 12
 
-**Status:** ready-for-human
+**Status:** done (succession via v3 - see docs/manual-test-v5.md)
 
 - [x] 历史为空与筛选无果是两句不同的文案
 - [x] 文案按关键词、收藏、类型、分组的组合给出具体说明
@@ -38,3 +38,5 @@
   关键词走防抖后自然出现。长词靠 TextWrapping 收纳，面板 MaxWidth 300。
 - 探针实录：输入无果词 → 面板出现且原词入句 → 真点"清除筛选" → 卡片 0 → 16 全回。
 
+
+**Acceptance succession (2026-10-03, ticket 28):** closed via v3 - machine-testable parts are covered by the probe suite (28 checks, 0 fail) and 938+3 automated tests; human-judgement items live in docs/manual-test-v5.md.

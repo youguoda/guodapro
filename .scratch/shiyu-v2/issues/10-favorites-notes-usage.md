@@ -20,7 +20,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-human
+**Status:** done (succession via v3 - see docs/manual-test-v5.md)
 
 - [x] 可收藏与取消收藏条目，收藏**不改变**它在列表中的位置
 - [x] 可按收藏筛选，并与其他筛选条件组合
@@ -54,3 +54,5 @@ ToolTip 随时看。**使用次数**：托盘复制/粘贴/纯文本、键盘路
 **待人工**：复制一条 → 悬停点 ★ → 看卡片水印出现且位置不动 → 点"注"写
 "给客户的报价"保存 → 正文变备注、悬停看原文 → 搜索"报价"能找到 → 重启
 确认都在 → ★ 开关只看收藏。
+
+**Acceptance succession (2026-10-03, ticket 28):** closed via v3 - machine-testable parts are covered by the probe suite (28 checks, 0 fail) and 938+3 automated tests; human-judgement items live in docs/manual-test-v5.md.

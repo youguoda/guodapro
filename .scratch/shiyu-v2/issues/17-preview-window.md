@@ -24,7 +24,7 @@
 
 **Blocked by:** 01, 03, 05, 12
 
-**Status:** ready-for-human
+**Status:** done (succession via v3 - see docs/manual-test-v5.md)
 
 ## 实现记录（2026-09-26）
 
@@ -63,3 +63,5 @@
 - [x] 键盘移动选中项时，面板等目标位置稳定后再跟随，不抖动
 - [x] 滚动列表关闭悬停预览，但不关闭键盘触发的预览
 - [x] 面板始终完整落在当前显示器的可用区域内，不被任务栏遮挡
+
+**Acceptance succession (2026-10-03, ticket 28):** closed via v3 - machine-testable parts are covered by the probe suite (28 checks, 0 fail) and 938+3 automated tests; human-judgement items live in docs/manual-test-v5.md.

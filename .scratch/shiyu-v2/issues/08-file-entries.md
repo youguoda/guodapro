@@ -14,7 +14,7 @@
 
 **Blocked by:** 06
 
-**Status:** ready-for-human
+**Status:** done (succession via v3 - see docs/manual-test-v5.md)
 
 - [x] 复制文件或文件夹后产生条目，显示文件名、所在路径与类型图标
 - [x] 复制多个文件作为一条记录，显示前几项与"共 N 项"
@@ -48,3 +48,5 @@ SHGFI_USEFILEATTRIBUTES 不需要文件存在）+ 文件名 + 计数尾行；显
 **待人工**：在资源管理器选两三个文件 Ctrl+C → 窄条出现文件卡片（图标+名称+
 "共 N 项"）→ 回车粘到另一处文件夹 → 悬停"位"定位 → 拖卡片到桌面 → 删掉其中
 一个源文件后回窄条看删除线与红字。
+
+**Acceptance succession (2026-10-03, ticket 28):** closed via v3 - machine-testable parts are covered by the probe suite (28 checks, 0 fail) and 938+3 automated tests; human-judgement items live in docs/manual-test-v5.md.

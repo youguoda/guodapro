@@ -99,7 +99,7 @@
 
 **Blocked by:** 40（BarWindow 拆分——先切地块再动布局，见 40 号票）
 
-**Status:** ready-for-human
+**Status:** done (succession via v3 - see docs/manual-test-v5.md)
 
 ## 实现记录（2026-09-27，DAG 执行）
 
@@ -147,3 +147,5 @@
       置顶切换/关置顶浮层家族两项；浅/深双主题 + 前后对比截图；全部
       字形码浅/深主题目检非豆腐块（双主题截图与字形目检以 cmap 双字体
       探测代偿+留人工过目，见实现记录）
+
+**Acceptance succession (2026-10-03, ticket 28):** closed via v3 - machine-testable parts are covered by the probe suite (28 checks, 0 fail) and 938+3 automated tests; human-judgement items live in docs/manual-test-v5.md.

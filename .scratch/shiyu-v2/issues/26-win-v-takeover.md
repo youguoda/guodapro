@@ -21,7 +21,7 @@
 
 **Blocked by:** 12
 
-**Status:** ready-for-human
+**Status:** done (succession via v3 - see docs/manual-test-v5.md)
 
 - [x] 开启后 `Win+V` 唤起拾语窄条，系统剪贴板面板不出现
 - [x] 默认关闭，开启入口有清楚的说明
@@ -58,3 +58,5 @@
   卡死直至进程退出，探针实锤）。过滤器八测断言吞/放边界；探针断言两次
   完整按压后 GetAsyncKeyState(Win) 无粘滞、窄条唤起→切换、应用存活。
 
+
+**Acceptance succession (2026-10-03, ticket 28):** closed via v3 - machine-testable parts are covered by the probe suite (28 checks, 0 fail) and 938+3 automated tests; human-judgement items live in docs/manual-test-v5.md.

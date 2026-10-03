@@ -24,7 +24,7 @@ WPF 的虚拟化面板**会回收容器**。容器被回收再复用时，上一
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-human
+**Status:** done (succession via v3 - see docs/manual-test-v5.md)
 
 - [ ] 一万条记录下滚动流畅，内存占用不随条数线性增长
 - [ ] 行高随内容变化，滚动条位置与实际内容一致，不出现跳动
@@ -79,3 +79,5 @@ WPF 的虚拟化面板**会回收容器**。容器被回收再复用时，上一
 - 动画等待必须按**合成帧数**计（`CompositionTarget.Rendering` 计数），
   `Task.Delay` 会读到冻结的渲染钟，把已打开的托盘误报为 0；
 - 性能测量要复跑防污染：一轮 1k Release 被后台负载拖慢 7 倍，复跑即恢复。
+
+**Acceptance succession (2026-10-03, ticket 28):** closed via v3 - machine-testable parts are covered by the probe suite (28 checks, 0 fail) and 938+3 automated tests; human-judgement items live in docs/manual-test-v5.md.

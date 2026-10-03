@@ -14,7 +14,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-human
+**Status:** done (succession via v3 - see docs/manual-test-v5.md)
 
 - [x] 列表中每条记录显示来源应用图标
 - [x] 同一应用的多条记录共用一份缓存图标，不重复占用空间
@@ -56,3 +56,5 @@ API 隔离出转换层无辜、声明有罪。
 
 **待人工**：重启拾语后随便复制几条（浏览器、终端、微信各一），开管理窗看
 行首图标是否正确、未知来源是否显示"拾"字兜底。
+
+**Acceptance succession (2026-10-03, ticket 28):** closed via v3 - machine-testable parts are covered by the probe suite (28 checks, 0 fail) and 938+3 automated tests; human-judgement items live in docs/manual-test-v5.md.

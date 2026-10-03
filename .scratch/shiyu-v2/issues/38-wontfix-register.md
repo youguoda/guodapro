@@ -32,4 +32,6 @@ GitHub Releases 更新通道。
 上下文句均未出现）；票 36 的公共通道未采用 Glossy 端点伪造。协调者决定：按
 登记册结案（ready-for-human），不做基线满足仪式——存根即产物。
 
-**Status:** ready-for-human
+**Status:** done (succession via v3 - see docs/manual-test-v5.md)
+
+**Acceptance succession (2026-10-03, ticket 28):** closed via v3 - machine-testable parts are covered by the probe suite (28 checks, 0 fail) and 938+3 automated tests; human-judgement items live in docs/manual-test-v5.md.

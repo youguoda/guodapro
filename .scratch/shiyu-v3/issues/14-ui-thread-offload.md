@@ -2,7 +2,7 @@
 
 **来源：** 优化报告 O-36、O-37；审计 A2 §3.2、§4.5
 **Blocked by:** 12
-**Status:** ready-for-agent
+**Status:** ready-for-human（835 绿+23 测试已并；余实机六步）
 
 **What to build:**
 - 卡片先出占位，缩略图与原图在后台线程解码，`Freeze` 后交给 UI；剪贴板图片只在 UI 线程取原始字节，解码与指纹挪到后台。

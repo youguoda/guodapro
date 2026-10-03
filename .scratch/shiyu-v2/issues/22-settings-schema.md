@@ -25,7 +25,7 @@
 
 **Blocked by:** 04
 
-**Status:** ready-for-human
+**Status:** done (succession via v3 - see docs/manual-test-v5.md)
 
 - [x] 全部设置项由一棵数据树声明，界面不硬编码任何一项
 - [x] 文案与图标按标识解析，新增一项设置不需要改界面代码
@@ -54,3 +54,5 @@
 - 探针实录（SHIYU_OPEN_SETTINGS=1 直开）：七页齐全、主题三段式、主开关关掉后
   两个子项消失/开启回归、999 输入回车被钳为 20、服务页五个编辑器。
 
+
+**Acceptance succession (2026-10-03, ticket 28):** closed via v3 - machine-testable parts are covered by the probe suite (28 checks, 0 fail) and 938+3 automated tests; human-judgement items live in docs/manual-test-v5.md.

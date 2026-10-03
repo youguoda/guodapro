@@ -13,7 +13,7 @@
 
 **Blocked by:** 08, 12
 
-**Status:** ready-for-human
+**Status:** done (succession via v3 - see docs/manual-test-v5.md)
 
 - [x] 文本条目拖进编辑器成为文字
 - [x] 图片条目拖进支持图片的应用成为图片
@@ -40,3 +40,5 @@
 - 探针九坑全记录（泵线程、注入 vs SetCursorPos、DPI 虚拟化、tooltip 遮挡按点、
   GetWindowTextW 经 Add-Type 截断、notepad 单实例转发……），详见记忆文件。
 
+
+**Acceptance succession (2026-10-03, ticket 28):** closed via v3 - machine-testable parts are covered by the probe suite (28 checks, 0 fail) and 938+3 automated tests; human-judgement items live in docs/manual-test-v5.md.

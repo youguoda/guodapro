@@ -128,7 +128,7 @@ ThemeManager 即时换肤已成型；引库会架空 DesignTokens 并带来风�
 **Blocked by:** None — 票 03 的 Win11 实测结论即本票地基（03 的 Win10 部分保持
 "未验证"，不阻塞本票，发布前如需支持再补）。
 
-**Status:** ready-for-human
+**Status:** done (succession via v3 - see docs/manual-test-v5.md)
 
 - [x] DesignTokens v2 落地：材质层/状态色槽、4/8/12 圆角、字阶对齐；浅深双主题
       成对、WCAG 对比度不降（AccentHover 初版 4.49 被测试拦下，已调深）
@@ -165,3 +165,5 @@ ThemeManager 即时换肤已成型；引库会架空 DesignTokens 并带来风�
 - 截图证据：`%TEMP%\ui-shots\`（1-bar-rest、2-bar-tray 八字形+材质透壁纸、
   5-bar-dark、7-settings-data、10-settings-look、8-library、9-panel）。
 
+
+**Acceptance succession (2026-10-03, ticket 28):** closed via v3 - machine-testable parts are covered by the probe suite (28 checks, 0 fail) and 938+3 automated tests; human-judgement items live in docs/manual-test-v5.md.

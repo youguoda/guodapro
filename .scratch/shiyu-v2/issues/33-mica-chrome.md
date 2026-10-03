@@ -14,7 +14,7 @@ DWM **Mica** 材质（BackdropKind.Mica 已在票 30 的 Backdrop 里实现，�
 
 **Blocked by:** None。
 
-**Status:** ready-for-human
+**Status:** done (succession via v3 - see docs/manual-test-v5.md)
 
 - [x] 管理窗、设置窗转无边框分层窗口，自绘标题栏（拖拽/双击最大化/
       最小化/关闭，命中区 34-40 宽）
@@ -36,3 +36,5 @@ DWM **Mica** 材质（BackdropKind.Mica 已在票 30 的 Backdrop 里实现，�
   修复前 -7,-7,2567,1447 → 修复后 0,0,2560,1392 精确贴合。
 - 验证：466 单元 + S1 六断言全过（最大化/还原/拖拽/关闭）；
   S2 双栏三断言全过（详情填充/窄屏折叠截图对比）。
+
+**Acceptance succession (2026-10-03, ticket 28):** closed via v3 - machine-testable parts are covered by the probe suite (28 checks, 0 fail) and 938+3 automated tests; human-judgement items live in docs/manual-test-v5.md.

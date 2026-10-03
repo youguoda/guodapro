@@ -16,7 +16,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-human
+**Status:** done (succession via v3 - see docs/manual-test-v5.md)
 
 - [x] 可新建、重命名、删除分组，可设置图标
 - [x] 可把条目归入分组，也可移出
@@ -40,3 +40,5 @@
 - 探针实录：真实鼠标点击建组→归组→徽标出现→chip 出现→切组列表 13→1→13。
   溢出下拉与管理窗未做端到端探针（按钮均接 store 已测方法），留人工验收。
 
+
+**Acceptance succession (2026-10-03, ticket 28):** closed via v3 - machine-testable parts are covered by the probe suite (28 checks, 0 fail) and 938+3 automated tests; human-judgement items live in docs/manual-test-v5.md.

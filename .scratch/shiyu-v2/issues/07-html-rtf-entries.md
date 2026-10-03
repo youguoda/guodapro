@@ -15,7 +15,7 @@
 
 **Blocked by:** 06
 
-**Status:** ready-for-human
+**Status:** done (succession via v3 - see docs/manual-test-v5.md)
 
 - [x] 从网页复制带格式内容后，条目保留 HTML 形式
 - [x] 从文档复制带格式内容后，条目保留 RTF 形式
@@ -52,3 +52,5 @@
 历史确认没有重复条目。
 
 解锁：08（文件条目）。
+
+**Acceptance succession (2026-10-03, ticket 28):** closed via v3 - machine-testable parts are covered by the probe suite (28 checks, 0 fail) and 938+3 automated tests; human-judgement items live in docs/manual-test-v5.md.

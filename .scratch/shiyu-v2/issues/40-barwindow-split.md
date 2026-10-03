@@ -34,7 +34,7 @@ TieZ 调研（docs/research/2026-09-26-tiez-clipboard-analysis.md §4.2）的教
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-human
+**Status:** done (succession via v3 - see docs/manual-test-v5.md)
 
 ## 实现记录（2026-09-27，DAG 执行）
 
@@ -60,3 +60,5 @@ TieZ 调研（docs/research/2026-09-26-tiez-clipboard-analysis.md §4.2）的教
 - [x] 窄条探针**全量回归（25 项）**全过——这是本票唯一的行为验收
 - [x] git diff 复核：除文件移动与 partial 声明外，无逻辑增删（评审时抽查
       两个分区的 diff 确认为纯搬运）
+
+**Acceptance succession (2026-10-03, ticket 28):** closed via v3 - machine-testable parts are covered by the probe suite (28 checks, 0 fail) and 938+3 automated tests; human-judgement items live in docs/manual-test-v5.md.

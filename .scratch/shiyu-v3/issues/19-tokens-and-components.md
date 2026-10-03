@@ -2,7 +2,7 @@
 
 **来源：** UI 报告 §4（4.1–4.9）；优化报告 O-29；ADR-0012
 **Blocked by:** 18（已完成）
-**Status:** ready-for-agent
+**Status:** done（令牌层+组件层+双 spike 已并；86 处迁移+静态检查已并）
 
 **Spike 2 结论（2026-10-02，主控亲做，分支 `v3/spike-fluent` 未并）：选路线 B（Controls.xaml 手写模板）。**
 试验：`ThemeManager` 在 MergedDictionaries 最前并入 `pack://application:,,,/PresentationFramework.Fluent;component/Themes/Fluent.xaml`（令牌与 Controls.xaml 后加、优先），构建通过、探针实例设置窗渲染无恙。**像素证据：保存按钮的边缘轮廓与 Aero2 基线逐行一致（完全零变化）**——我们的隐式控件样式在查找序上压过 Fluent 的隐式样式，而我们的样式无 `BasedOn`，模板回落仍是 Aero2 主题默认；要让路线 A 生效须给每个控件样式挂 Fluent 键的 BasedOn 继承，工作量与手写模板相当且押在实验性 API（WPF0001）上。**决定：路线 B**——为用到的约 10 类控件手写模板（可拿 Fluent.xaml 源码当参考实现抄形状与视觉状态），令牌单一来源不受影响。

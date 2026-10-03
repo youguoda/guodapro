@@ -16,7 +16,7 @@
 
 **Blocked by:** 10, 13, 19
 
-**Status:** ready-for-human
+**Status:** done (succession via v3 - see docs/manual-test-v5.md)
 
 - [x] 收藏与置顶条目默认不被保留策略清理
 - [x] 收藏与置顶条目默认不被时间段批量删除影响
@@ -43,3 +43,5 @@
 - 探针实录：普通卡托盘 8 键（含删）→ 真点 ★ 收藏 → 托盘 7 键（删消失）→
   再点 ★ 取消 → 8 键（删回归）。
 
+
+**Acceptance succession (2026-10-03, ticket 28):** closed via v3 - machine-testable parts are covered by the probe suite (28 checks, 0 fail) and 938+3 automated tests; human-judgement items live in docs/manual-test-v5.md.

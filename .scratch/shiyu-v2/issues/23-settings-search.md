@@ -20,7 +20,7 @@
 
 **Blocked by:** 22
 
-**Status:** ready-for-human
+**Status:** done (succession via v3 - see docs/manual-test-v5.md)
 
 - [x] 搜索框输入即列结果，每条标明所在标签页与分区
 - [x] 结果可点击跳转，目标项滚动到视野中央
@@ -46,3 +46,5 @@
 - 探针实录：输入"多久删"→ 列出"图片保留 · 数据/清理" → 点击 → 跳数据页、
   结果层关闭、目标编辑器滚动到位；乱词给出无结果文案。
 
+
+**Acceptance succession (2026-10-03, ticket 28):** closed via v3 - machine-testable parts are covered by the probe suite (28 checks, 0 fail) and 938+3 automated tests; human-judgement items live in docs/manual-test-v5.md.

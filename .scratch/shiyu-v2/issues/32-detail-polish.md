@@ -69,7 +69,7 @@ UI 票的验收标准**：任何界面改动落地前，过一遍本清单的规
 
 **Blocked by:** None — 横切验收标准，随时可做；标 ○ 项由归属票带掉。
 
-**Status:** ready-for-human
+**Status:** done (succession via v3 - see docs/manual-test-v5.md)
 
 - [x] ⚠ 全部关闭：文件预览 3px→4px 入网格、SizeGrip 22x14+透明模板（默认
       模板的凸起白块曾压住撤销按钮）、批量翻译期间删除/清空/置顶/加去标签
@@ -84,3 +84,5 @@ UI 票的验收标准**：任何界面改动落地前，过一遍本清单的规
 与票 30/31 同批实施。探针驱动发现并修复：SizeGrip 默认模板白块（新
 InvisibleGrip 模板）压住撤销按钮；批量翻译后台读库期间写按钮可点的并发窗口。
 
+
+**Acceptance succession (2026-10-03, ticket 28):** closed via v3 - machine-testable parts are covered by the probe suite (28 checks, 0 fail) and 938+3 automated tests; human-judgement items live in docs/manual-test-v5.md.

@@ -18,7 +18,7 @@
 
 **Blocked by:** 24
 
-**Status:** ready-for-human
+**Status:** done (succession via v3 - see docs/manual-test-v5.md)
 
 ## 实现记录（2026-09-26，更新通道定为 GitHub Releases）
 
@@ -63,3 +63,5 @@
 - [x] schema 变更走只增不改的迁移，旧数据不丢
 - [x] 安装被拦截或失败时，原版本仍可正常启动
 - [x] 更新过程不干扰正在进行的剪贴板监听
+
+**Acceptance succession (2026-10-03, ticket 28):** closed via v3 - machine-testable parts are covered by the probe suite (28 checks, 0 fail) and 938+3 automated tests; human-judgement items live in docs/manual-test-v5.md.

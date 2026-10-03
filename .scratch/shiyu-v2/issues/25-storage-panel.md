@@ -16,7 +16,7 @@
 
 **Blocked by:** 12, 22
 
-**Status:** ready-for-human
+**Status:** done (succession via v3 - see docs/manual-test-v5.md)
 
 - [x] 设置中显示数据库、图片原图、缓存各自的磁盘占用与合计
 - [x] 可一键打开数据所在文件夹
@@ -40,3 +40,5 @@
 - 探针实测：工作集 空闲 55.3MB → 呼出 186.7MB → 隐藏后 90.3MB（释放 96.4MB）；
   隐藏期间 SetText 入册、再召唤后条目在列且窗口响应正常；测试条目已清。
 
+
+**Acceptance succession (2026-10-03, ticket 28):** closed via v3 - machine-testable parts are covered by the probe suite (28 checks, 0 fail) and 938+3 automated tests; human-judgement items live in docs/manual-test-v5.md.

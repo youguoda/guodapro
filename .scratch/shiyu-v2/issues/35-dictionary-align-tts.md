@@ -20,7 +20,7 @@
 
 **Blocked by:** 34（语言先验与低温 prompt 是词典触发的判据基础）。
 
-**Status:** ready-for-human
+**Status:** done (succession via v3 - see docs/manual-test-v5.md)
 
 ## 实现记录（2026-09-27，DAG 执行）
 
@@ -47,3 +47,5 @@
 - [x] TTS 朗读按钮（按语言选音色、专用线程、朗读中可停）
 - [x] 全量测试绿；翻译探针回归 + 单词/句子两条真后端探针（真后端探针未执行，
       见上——复验事件已登记，不阻塞验收）
+
+**Acceptance succession (2026-10-03, ticket 28):** closed via v3 - machine-testable parts are covered by the probe suite (28 checks, 0 fail) and 938+3 automated tests; human-judgement items live in docs/manual-test-v5.md.

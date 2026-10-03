@@ -23,7 +23,7 @@
 
 **Blocked by:** 12
 
-**Status:** ready-for-human
+**Status:** done (succession via v3 - see docs/manual-test-v5.md)
 
 - [x] 上下选择、回车粘贴、修饰键加回车按纯文本粘贴
 - [x] 数字键直接作用于可见的第 N 行
@@ -59,3 +59,5 @@
 **待人工**：重启后键盘走一遍——↑↓ 移动、回车粘贴、C 复制、P 置顶、←→ 切
 类型、Tab 切标签、连按 Esc 看逐层回退最后才关、搜索框打字时按字母与左右
 确认让路。
+
+**Acceptance succession (2026-10-03, ticket 28):** closed via v3 - machine-testable parts are covered by the probe suite (28 checks, 0 fail) and 938+3 automated tests; human-judgement items live in docs/manual-test-v5.md.

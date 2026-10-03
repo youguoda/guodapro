@@ -23,7 +23,7 @@
 
 **Blocked by:** 10, 11
 
-**Status:** ready-for-human
+**Status:** done (succession via v3 - see docs/manual-test-v5.md)
 
 - [x] 面板中的译文可一键存为新条目
 - [x] 译文条目与原文条目相互关联，在列表中能看出这层关系
@@ -51,3 +51,5 @@
   点存入历史 → 库内新条目 source=Shiyu、translated_from 指向原文条目；
   测试条目已清。批量链路由假模型全路径测试覆盖（真后端留人工验收）。
 
+
+**Acceptance succession (2026-10-03, ticket 28):** closed via v3 - machine-testable parts are covered by the probe suite (28 checks, 0 fail) and 938+3 automated tests; human-judgement items live in docs/manual-test-v5.md.

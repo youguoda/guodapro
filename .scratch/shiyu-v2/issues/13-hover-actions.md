@@ -19,7 +19,7 @@
 
 **Blocked by:** 02, 05, 12
 
-**Status:** ready-for-human
+**Status:** done (succession via v3 - see docs/manual-test-v5.md)
 
 - [x] 悬停时时间戳让位给快捷动作，移开后复原
 - [x] 按钮以挤入方式出现，整行不抖动
@@ -58,3 +58,5 @@
 **待人工**：重启拾语 → Ctrl+Shift+B → 鼠标悬停卡片看时间戳让位与按钮挤入 →
 逐个点动作（图片卡片上看"打开/定位"，文本上看"纯文本粘贴"）→ 快速上下划
 多行看无残留 → 设置里改动作顺序保存验证。
+
+**Acceptance succession (2026-10-03, ticket 28):** closed via v3 - machine-testable parts are covered by the probe suite (28 checks, 0 fail) and 938+3 automated tests; human-judgement items live in docs/manual-test-v5.md.

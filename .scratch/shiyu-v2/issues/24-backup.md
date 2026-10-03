@@ -24,7 +24,7 @@
 
 **Blocked by:** 07, 08, 10, 11
 
-**Status:** ready-for-human
+**Status:** done (succession via v3 - see docs/manual-test-v5.md)
 
 - [x] 可导出全部历史、图片原图与设置为单个文件
 - [x] 可从备份文件恢复，恢复后条目、图片、标签、分组、备注、收藏、置顶全部完整
@@ -56,3 +56,5 @@
 - 验证：单测 9 例 + 真实库快照（VACUUM INTO 隔离副本）端到端——30 条真实条目加密导出 →
   错口令拒绝 → 清空 → 正确口令导入 30 条 + 2 分组完整回归、口令清零确认。
 - 入口：设置窗新增"备份"区（导出备份…/导入备份…），口令与导入方式（合并/覆盖）均为小弹窗。
+
+**Acceptance succession (2026-10-03, ticket 28):** closed via v3 - machine-testable parts are covered by the probe suite (28 checks, 0 fail) and 938+3 automated tests; human-judgement items live in docs/manual-test-v5.md.

@@ -19,7 +19,7 @@
 
 **Blocked by:** 35（单词卡成型后才能定徽章点击后的呈现形态）。
 
-**Status:** ready-for-human
+**Status:** done (succession via v3 - see docs/manual-test-v5.md)
 
 ## 实现记录（2026-09-27，DAG 执行）
 
@@ -49,3 +49,5 @@
 - [x] BadgeWindow 划词模式接线 + 点击翻译
 - [x] 设置开关（默认关）+ 全局钩子开销说明文案
 - [x] 全量测试绿；划词 E2E 探针（模拟拖选 → 徽标出现 → 点击 → 面板翻译）
+
+**Acceptance succession (2026-10-03, ticket 28):** closed via v3 - machine-testable parts are covered by the probe suite (28 checks, 0 fail) and 938+3 automated tests; human-judgement items live in docs/manual-test-v5.md.

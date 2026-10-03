@@ -18,7 +18,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-human
+**Status:** done (succession via v3 - see docs/manual-test-v5.md)
 
 - [x] 链接、邮箱、颜色值、文件路径被正确识别为对应子类型
 - [x] 颜色值条目在列表中显示真实色块与色值文本
@@ -51,3 +51,5 @@
 
 **待人工**：复制 `#1F6FEB`、一个网址、一个邮箱、一条 `C:\...` 路径 → 窄条
 看色块/可点样式（按住 Ctrl）→ 子类型筛选验证 → 管理窗同查。
+
+**Acceptance succession (2026-10-03, ticket 28):** closed via v3 - machine-testable parts are covered by the probe suite (28 checks, 0 fail) and 938+3 automated tests; human-judgement items live in docs/manual-test-v5.md.

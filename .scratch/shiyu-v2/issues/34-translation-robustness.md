@@ -17,7 +17,7 @@
 
 **Blocked by:** None。
 
-**Status:** ready-for-human
+**Status:** done (succession via v3 - see docs/manual-test-v5.md)
 
 ## 实现记录（2026-09-27，DAG 执行）
 
@@ -43,3 +43,5 @@
 - [x] 面板方向标签使用本地先验（流式不受影响）
 - [x] 全量测试绿；真后端翻译探针回归（探针项未执行，见上"实现记录"——
       关闭条件已登记，不阻塞验收）
+
+**Acceptance succession (2026-10-03, ticket 28):** closed via v3 - machine-testable parts are covered by the probe suite (28 checks, 0 fail) and 938+3 automated tests; human-judgement items live in docs/manual-test-v5.md.
