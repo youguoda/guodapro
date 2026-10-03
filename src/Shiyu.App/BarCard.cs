@@ -23,10 +23,18 @@ internal sealed class BarCard : INotifyPropertyChanged
     /// <summary>How to drag out, shown under the preview in the tooltip.</summary>
     public string DragHint { get; init; } = string.Empty;
 
+    /// <summary>
+    /// The card-hint setting (bar.card-tooltips): an empty tooltip never
+    /// opens, so the setting needs no visibility plumbing in the template.
+    /// </summary>
+    public bool ShowToolTip { get; init; } = true;
+
     /// <summary>The card's tooltip: its content, and what holding it does.</summary>
-    public string DragToolTip => string.IsNullOrEmpty(Preview)
-        ? DragHint
-        : Preview + Environment.NewLine + Environment.NewLine + DragHint;
+    public string DragToolTip => !ShowToolTip
+        ? string.Empty
+        : string.IsNullOrEmpty(Preview)
+            ? DragHint
+            : Preview + Environment.NewLine + Environment.NewLine + DragHint;
 
     public string KindText { get; init; } = string.Empty;
 

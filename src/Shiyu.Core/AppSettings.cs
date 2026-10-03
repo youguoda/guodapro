@@ -135,6 +135,14 @@ public sealed record AppSettings
     /// </summary>
     public int PreviewHoverDelayMs { get; init; } = 500;
 
+    /// <summary>
+    /// Whether hovering a card shows its tooltip (full text + drag teaching)
+    /// during the beat before the preview opens. On by default — the drag
+    /// hint is the only place that interaction is taught; users who find the
+    /// tip noisy turn it off, and the hover preview is unaffected either way.
+    /// </summary>
+    public bool BarCardTooltips { get; init; } = true;
+
     /// <summary>Set once the first-run guide has run or been skipped; it never returns on its own.</summary>
     public bool OnboardingCompleted { get; init; }
 

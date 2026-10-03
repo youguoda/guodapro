@@ -162,6 +162,11 @@ public static class SettingsSchema
                     Hint: "鼠标在卡片上停留多少毫秒后弹出完整预览；0 表示关闭悬停预览（按住空格仍可预览）。",
                     Keywords: ["预览", "悬停", "停留", "空格", "完整", "延迟"],
                     Unit: "毫秒",
+                    Icon: "E823"),
+                new SettingsItem(
+                    "bar.card-tooltips", "悬停卡片提示", SettingsControl.Toggle,
+                    Hint: "预览弹出前，卡片上短暂显示的完整内容与拖放教学提示；关闭后只保留悬停预览。",
+                    Keywords: ["提示", "悬停", "教学", "工具提示", "气泡", "拖放", "拖出"],
                     Icon: "E823")),
             new SettingsSection("bar.actions", "悬停动作",
                 new SettingsItem(

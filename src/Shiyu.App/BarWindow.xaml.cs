@@ -196,6 +196,7 @@ internal partial class BarWindow : Window
             settings.BarTextLines != _settings.BarTextLines
             || settings.BarImageHeight != _settings.BarImageHeight
             || settings.BarFileCount != _settings.BarFileCount
+            || settings.BarCardTooltips != _settings.BarCardTooltips
             || !settings.BarActions.SequenceEqual(_settings.BarActions);
 
         _settings = settings;

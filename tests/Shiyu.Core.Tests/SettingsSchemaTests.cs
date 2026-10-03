@@ -37,6 +37,7 @@ public class SettingsSchemaTests
             ["bar.image-height"] = "bar",
             ["bar.file-count"] = "bar",
             ["look.preview-hover"] = "bar",
+            ["bar.card-tooltips"] = "bar",
             ["bar.actions"] = "bar",
             ["action.sound"] = "bar",
 
