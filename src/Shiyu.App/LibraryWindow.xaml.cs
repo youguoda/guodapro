@@ -1,13 +1,10 @@
-using System.Collections.Specialized;
-using System.IO;
-using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.Linq;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
+using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 using Shiyu.Core;
 using Shiyu.Windows;
@@ -17,6 +14,13 @@ namespace Shiyu.App;
 /// <summary>
 /// The library: the place for the weekly sort-through, as opposed to the quick
 /// bar's dozens-of-times-a-day paste. It may be large and may linger.
+///
+/// 票 24 重设计（UI 报告 §6.4）：系统窗框 + Mica；头部 48 的 SearchBox 吃下
+/// 全部筛选（token 化）；命令栏 40 取代底部按钮墙（危险操作收进「⋯」走
+/// ContentDialog）；列表带日期分组头（今天/昨天/本周/更早，吸顶）；详情
+/// 三态；撤销条浮在列表左下取代 StatusLabel。键盘模型见 <see cref="LibraryKeys"/>
+/// （§5.2），详情三态与 Agent 结果区见 <see cref="LibraryDetail"/>，撤销/轻
+/// 反馈见 <see cref="LibraryToast"/>，弹层与菜单见 <see cref="LibraryMenus"/>。
 /// </summary>
 public partial class LibraryWindow : Window
 {
@@ -26,8 +30,14 @@ public partial class LibraryWindow : Window
     /// </summary>
     private static readonly TimeSpan SearchDelay = TimeSpan.FromMilliseconds(180);
 
+    /// <summary>§6.4 窗口：宽度 ≥ 960 双栏，更窄单栏（Space 全屏预览兜底）。</summary>
+    private const double DualPaneThreshold = 960;
+
+    /// <summary>§6.4 列表：双栏时列表列 400，详情拿走其余。</summary>
+    private const double ListColumnWidth = 400;
+
     private readonly EntryStore _store;
-    private readonly WindowsClipboardWriter _clipboard;
+    private readonly WindowsClipboardWriter? _clipboard;
     private readonly ImageArchive _images;
     private readonly Func<IStreamingModel> _model;
     private readonly HistoryBrowser _browser;
@@ -35,13 +45,24 @@ public partial class LibraryWindow : Window
     private readonly AppIconCache _icons;
     private readonly DispatcherTimer _searchDebounce;
 
-    /// <summary>The "no tag filter" choice, shown as the first item.</summary>
-    private const string AnyTag = "全部";
-
-    private bool _refillingTags;
-    private AgentRun? _agentRun;
     private readonly Func<AppSettings> _settings;
     private readonly ClipboardPipeline? _pipeline;
+
+    // --- 筛选状态（token 的数据面）---------------------------------------------
+    // 四组各占一枚 token：类型 / 日期 / 子类型 / 标签。_tokenOrder 记录加入
+    // 顺序，Esc 逐层从最新的弹起（§5.2）。
+    private int _kindIndex;
+    private int _subtypeIndex;
+    private DateChoice _dateChoice = DateChoice.None;
+    private DateTime? _customFrom;
+    private DateTime? _customTo;
+    private string? _tag;
+    private readonly List<string> _tokenOrder = [];
+
+    /// <summary>自己发起的写入不触发重载（写入路径自己刷新了视觉，票 12 的 SelfWrite 纪律）。</summary>
+    private int _selfWrites;
+
+    private enum DateChoice { None, Today, Days7, Days30, Custom }
 
     public LibraryWindow(
         EntryStore store,
@@ -56,22 +77,31 @@ public partial class LibraryWindow : Window
 
         _store = store;
         _clipboard = clipboard;
-        _pipeline = pipeline;
         _images = images;
         _model = model;
         _browser = new HistoryBrowser(store);
         _icons = icons;
         _settings = settings ?? (() => new AppSettings());
+        _pipeline = pipeline;
 
-        // No backdrop material on the standard chrome yet (ticket 30's Mica
-        // conversion needs a borderless rewrite first); rounding and the
-        // dark-mode titlebar still apply through the same host.
-        Backdrop.Attach(this, () => BackdropKind.Mica);
-
-        // Borderless chrome (ticket 33): the titlebar is ours, and the
-        // maximize visuals must follow every state change.
-        StateChanged += (_, _) => TitlebarChrome.UpdateMaximizeVisuals(this, Shell, MaximizeButton);
-        TitlebarChrome.UpdateMaximizeVisuals(this, Shell, MaximizeButton);
+        // 票 19 spike 配方（ADR-0012 §7，与票 23 设置窗同款）：非分层窗口透出
+        // DWM 材质的前提是重定向面底色透明。材质没被系统接受时（旧系统），
+        // 回退成不透明底色一档。
+        SourceInitialized += (_, _) =>
+        {
+            if (System.Windows.PresentationSource.FromVisual(this)
+                is System.Windows.Interop.HwndSource { CompositionTarget: { } target })
+            {
+                target.BackgroundColor = Colors.Transparent;
+            }
+        };
+        Backdrop.Attach(this, () => BackdropKind.Mica, applied =>
+        {
+            if (!applied)
+            {
+                RootGrid.SetResourceReference(BackgroundProperty, "Brush.Background");
+            }
+        });
 
         _searchDebounce = new DispatcherTimer { Interval = SearchDelay };
         _searchDebounce.Tick += (_, _) =>
@@ -82,18 +112,81 @@ public partial class LibraryWindow : Window
 
         // An undo left open when the window goes away must not leak the
         // kept-back original files: the expiry commits them.
-        Closed += (_, _) => CommitUndoExpiry();
+        Closed += (_, _) =>
+        {
+            CommitUndoExpiry();
+            _store.Changed -= OnStoreChanged;
+        };
 
+        // 别处的写入（窄条粘贴/置顶、导入、留存清扫）即时反映到本窗；自己的
+        // 写入路径已经刷新过视觉，跳过（票 12）。
+        _store.Changed += OnStoreChanged;
+
+        SetupList();
+        BuildFilterFlyout();
+        RefreshTagChoices();
+        BuildMoreMenu();
+
+        SearchBox.GotKeyboardFocus += (_, _) => SearchPill.SetResourceReference(
+            Border.BorderBrushProperty, "Brush.Accent");
+        SearchBox.LostKeyboardFocus += (_, _) => SearchPill.SetResourceReference(
+            Border.BorderBrushProperty, "Brush.StrokeStrong");
+
+        EntryList.ListScrolled += OnListScrolled;
         EntryList.ItemsSource = _items;
 
-        // Danger buttons set themselves apart by colour, permanently — the
-        // confirmation dialog is the second warning, not the first.
-        DeleteSelectedButton.SetResourceReference(ForegroundProperty, "Brush.Danger");
-        ClearAllButton.SetResourceReference(ForegroundProperty, "Brush.Danger");
         ApplyDetailLayout(ActualWidth >= DualPaneThreshold);
-        RefreshTagChoices();
         RefreshAgentActions();
         Reload();
+        Loaded += (_, _) => EntryList.Focus();
+    }
+
+    /// <summary>
+    /// 列表视图：分组（GroupKey）+ 组序（置顶→今天→昨天→本周→更早）。
+    /// 分组头是不可选的 GroupItem，↑↓ / Ctrl+A 天然越过。
+    /// </summary>
+    private void SetupList()
+    {
+        var view = (ListCollectionView)CollectionViewSource.GetDefaultView(_items);
+        view.GroupDescriptions.Add(new PropertyGroupDescription(nameof(EntryItem.GroupKey)));
+        view.CustomSort = EntryRowOrder.Instance;
+
+        var template = new DataTemplate();
+        var factory = new System.Windows.FrameworkElementFactory(typeof(GroupHeaderView));
+        template.VisualTree = factory;
+        EntryList.GroupStyle.Add(new GroupStyle { HeaderTemplate = template });
+    }
+
+    /// <summary>外部的库变化：重载并尽量按 id 保住选择（用户正看着的条目不该消失）。</summary>
+    private void OnStoreChanged()
+    {
+        if (_selfWrites > 0)
+        {
+            return;
+        }
+
+        if (Dispatcher.CheckAccess())
+        {
+            ReloadPreservingSelection();
+        }
+        else
+        {
+            Dispatcher.BeginInvoke(ReloadPreservingSelection);
+        }
+    }
+
+    /// <summary>Runs one of this window's own writes, whose Changed event it will ignore.</summary>
+    private void SelfWrite(Action write)
+    {
+        _selfWrites++;
+        try
+        {
+            write();
+        }
+        finally
+        {
+            _selfWrites--;
+        }
     }
 
     /// <summary>
@@ -106,23 +199,6 @@ public partial class LibraryWindow : Window
         RefreshAgentActions();
     }
 
-    /// <summary>
-    /// Agent 动作要的是通用对话模型，只有自备密钥供得起（ADR-0009/票 08）。
-    /// 没配就禁用并说明去哪——而不是点了才在结果框里报一次运行时失败。
-    /// </summary>
-    private void RefreshAgentActions()
-    {
-        var ready = _settings().Backend.IsConfigured;
-        foreach (var button in new[]
-                 {
-                     AgentSummariseButton, AgentMergeButton, AgentRewriteButton, AgentTagsButton,
-                 })
-        {
-            button.IsEnabled = ready;
-            button.ToolTip = ready ? null : "需要自备密钥 · 去设置 → 服务";
-        }
-    }
-
     /// <summary>Reads the first page again, e.g. after the history changed underneath.</summary>
     public void Reload()
     {
@@ -130,11 +206,24 @@ public partial class LibraryWindow : Window
         Rebuild();
     }
 
+    private void ReloadPreservingSelection()
+    {
+        var chosen = EntryList.SelectedItems.OfType<EntryItem>().Select(item => item.Id).ToHashSet();
+        Reload();
+        foreach (var item in _items.Where(item => chosen.Contains(item.Id)))
+        {
+            EntryList.SelectedItems.Add(item);
+        }
+
+        RefreshTagChoices();
+    }
+
     private void Rebuild()
     {
         _items.Clear();
         Append(_browser.Loaded);
         UpdateChrome();
+        UpdateSticky();
     }
 
     private void Append(IEnumerable<Entry> entries)
@@ -155,30 +244,87 @@ public partial class LibraryWindow : Window
 
     private void UpdateChrome()
     {
-        CountLabel.Text = $"共 {_store.Count()} 条";
-        EmptyLabel.Visibility = _items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        EmptyLabel.Text = _browser.Filter.IsEmpty ? "还没有记录" : "没有符合筛选条件的记录";
+        // "筛选数 / 总数"（§6.4 头部）：与窄条同口径——筛完不变的那个
+        // "共 N 条"是评审点名的谎话。
+        CountLabel.Text = $"{_store.CountMatching(_browser.Filter)} / {_store.Count()}";
+
+        ShowListEmptyState(_items.Count == 0
+            ? EmptyStates.For(_browser.Filter, null, _store.Count())
+            : null);
     }
 
-    /// <summary>
-    /// Rebuilds the filter from every control at once. Assembled in one place
-    /// because the parts combine — narrowing by type and by date together is
-    /// the whole point — and reading them piecemeal invites them to drift.
-    /// </summary>
-    private void ApplyFilter()
+    // --- 空态（列表侧；详情侧的空态见 LibraryDetail）------------------------------
+
+    private EmptyState? _listEmpty;
+
+    private void ShowListEmptyState(EmptyStateCopy? copy)
     {
-        _browser.Filter = new HistoryFilter
+        if (copy is null)
+        {
+            if (_listEmpty is not null)
+            {
+                _listEmpty.Visibility = Visibility.Collapsed;
+            }
+
+            return;
+        }
+
+        if (_listEmpty is null)
+        {
+            _listEmpty = new EmptyState
+            {
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                Margin = new Thickness(24, 0, 24, 0),
+            };
+            (EntryList.Parent as Panel)?.Children.Add(_listEmpty);
+        }
+
+        _listEmpty.Title = copy.Headline;
+        _listEmpty.Description = copy.Hint;
+        _listEmpty.Content = copy.OfferClear ? BuildClearFiltersButton() : null;
+        _listEmpty.Visibility = Visibility.Visible;
+    }
+
+    private Button BuildClearFiltersButton()
+    {
+        var clear = new Button { Content = "清除筛选", Padding = new Thickness(16, 5, 16, 5), Cursor = Cursors.Hand };
+        clear.Click += (_, _) => ClearAllFilters();
+        return clear;
+    }
+
+    // --- 筛选（数据面 → token 视觉 → HistoryFilter）--------------------------------
+
+    private HistoryFilter ComposeFilter()
+    {
+        var now = DateTimeOffset.Now;
+        DateTimeOffset? from = _dateChoice switch
+        {
+            DateChoice.Today => new DateTimeOffset(now.Date, now.Offset),
+            DateChoice.Days7 => now.AddDays(-7),
+            DateChoice.Days30 => now.AddDays(-30),
+            DateChoice.Custom when _customFrom is { } pick => new DateTimeOffset(pick.Date, now.Offset),
+            _ => null,
+        };
+
+        // Whole days, inclusive: a user picking today means all of today, not
+        // the instant midnight began. Shortcut ranges run to now.
+        DateTimeOffset? to = _dateChoice == DateChoice.Custom && _customTo is { } end
+            ? new DateTimeOffset(end.Date.AddDays(1).AddTicks(-1), now.Offset)
+            : null;
+
+        return new HistoryFilter
         {
             Query = SearchBox.Text,
-            Tag = TagFilter.SelectedItem as string is { } tag && tag != AnyTag ? tag : null,
-            Kind = KindFilter.SelectedIndex switch
+            Tag = _tag,
+            Kind = _kindIndex switch
             {
                 1 => EntryKind.Text,
                 2 => EntryKind.Image,
                 3 => EntryKind.Files,
                 _ => null,
             },
-            Subtype = SubtypeFilter.SelectedIndex switch
+            Subtype = _subtypeIndex switch
             {
                 1 => EntrySubtype.Link,
                 2 => EntrySubtype.Email,
@@ -186,314 +332,257 @@ public partial class LibraryWindow : Window
                 4 => EntrySubtype.LocalPath,
                 _ => null,
             },
-            From = FilterFrom.SelectedDate is { } from
-                ? new DateTimeOffset(from.Date, DateTimeOffset.Now.Offset)
-                : null,
-
-            // Whole days: a user picking today means all of today, not the
-            // instant midnight began.
-            To = FilterTo.SelectedDate is { } to
-                ? new DateTimeOffset(to.Date.AddDays(1).AddTicks(-1), DateTimeOffset.Now.Offset)
-                : null,
+            From = from,
+            To = to,
         };
+    }
 
+    private void ApplyFilter()
+    {
+        _browser.Filter = ComposeFilter();
         Rebuild();
     }
 
-    private void OnFilterChanged(object sender, RoutedEventArgs e)
-    {
-        // Refilling the tag list raises a selection change of its own; acting
-        // on it would reset the very filter the user just set.
-        if (IsLoaded && !_refillingTags)
-        {
-            ApplyFilter();
-        }
-    }
-
-    /// <summary>Refills the tag list, keeping the current choice if it survives.</summary>
-    private void RefreshTagChoices()
-    {
-        var chosen = TagFilter.SelectedItem as string;
-        _refillingTags = true;
-
-        TagFilter.Items.Clear();
-        TagFilter.Items.Add(AnyTag);
-        foreach (var tag in _store.AllTags())
-        {
-            TagFilter.Items.Add(tag);
-        }
-
-        TagFilter.SelectedItem = chosen is not null && TagFilter.Items.Contains(chosen)
-            ? chosen
-            : AnyTag;
-
-        _refillingTags = false;
-    }
-
-    /// <summary>
-    /// Keeps the pin button honest about what it will do. A button that always
-    /// reads "置顶" while pointing at a pinned entry invites the wrong click.
-    /// </summary>
-    private void OnTitleBarDrag(object sender, MouseButtonEventArgs e)
-        => TitlebarChrome.DragOrMaximize(this, e);
-
-    private void OnMinimizeClick(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
-
-    private void OnMaximizeRestoreClick(object sender, RoutedEventArgs e) => TitlebarChrome.ToggleMaximize(this);
-
-    private void OnCloseClick(object sender, RoutedEventArgs e)
-    {
-        CommitUndoExpiry();
-        Close();
-    }
-
-    private void OnSelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        PinButton.Content = EntryList.SelectedItem is EntryItem { IsPinned: true }
-            ? "取消置顶"
-            : "置顶";
-
-        UpdateDetail();
-    }
-
-    private const double DualPaneThreshold = 1080;
-
-    /// <summary>
-    /// Two columns only when there is room for both: below the threshold the
-    /// detail panel folds away and the window reads as before.
-    /// </summary>
-    private void OnWindowSizeChanged(object sender, SizeChangedEventArgs e)
-        => ApplyDetailLayout(e.NewSize.Width >= DualPaneThreshold);
-
-    private void ApplyDetailLayout(bool wide)
-    {
-        ListColumn.Width = wide ? new GridLength(3, GridUnitType.Star) : new GridLength(1, GridUnitType.Star);
-        DetailColumn.Width = wide ? new GridLength(2, GridUnitType.Star) : new GridLength(0);
-        DetailHost.Visibility = wide ? Visibility.Visible : Visibility.Collapsed;
-        if (!wide)
-        {
-            return;
-        }
-
-        UpdateDetail();
-    }
-
-    /// <summary>
-    /// Single selection previews in full on the right: the whole text, the
-    /// whole picture, the whole file list — the list row is for scanning, the
-    /// detail pane is for reading.
-    /// </summary>
-    private void UpdateDetail()
-    {
-        if (DetailHost.Visibility != Visibility.Visible || _store is null)
-        {
-            return;
-        }
-
-        var multi = EntryList.SelectedItems.Count;
-        if (multi >= 2)
-        {
-            Status($"已选 {multi} 条");
-        }
-
-        if (EntryList.SelectedItem is not EntryItem item || multi != 1)
-        {
-            DetailMeta.Text = string.Empty;
-            DetailText.Text = string.Empty;
-            DetailImage.Visibility = Visibility.Collapsed;
-            DetailFiles.Visibility = Visibility.Collapsed;
-            return;
-        }
-
-        var entry = _store.Get(item.Id);
-        DetailMeta.Text = item.Meta;
-
-        if (entry is null)
-        {
-            DetailText.Text = item.Preview;
-            DetailImage.Visibility = Visibility.Collapsed;
-            DetailFiles.Visibility = Visibility.Collapsed;
-            return;
-        }
-
-        DetailText.Text = entry.Kind == EntryKind.Files
-            ? string.Join(Environment.NewLine, entry.Files)
-            : entry.Text;
-
-        if (entry.Kind == EntryKind.Image)
-        {
-            DetailImage.Visibility = Visibility.Visible;
-            FillDetailImage(entry);
-        }
-        else
-        {
-            DetailImage.Visibility = Visibility.Collapsed;
-        }
-
-        if (entry.Kind == EntryKind.Files && entry.Files.Count > 0)
-        {
-            DetailFiles.ItemsSource = entry.Files;
-            DetailFiles.Visibility = Visibility.Visible;
-        }
-        else
-        {
-            DetailFiles.ItemsSource = null;
-            DetailFiles.Visibility = Visibility.Collapsed;
-        }
-    }
-
-    /// <summary>
-    /// How many detail-picture requests have been made. Incremented per
-    /// selection; a decode that comes back holding an older number describes
-    /// an entry the user has already moved past.
-    /// </summary>
-    private int _detailImageRequests;
-
-    /// <summary>
-    /// The detail picture, decoded on the thread pool (O-36): a 4K original
-    /// is megabytes of PNG, and the decode used to happen between the list's
-    /// two paints — every selection paid it on the thread that draws. The
-    /// original is preferred, the database's thumbnail is the forever-kept
-    /// promise behind it, and a fast walk down the list never lands one
-    /// entry's picture on another's row: the counter moved on.
-    /// </summary>
-    private void FillDetailImage(Entry entry)
-    {
-        var request = ++_detailImageRequests;
-        DetailImage.Source = null;
-
-        var original = entry.HasOriginal ? entry.OriginalPath : null;
-        var thumbnail = entry.ThumbnailPng;
-        var dispatcher = Dispatcher;
-
-        Task.Run(() =>
-        {
-            var source = original is { Length: > 0 } path ? DecodeImageFile(path, 640) : null;
-            source ??= AppIconCache.Decode(thumbnail, 480);
-
-            dispatcher.BeginInvoke(() =>
-            {
-                if (request != _detailImageRequests)
-                {
-                    return;
-                }
-
-                if (source is null)
-                {
-                    // expected: 原图损坏或已被清理——收起图片区，条目本身照常。
-                    DetailImage.Visibility = Visibility.Collapsed;
-                    return;
-                }
-
-                DetailImage.Source = source;
-            });
-        });
-    }
-
-    /// <summary>Decodes an image file off the calling thread; null when it cannot be read.</summary>
-    private static ImageSource? DecodeImageFile(string path, int pixelWidth)
-    {
-        try
-        {
-            var image = new BitmapImage();
-            image.BeginInit();
-            image.CacheOption = BitmapCacheOption.OnLoad;
-            image.DecodePixelWidth = pixelWidth;
-            image.UriSource = new Uri(path);
-            image.EndInit();
-            image.Freeze();
-            return image;
-        }
-        catch (Exception failure) when (
-            failure is IOException or UnauthorizedAccessException
-            or NotSupportedException or FileFormatException)
-        {
-            // expected: an unreadable or vanished original (deleted behind
-            // the list, offline share) shows the entry without a preview.
-            return null;
-        }
-    }
-
-    private void OnTogglePin(object sender, RoutedEventArgs e)
-    {
-        if (EntryList.SelectedItem is not EntryItem item)
-        {
-            return;
-        }
-
-        _store.SetPinned(item.Id, !item.IsPinned);
-
-        // Reloaded rather than patched in place: pinning changes where the
-        // entry belongs in the list, not just how it looks.
-        Reload();
-        Status(item.IsPinned ? "已取消置顶" : "已置顶");
-    }
-
-    private void OnTagBoxKeyDown(object sender, KeyEventArgs e)
-    {
-        if (e.Key == Key.Enter)
-        {
-            e.Handled = true;
-            OnAddTag(sender, e);
-        }
-    }
-
-    private void OnAddTag(object sender, RoutedEventArgs e)
-    {
-        if (EntryList.SelectedItem is not EntryItem item || TagBox.Text.Trim().Length == 0)
-        {
-            return;
-        }
-
-        _store.AddTag(item.Id, TagBox.Text);
-        var added = TagBox.Text.Trim();
-        TagBox.Text = string.Empty;
-
-        RefreshTagChoices();
-        Reload();
-        Status($"已加标签「{added}」");
-    }
-
-    private void OnRemoveTag(object sender, RoutedEventArgs e)
-    {
-        if (EntryList.SelectedItem is not EntryItem item || TagBox.Text.Trim().Length == 0)
-        {
-            return;
-        }
-
-        _store.RemoveTag(item.Id, TagBox.Text);
-        var removed = TagBox.Text.Trim();
-        TagBox.Text = string.Empty;
-
-        RefreshTagChoices();
-        Reload();
-        Status($"已去掉标签「{removed}」");
-    }
-
-    private void OnClearFilters(object sender, RoutedEventArgs e)
+    private void ClearAllFilters()
     {
         SearchBox.Text = string.Empty;
-        KindFilter.SelectedIndex = 0;
-        SubtypeFilter.SelectedIndex = 0;
-        TagFilter.SelectedItem = AnyTag;
-        FilterFrom.SelectedDate = null;
-        FilterTo.SelectedDate = null;
+        _kindIndex = 0;
+        _subtypeIndex = 0;
+        _dateChoice = DateChoice.None;
+        _customFrom = null;
+        _customTo = null;
+        _tag = null;
+        _tokenOrder.Clear();
+        RefreshTokens();
+        SyncFilterFlyout();
         ApplyFilter();
+    }
+
+    /// <summary>token 的加入顺序归一入口：Esc 从这里弹最新的（§5.2 逐层）。</summary>
+    private void TouchToken(string key)
+    {
+        _tokenOrder.Remove(key);
+        _tokenOrder.Add(key);
+    }
+
+    /// <summary>把某一组筛选归零（token 弹出、芯片点击共用）。</summary>
+    private void ResetToken(string key)
+    {
+        _tokenOrder.Remove(key);
+        switch (key)
+        {
+            case "kind": _kindIndex = 0; break;
+            case "subtype": _subtypeIndex = 0; break;
+            case "date":
+                _dateChoice = DateChoice.None;
+                _customFrom = null;
+                _customTo = null;
+                break;
+            case "tag": _tag = null; break;
+        }
+    }
+
+    /// <summary>Esc 的"弹掉最新一枚 token"。</summary>
+    private void PopNewestToken()
+    {
+        if (_tokenOrder.Count == 0)
+        {
+            return;
+        }
+
+        ResetToken(_tokenOrder[^1]);
+        RefreshTokens();
+        SyncFilterFlyout();
+        ApplyFilter();
+    }
+
+    /// <summary>token 芯片视觉（§6.4 头部）：一枚 token = 一个生效的筛选。</summary>
+    private void RefreshTokens()
+    {
+        TokenHost.Children.Clear();
+
+        foreach (var (key, label) in ActiveTokens())
+        {
+            var tokenKey = key;
+            var chip = new Button
+            {
+                Height = 22,
+                Padding = new Thickness(8, 0, 6, 0),
+                Margin = new Thickness(0, 0, 6, 0),
+                Cursor = Cursors.Hand,
+                ToolTip = $"点击移除筛选「{label}」",
+            };
+            chip.SetResourceReference(StyleProperty, "FlyoutButton");
+            chip.SetResourceReference(Control.BackgroundProperty, "Brush.AccentSubtle");
+            chip.Click += (_, _) =>
+            {
+                ResetToken(tokenKey);
+                RefreshTokens();
+                SyncFilterFlyout();
+                ApplyFilter();
+            };
+
+            var text = new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center };
+            text.SetResourceReference(TextBlock.FontSizeProperty, "Type.Caption");
+            var close = new TextBlock { Text = "\uE711", Margin = new Thickness(6, 0, 0, 0) };
+            close.SetResourceReference(TextBlock.FontFamilyProperty, "Font.Icon");
+            close.SetResourceReference(TextBlock.FontSizeProperty, "Size.IconXs");
+            close.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
+            close.VerticalAlignment = VerticalAlignment.Center;
+
+            var panel = new StackPanel { Orientation = Orientation.Horizontal };
+            panel.Children.Add(text);
+            panel.Children.Add(close);
+            chip.Content = panel;
+            TokenHost.Children.Add(chip);
+        }
+    }
+
+    private IEnumerable<(string Key, string Label)> ActiveTokens()
+    {
+        foreach (var key in _tokenOrder)
+        {
+            var label = key switch
+            {
+                "kind" => _kindIndex switch
+                {
+                    1 => "类型：文本",
+                    2 => "类型：图片",
+                    3 => "类型：文件",
+                    _ => null,
+                },
+                "subtype" => _subtypeIndex switch
+                {
+                    1 => "链接",
+                    2 => "邮箱",
+                    3 => "颜色",
+                    4 => "路径",
+                    _ => null,
+                },
+                "date" => _dateChoice switch
+                {
+                    DateChoice.Today => "今天",
+                    DateChoice.Days7 => "近 7 天",
+                    DateChoice.Days30 => "近 30 天",
+                    DateChoice.Custom when _customFrom is { } f && _customTo is { } t =>
+                        $"{f:M\\/d} ~ {t:M\\/d}",
+                    _ => null,
+                },
+                "tag" => _tag is null ? null : $"#{_tag}",
+                _ => null,
+            };
+
+            if (label is not null)
+            {
+                yield return (key, label);
+            }
+        }
     }
 
     private void OnSearchTextChanged(object sender, TextChangedEventArgs e)
     {
-        SearchPlaceholder.Visibility = string.IsNullOrEmpty(SearchBox.Text)
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-
         // Restarted on every keystroke, so only the pause at the end searches.
         _searchDebounce.Stop();
         _searchDebounce.Start();
     }
 
-    private void OnListScrolled(object sender, ScrollChangedEventArgs e)
+    /// <summary>搜索框的键盘细节：空文本上的 Backspace 弹掉最后一枚 token（§6.4）。</summary>
+    private void OnSearchBoxKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.Back && SearchBox.Text.Length == 0 && _tokenOrder.Count > 0)
+        {
+            e.Handled = true;
+            PopNewestToken();
+        }
+    }
+
+    // --- 布局 -----------------------------------------------------------------------
+
+    private void OnWindowSizeChanged(object sender, SizeChangedEventArgs e)
+        => ApplyDetailLayout(e.NewSize.Width >= DualPaneThreshold);
+
+    /// <summary>
+    /// Two columns only when there is room for both（§6.4）：≥960 时列表 400 +
+    /// 详情，更窄时详情整个收起，Space 的全屏预览接住"看全文"。
+    /// </summary>
+    private void ApplyDetailLayout(bool wide)
+    {
+        ListColumn.Width = wide ? new GridLength(ListColumnWidth) : new GridLength(1, GridUnitType.Star);
+        DetailColumn.Width = wide ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+        DetailPane.Visibility = wide ? Visibility.Visible : Visibility.Collapsed;
+        UpdateDetail();
+    }
+
+    // --- 选择 -----------------------------------------------------------------------
+
+    private void OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_movingSelection)
+        {
+            _anchor = _lead = EntryList.SelectedIndex;
+        }
+
+        SyncCommandBarToSelection();
+        SyncRowChecks();
+        UpdateDetail();
+        UpdateSticky();
+    }
+
+    /// <summary>命令栏对齐真实状态：置顶钮说真话，收藏星空心/实心（§6 北极星 3）。</summary>
+    private void SyncCommandBarToSelection()
+    {
+        var primary = Primary;
+
+        PinLabel.Text = primary is { IsPinned: true } ? "取消置顶" : "置顶";
+        PinGlyphIcon.Text = primary is { IsPinned: true } ? "\uE77A" : "\uE718";
+        FavoriteGlyph.Text = primary is { Favorite: true } ? "\uE735" : "\uE734";
+    }
+
+    /// <summary>多选时每行出现复选框（§6.4）：已实现的行立即生效，之后的行在容器准备时跟上。</summary>
+    private void SyncRowChecks()
+    {
+        var multi = EntryList.SelectedItems.Count >= 2;
+        EntryList.MultiCheckMode = multi;
+        foreach (var item in EntryList.Items)
+        {
+            if (EntryList.ItemContainerGenerator.ContainerFromItem(item) is ListBoxItem row)
+            {
+                RowProps.SetShowCheck(row, multi);
+            }
+        }
+    }
+
+    /// <summary>当前的主选条目（命令栏与详情都作用于它）。</summary>
+    private EntryItem? Primary => EntryList.SelectedItem as EntryItem;
+
+    private List<EntryItem> SelectedItems() => [.. EntryList.SelectedItems.OfType<EntryItem>()];
+
+    // --- 吸顶分组头 -------------------------------------------------------------------
+
+    private void UpdateSticky()
+    {
+        if (EntryList.Scroller is not { } scroller || _items.Count == 0
+            || scroller.VerticalOffset <= 2)
+        {
+            StickyHeader.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        if (EntryList.GroupAtViewportTop(StickyHeader.Height) is { } key)
+        {
+            StickyTitle.Text = key;
+            StickyHeader.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            StickyHeader.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private void OnListScrolled(object? sender, ScrollChangedEventArgs e)
+    {
+        UpdateSticky();
+
         if (e.VerticalChange <= 0 || !_browser.HasMore)
         {
             return;
@@ -511,130 +600,225 @@ public partial class LibraryWindow : Window
         if (_browser.LoadMore() > 0)
         {
             Append(_browser.Loaded.Skip(before));
+            UpdateChrome();
         }
     }
+
+    // --- 动作：复制 / 置顶 / 收藏 ------------------------------------------------------
 
     /// <summary>
-    /// Starts a file drag for an image entry, so it can be dropped straight
-    /// into Explorer or another application.
-    ///
-    /// The original is already a real file on disk, so this is an ordinary file
-    /// drag — no virtual-file plumbing needed.
+    /// Copy what is selected. Single: the entry's text (an image goes out by
+    /// dragging — clipboard interop for bitmaps is not this feature's job).
+    /// Multiple: the texts joined by blank lines — this window has no paste
+    /// target, so that is what"复制全部"means here（§5.2：Enter 复制）.
     /// </summary>
-    private void OnListMouseMove(object sender, MouseEventArgs e)
+    private void CopySelection()
     {
-        if (e.LeftButton != MouseButtonState.Pressed
-            || EntryList.SelectedItem is not EntryItem item)
+        var selected = SelectedItems();
+        if (selected.Count == 0)
         {
+            ShowLightFeedback("先选中一条记录");
             return;
         }
 
-        if (!item.CanDrag)
-        {
-            return;
-        }
-
-        var files = new StringCollection { item.OriginalPath! };
-        var payload = new DataObject();
-        payload.SetFileDropList(files);
-
-        DragDrop.DoDragDrop(EntryList, payload, DragDropEffects.Copy);
-    }
-
-    private void OnCopySelected(object sender, RoutedEventArgs e)
-    {
-        foreach (var chosen in EntryList.SelectedItems.OfType<EntryItem>())
+        foreach (var chosen in selected)
         {
             // The entry came back into the world; that is what a use is.
-            _store.BumpUse(chosen.Id);
+            SelfWrite(() => _store.BumpUse(chosen.Id));
         }
 
-        if (EntryList.SelectedItem is not EntryItem item)
+        if (selected.Count > 1)
         {
+            var texts = selected.Where(item => item.Kind != EntryKind.Image)
+                .Select(item => item.Text)
+                .ToList();
+            if (texts.Count == 0)
+            {
+                ShowLightFeedback("所选都是图片——图片请逐条拖出另存");
+                return;
+            }
+
+            if (_clipboard?.SetText(string.Join(Environment.NewLine + Environment.NewLine, texts)) != true)
+            {
+                ShowError("复制失败", "剪贴板被其他程序占用，稍后再试。");
+                return;
+            }
+
+            ShowLightFeedback($"已复制 {texts.Count} 条文本");
             return;
         }
 
+        var item = selected[0];
         if (item.Thumbnail is not null)
         {
             // The clipboard writer handles text; putting a bitmap back would be
             // a separate piece of interop this feature does not need. Dragging
             // the file out covers what the user actually wants to do with it.
-            Status("图片条目请直接拖出到文件夹另存");
+            ShowLightFeedback("图片条目请直接拖出到文件夹另存");
             return;
         }
 
-        if (!_clipboard.SetText(item.Text))
+        if (_clipboard?.SetText(item.Text) != true)
         {
-            Status("复制失败：剪贴板被其他程序占用，稍后再试");
+            ShowError("复制失败", "剪贴板被其他程序占用，稍后再试。");
             return;
         }
 
         // Shiyu suppresses its own clipboard writes, so re-copying would
         // otherwise leave the entry where it was. Moving it to the top is what
         // the user just expressed a preference for.
-        _store.Touch(item.Id, DateTimeOffset.UtcNow);
-        Status("已复制");
+        SelfWrite(() => _store.Touch(item.Id, DateTimeOffset.UtcNow));
+        ShowLightFeedback("已复制");
     }
 
-    private void OnDeleteSelected(object sender, RoutedEventArgs e)
+    private void OnCopySelected(object sender, RoutedEventArgs e) => CopySelection();
+
+    /// <summary>双击 = 复制（与窄条的双击粘贴同一块肌肉记忆）。</summary>
+    private void OnListDoubleClick(object sender, MouseButtonEventArgs e) => CopySelection();
+
+    private void OnTogglePin(object sender, RoutedEventArgs e)
     {
-        if (EntryList.SelectedItem is not EntryItem item)
+        var selected = SelectedItems();
+        if (selected.Count == 0)
+        {
+            return;
+        }
+
+        // A mixed selection reads as "make them all pinned" — 置顶是对一群的
+        // 整理动作，不是开关翻转。
+        var pin = selected.Any(item => !item.IsPinned);
+        foreach (var item in selected)
+        {
+            SelfWrite(() => _store.SetPinned(item.Id, pin));
+        }
+
+        // Reloaded rather than patched in place: pinning changes where the
+        // entry belongs in the list, not just how it looks.
+        Reload();
+        ShowLightFeedback(pin ? $"已置顶 {selected.Count} 条" : $"已取消置顶 {selected.Count} 条");
+    }
+
+    private void OnToggleFavorite(object sender, RoutedEventArgs e)
+    {
+        var selected = SelectedItems();
+        if (selected.Count == 0)
+        {
+            return;
+        }
+
+        var favorite = !selected[0].Favorite;
+        foreach (var item in selected)
+        {
+            SelfWrite(() => _store.SetFavorite(item.Id, favorite));
+        }
+
+        Reload();
+        ShowLightFeedback(favorite ? $"已收藏 {selected.Count} 条" : $"已取消收藏 {selected.Count} 条");
+    }
+
+    // --- 标签 -------------------------------------------------------------------------
+
+    /// <summary>Refills the tag choices everywhere they appear (筛选弹层的标签芯片).</summary>
+    private void RefreshTagChoices()
+    {
+        SyncFilterFlyout();
+    }
+
+    private void AddTagToSelection(string tag)
+    {
+        var selected = SelectedItems();
+        if (selected.Count == 0 || tag.Trim().Length == 0)
+        {
+            return;
+        }
+
+        foreach (var item in selected)
+        {
+            SelfWrite(() => _store.AddTag(item.Id, tag.Trim()));
+        }
+
+        RefreshTagChoices();
+        Reload();
+        ShowLightFeedback($"已把「{tag.Trim()}」加到 {selected.Count} 条");
+    }
+
+    private void RemoveTagFromSelection(string tag)
+    {
+        var selected = SelectedItems();
+        if (selected.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var item in selected)
+        {
+            SelfWrite(() => _store.RemoveTag(item.Id, tag));
+        }
+
+        RefreshTagChoices();
+        Reload();
+        ShowLightFeedback($"已从 {selected.Count} 条去掉「{tag}」");
+    }
+
+    // --- 删除 / 撤销 --------------------------------------------------------------------
+
+    private void OnDeleteSelected(object sender, RoutedEventArgs e) => DeleteSelection();
+
+    /// <summary>
+    /// 删除所选：可撤销级（§6.5）不弹框，直接删 + 撤销条。快照先留，原图在
+    /// 撤销窗口关闭后才真走——undo 拿不回图片就不是 undo。
+    /// </summary>
+    private void DeleteSelection()
+    {
+        var selected = SelectedItems();
+        if (selected.Count == 0)
         {
             return;
         }
 
         var index = EntryList.SelectedIndex;
 
-        // Snapshot before the delete; the original image file deliberately
-        // stays on disk until the undo window closes — an undo that cannot
-        // bring the picture back is not an undo.
-        var snapshot = _store.Get(item.Id);
-        var groupName = snapshot is null ? null : _store.GroupOf(snapshot)?.Name;
-
-        _store.Delete(item.Id);
-        _browser.Forget(item.Id);
-        _items.Remove(item);
+        var snapshots = new List<(Entry Entry, string? Group)>();
+        foreach (var item in selected)
+        {
+            var snapshot = _store.Get(item.Id);
+            var groupName = snapshot is null ? null : _store.GroupOf(snapshot)?.Name;
+            SelfWrite(() => _store.Delete(item.Id));
+            _browser.Forget(item.Id);
+            _items.Remove(item);
+            if (snapshot is not null)
+            {
+                snapshots.Add((snapshot, groupName));
+            }
+        }
 
         // Keep the user where they were rather than sending them to the top.
-        EntryList.SelectedIndex = System.Math.Min(index, _items.Count - 1);
+        EntryList.SelectedIndex = Math.Min(Math.Max(index, 0), _items.Count - 1);
         UpdateChrome();
+        RefreshTagChoices();
 
-        if (snapshot is not null)
+        if (snapshots.Count == 0)
         {
-            OfferUndo([(snapshot, groupName)]);
-            Status("已删除 1 条 — 5 秒内可撤销");
+            ShowLightFeedback($"已删除 {selected.Count} 条");
+            return;
         }
-        else
-        {
-            Status("已删除 1 条");
-        }
+
+        OfferUndo(snapshots);
+        ShowUndoFeedback($"已删除 {snapshots.Count} 条");
     }
 
     private List<(Entry Entry, string? Group)>? _undoItems;
 
-    private DispatcherTimer? _undoTimer;
-
     /// <summary>
-    /// Holds a deletion open for five seconds. The kept-back original file is
-    /// removed only when the window closes without an undo, so "撤销" restores
-    /// everything the delete took away.
+    /// Holds a deletion open for five seconds（撤销条的悬停暂停可以延长它——
+    /// 暂停就是用户在说"等等"）。The kept-back original file is removed only
+    /// when the window closes without an undo, so "撤销" restores everything
+    /// the delete took away.
     /// </summary>
-    private void OfferUndo(List<(Entry Entry, string? Group)> items)
-    {
-        _undoItems = items;
-        UndoDeleteButton.IsEnabled = true;
-
-        _undoTimer?.Stop();
-        _undoTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
-        _undoTimer.Tick += (_, _) => CommitUndoExpiry();
-        _undoTimer.Start();
-    }
+    private void OfferUndo(List<(Entry Entry, string? Group)> items) => _undoItems = items;
 
     private void CommitUndoExpiry()
     {
-        _undoTimer?.Stop();
-        _undoTimer = null;
-
         if (_undoItems is { } items)
         {
             foreach (var (entry, _) in items)
@@ -647,123 +831,27 @@ public partial class LibraryWindow : Window
 
             _undoItems = null;
         }
-
-        UndoDeleteButton.IsEnabled = false;
     }
 
-    private void OnUndoDelete(object sender, RoutedEventArgs e)
+    private void OnUndoDelete(object sender, RoutedEventArgs e) => UndoDelete();
+
+    private void UndoDelete()
     {
         if (_undoItems is not { } items)
         {
             return;
         }
 
-        _undoTimer?.Stop();
-        _undoTimer = null;
-
+        _undoItems = null;
         foreach (var (entry, group) in items)
         {
-            _store.ImportEntry(entry, group);
+            SelfWrite(() => _store.ImportEntry(entry, group));
         }
 
-        _undoItems = null;
-        UndoDeleteButton.IsEnabled = false;
         Reload();
-        Status($"已恢复 {items.Count} 条");
-    }
-
-    private void OnClearAll(object sender, RoutedEventArgs e)
-    {
-        var total = _store.Count();
-        if (total == 0)
-        {
-            return;
-        }
-
-        // Irreversible and one click away from the ordinary buttons, so it asks
-        // — and says how much is at stake rather than a generic "are you sure".
-        // Protected entries stay, and the copy says so: a number the user can
-        // check beats a surprise after the fact.
-        var guard = _settings();
-        var keepFavorites = guard.ProtectEntries && guard.ProtectFavorites;
-        var keepPinned = guard.ProtectEntries && guard.ProtectPinned;
-        var protectedCount = _store.CountProtected(keepFavorites, keepPinned);
-        var message = protectedCount > 0
-            ? $"将永久删除全部 {total} 条中未受保护的 {total - protectedCount} 条，无法撤销。"
-                + $"受收藏/置顶保护的 {protectedCount} 条会保留。"
-            : $"将永久删除全部 {total} 条历史记录，无法撤销。";
-
-        // §6.5 不可撤销·全部：对话框里写明条数（按钮 = 动词+数量），并先
-        // 提醒可以导出一份再动手；默认焦点与 Enter 都落在取消。
-        var answer = ContentDialog.Show(
-            this,
-            "清空全部历史",
-            message + "\n想留底的话，可以先到 设置 › 常规 › 备份 导出一份。",
-            new ContentDialogButton("取消", ContentDialogButtonStyle.Standard, IsCancelFocus: true),
-            new ContentDialogButton($"清空 {total - protectedCount} 条", ContentDialogButtonStyle.Danger));
-
-        if (answer != 1)
-        {
-            return;
-        }
-
-        DeleteOriginalsOf(_store.ImagesWithOriginals(keepFavorites, keepPinned));
-        var removed = _store.DeleteAll(keepFavorites, keepPinned);
-        Reload();
-        Status(protectedCount > 0
-            ? $"已删除 {removed} 条，保留 {protectedCount} 条受保护"
-            : $"已清空 {removed} 条");
-    }
-
-    private void OnDeleteRange(object sender, RoutedEventArgs e)
-    {
-        if (RangeFrom.SelectedDate is not { } from || RangeTo.SelectedDate is not { } to)
-        {
-            Status("请先选择起止日期");
-            return;
-        }
-
-        if (to < from)
-        {
-            (from, to) = (to, from);
-        }
-
-        // Whole days, inclusive: a user picking the same date twice means that
-        // day, not the single instant at midnight.
-        var start = new DateTimeOffset(from.Date, DateTimeOffset.Now.Offset);
-        var end = new DateTimeOffset(to.Date.AddDays(1).AddTicks(-1), DateTimeOffset.Now.Offset);
-
-        var guard = _settings();
-        var keepFavorites = guard.ProtectEntries && guard.ProtectFavorites;
-        var keepPinned = guard.ProtectEntries && guard.ProtectPinned;
-        var protectedInRange = _store.CountProtectedBetween(start, end, keepFavorites, keepPinned);
-        var inRange = _store.CountMatching(new HistoryFilter { From = start, To = end });
-        var removable = inRange - protectedInRange;
-        var rangeMessage = protectedInRange > 0
-            ? $"将永久删除 {from:yyyy-MM-dd} 至 {to:yyyy-MM-dd} 之间的全部记录，无法撤销。"
-                + $"其中受收藏/置顶保护的 {protectedInRange} 条会保留。"
-            : $"将永久删除 {from:yyyy-MM-dd} 至 {to:yyyy-MM-dd} 之间的全部记录，无法撤销。";
-
-        // §6.5 不可撤销·有范围：对话框选好范围后实时显示条数，按钮写
-        // 动词+数量；默认焦点与 Enter 都落在取消。
-        var answer = ContentDialog.Show(
-            this,
-            "按时间段删除",
-            rangeMessage,
-            new ContentDialogButton("取消", ContentDialogButtonStyle.Standard, IsCancelFocus: true),
-            new ContentDialogButton($"删除 {removable} 条", ContentDialogButtonStyle.Danger));
-
-        if (answer != 1)
-        {
-            return;
-        }
-
-        DeleteOriginalsOf(_store.ImagesCreatedBetween(start, end, keepFavorites, keepPinned));
-        var removed = _store.DeleteCreatedBetween(start, end, keepFavorites, keepPinned);
-        Reload();
-        Status(protectedInRange > 0
-            ? $"已删除 {removed} 条，保留 {protectedInRange} 条受保护"
-            : $"已删除 {removed} 条");
+        RefreshTagChoices();
+        HideToast();
+        ShowLightFeedback($"已恢复 {items.Count} 条");
     }
 
     /// <summary>Removes the files behind image entries that are about to go.</summary>
@@ -778,277 +866,275 @@ public partial class LibraryWindow : Window
         }
     }
 
-    /// <summary>
-    /// Runs an action over exactly what the user selected.
-    ///
-    /// Every path to a model request starts here: a selection the user made
-    /// and a button the user pressed. There is no automatic, background or
-    /// per-entry processing anywhere in Shiyu.
-    /// </summary>
-    private async void OnRunAgentAction(object sender, RoutedEventArgs e)
+    // --- 危险操作（§6.5 分级确认）--------------------------------------------------------
+
+    /// <summary>「清空全部历史」：不可撤销·全部级——按钮写明条数，先提醒可导出。</summary>
+    private void AskClearAll()
     {
-        if (sender is not Button { Tag: string name }
-            || !Enum.TryParse<AgentActionKind>(name, out var kind))
+        var total = _store.Count();
+        if (total == 0)
         {
             return;
         }
 
-        // async void 逃出去的异常是进程级崩溃（O-05）：面板组装与运行途中
-        // 的意外要么记进日志，要么变成状态栏的一句人话，绝不带走常驻的
-        // 记录工具。
-        try
-        {
-            var selected = EntryList.SelectedItems.OfType<EntryItem>().ToList();
-            if (selected.Count == 0)
-            {
-                Status("请先选中要处理的条目");
-                return;
-            }
+        // Protected entries stay, and the copy says so: a number the user can
+        // check beats a surprise after the fact.
+        var guard = _settings();
+        var keepFavorites = guard.ProtectEntries && guard.ProtectFavorites;
+        var keepPinned = guard.ProtectEntries && guard.ProtectPinned;
+        var protectedCount = _store.CountProtected(keepFavorites, keepPinned);
+        var message = protectedCount > 0
+            ? $"将永久删除全部 {total} 条中未受保护的 {total - protectedCount} 条，无法撤销。"
+                + $"受收藏/置顶保护的 {protectedCount} 条会保留。"
+            : $"将永久删除全部 {total} 条历史记录，无法撤销。";
 
-            var entries = selected
-                .Select(item => new Entry(item.Id, item.Text, item.SourceApp, DateTimeOffset.UtcNow))
-                .ToList();
+        // §6.5：按钮 = 动词+数量；默认焦点与 Enter 都落在取消。
+        var answer = ContentDialog.Show(
+            this,
+            "清空全部历史",
+            message + "\n想留底的话，可以先到 设置 › 常规 › 备份 导出一份。",
+            new ContentDialogButton("取消", ContentDialogButtonStyle.Standard, IsCancelFocus: true),
+            new ContentDialogButton($"清空 {total - protectedCount} 条", ContentDialogButtonStyle.Danger));
 
-            // 排除名单是唯一闸口，Agent 动作也过它（O-17）：规则是上周才加
-            // 的，也要拦得住上个月记下的密码被今天的总结送出去。批量翻译
-            // 在自己的 RunAsync 里做同一件事。
-            var (sendable, skipped) =
-                CaptureGate.SplitSendable(entries, _settings().BuildExclusionPolicy());
-            if (sendable.Count == 0)
-            {
-                Status("所选条目全部来自排除名单里的应用，已跳过。");
-                return;
-            }
-            if (skipped > 0)
-            {
-                Status($"已跳过 {skipped} 条来自排除名单应用的条目。");
-            }
-
-            AgentPanel.Visibility = Visibility.Visible;
-            AgentTitle.Text = $"{AgentActions.Label(kind)} · {sendable.Count} 条";
-            AgentOutput.Text = "正在处理…";
-            SuggestedTags.ItemsSource = null;
-
-            var run = new AgentRun(_model());
-            _agentRun = run;
-            run.Updated += () => Dispatcher.Invoke(() =>
-            {
-                if (!ReferenceEquals(_agentRun, run))
-                {
-                    return;
-                }
-
-                if (run.Output.Length > 0)
-                {
-                    AgentOutput.Text = run.Output;
-                }
-
-                if (run.State == TranslationState.Failed)
-                {
-                    // An unreachable agent leaves everything else working; the
-                    // message says so rather than looking like a broken window.
-                    AgentOutput.Text = $"处理失败：{run.Error}";
-                }
-            });
-
-            await run.RunAsync(kind, sendable);
-
-            if (kind == AgentActionKind.SuggestTags && run.State == TranslationState.Finished)
-            {
-                SuggestedTags.ItemsSource = AgentActions.ParseSuggestedTags(run.Output);
-                AgentOutput.Text = "点击下面的标签即可加到所选条目：";
-            }
-        }
-        catch (Exception failure)
-        {
-            // RunAsync 已把模型失败收敛成状态；这里是面板自身的意外。
-            Log.Event(LogEvent.AgentActionFailed, failure);
-            Status($"处理失败：{failure.Message}");
-        }
-    }
-
-    private void OnAcceptSuggestedTag(object sender, RoutedEventArgs e)
-    {
-        if (sender is not Button { Content: string tag })
+        if (answer != 1)
         {
             return;
         }
 
-        var selected = EntryList.SelectedItems.OfType<EntryItem>().ToList();
-        foreach (var item in selected)
-        {
-            _store.AddTag(item.Id, tag);
-        }
-
-        RefreshTagChoices();
+        DeleteOriginalsOf(_store.ImagesWithOriginals(keepFavorites, keepPinned));
+        SelfWrite(() => _ = _store.DeleteAll(keepFavorites, keepPinned));
         Reload();
-        Status($"已把「{tag}」加到 {selected.Count} 条");
+        RefreshTagChoices();
+        ShowLightFeedback(protectedCount > 0
+            ? $"已删除 {total - protectedCount} 条，保留 {protectedCount} 条受保护"
+            : $"已清空 {total} 条");
     }
-
-    private void OnCopyAgentOutput(object sender, RoutedEventArgs e)
-    {
-        if (_agentRun?.Output is { Length: > 0 } output)
-        {
-            AgentCopyButton.Content = _clipboard.SetText(output) ? "已复制" : "复制失败";
-        }
-    }
-
-    private void OnCloseAgentPanel(object sender, RoutedEventArgs e)
-    {
-        _agentRun = null;
-        AgentPanel.Visibility = Visibility.Collapsed;
-        AgentCopyButton.Content = "复制结果";
-    }
-
-    private void Status(string message) => StatusLabel.Text = message;
-
-    private CancellationTokenSource? _translateBatch;
 
     /// <summary>
-    /// Translates the selection one entry at a time and files each result as
-    /// a linked translation. Only what is selected is ever sent; cancelling
-    /// keeps everything already filed — a half-done batch is still half done.
+    /// 「按时间段删除…」（§6.5 不可撤销·有范围）：范围选择搬进对话框（评审
+    /// 3.8 P1：页面上四枚一模一样的日期选择正是它挪走的理由），条数实时可见
+    /// ——按之前就知道要按掉多少。
     /// </summary>
-    private async void OnTranslateBatch(object sender, RoutedEventArgs e)
+    private void AskDeleteRange()
     {
-        if (_translateBatch is not null)
+        var from = new DatePicker { Width = 132 };
+        var to = new DatePicker { Width = 132, Margin = new Thickness(8, 0, 0, 0) };
+        var live = new TextBlock { Margin = new Thickness(0, 8, 0, 0), TextWrapping = TextWrapping.Wrap };
+        live.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
+
+        var guard = _settings();
+        var keepFavorites = guard.ProtectEntries && guard.ProtectFavorites;
+        var keepPinned = guard.ProtectEntries && guard.ProtectPinned;
+
+        (int InRange, int Protected)? RangeCounts()
+        {
+            if (RangeFromPickers(from, to) is not ({ } start, { } end))
+            {
+                return null;
+            }
+
+            return (
+                _store.CountMatching(new HistoryFilter { From = start, To = end }),
+                _store.CountProtectedBetween(start, end, keepFavorites, keepPinned));
+        }
+
+        void RefreshLive()
+        {
+            if (RangeCounts() is not { } counts || RangeFromPickers(from, to) is not ({ } rangeStart, { } rangeEnd))
+            {
+                live.Text = "选好起止日期后，这里会实时显示将删除的条数。";
+                return;
+            }
+
+            live.Text = counts.Protected > 0
+                ? $"{rangeStart:yyyy-MM-dd} 至 {rangeEnd:yyyy-MM-dd} 之间共 {counts.InRange} 条，"
+                    + $"其中受收藏/置顶保护的 {counts.Protected} 条会保留。"
+                : $"{rangeStart:yyyy-MM-dd} 至 {rangeEnd:yyyy-MM-dd} 之间共 {counts.InRange} 条。";
+        }
+
+        from.SelectedDateChanged += (_, _) => RefreshLive();
+        to.SelectedDateChanged += (_, _) => RefreshLive();
+
+        var pickers = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
+        pickers.Children.Add(new TextBlock
+        {
+            Text = "起",
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 6, 0),
+        });
+        pickers.Children.Add(from);
+        pickers.Children.Add(new TextBlock
+        {
+            Text = "止",
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(10, 0, 6, 0),
+        });
+        pickers.Children.Add(to);
+
+        var body = new StackPanel();
+        body.Children.Add(new TextBlock
+        {
+            Text = "将永久删除所选时间段内的记录，无法撤销。",
+            TextWrapping = TextWrapping.Wrap,
+        });
+        body.Children.Add(pickers);
+        body.Children.Add(live);
+        RefreshLive();
+
+        // 取消拿默认焦点（§6.5）；按钮文案是动词，范围与条数在正文里实时说。
+        var answer = ContentDialog.Show(
+            this,
+            "按时间段删除",
+            body,
+            new ContentDialogButton("取消", ContentDialogButtonStyle.Standard, IsCancelFocus: true),
+            new ContentDialogButton("删除该时间段", ContentDialogButtonStyle.Danger));
+
+        if (answer != 1 || RangeCounts() is not { } counts2 || RangeFromPickers(from, to) is not ({ } start2, { } end2))
         {
             return;
         }
 
-        var selected = EntryList.SelectedItems.OfType<EntryItem>()
-            .Where(item => item.Kind == EntryKind.Text && item.TranslatedFrom is null)
-            .Select(item => item.Id)
-            .ToList();
+        DeleteOriginalsOf(_store.ImagesCreatedBetween(start2, end2, keepFavorites, keepPinned));
+        SelfWrite(() => _ = _store.DeleteCreatedBetween(start2, end2, keepFavorites, keepPinned));
+        Reload();
+        RefreshTagChoices();
+        ShowLightFeedback(counts2.Protected > 0
+            ? $"已删除该时间段，保留 {counts2.Protected} 条受保护"
+            : "已删除该时间段");
+    }
 
-        if (selected.Count == 0)
+    private static (DateTimeOffset? Start, DateTimeOffset? End) RangeFromPickers(DatePicker from, DatePicker to)
+    {
+        if (from.SelectedDate is not { } f || to.SelectedDate is not { } t)
         {
-            Status("先选中要翻译的文本条目。");
+            return (null, null);
+        }
+
+        if (t < f)
+        {
+            (f, t) = (t, f);
+        }
+
+        // Whole days, inclusive: a user picking the same date twice means that
+        // day, not the single instant at midnight.
+        var now = DateTimeOffset.Now;
+        return (
+            new DateTimeOffset(f.Date, now.Offset),
+            new DateTimeOffset(t.Date.AddDays(1).AddTicks(-1), now.Offset));
+    }
+
+    // --- 拖出 ------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Starts a file drag for an image entry, so it can be dropped straight
+    /// into Explorer or another application. The original is already a real
+    /// file on disk — an ordinary file drag.
+    /// </summary>
+    private void OnListMouseMove(object sender, MouseEventArgs e)
+    {
+        if (e.LeftButton != MouseButtonState.Pressed || Primary is not { } item)
+        {
             return;
         }
 
-        var settings = _settings();
-        _translateBatch = new CancellationTokenSource();
-        TranslateBatchButton.IsEnabled = false;
-        TranslateCancelButton.Visibility = Visibility.Visible;
-
-        // A background batch reading the store must not race a user clicking
-        // destructive or mutating buttons over the same rows (ticket 32).
-        SetWriteButtonsEnabled(false);
-
-        var progress = new Progress<(int Done, int Total)>(step =>
-            Status($"批量翻译 {step.Done}/{step.Total}……"));
-
-        try
+        if (!item.CanDrag)
         {
-            var batch = new TranslationBatch(
-                _store, _pipeline!, settings.BuildExclusionPolicy(), _model(),
-                settings.TargetLanguage, settings.SourceLanguage);
-            var result = await batch.RunAsync(selected, progress, _translateBatch.Token);
+            return;
+        }
 
-            // 报告带原因（票 08）：失败多少、为什么，一句话说完。
-            Status(_translateBatch.IsCancellationRequested
-                ? $"已取消：成功 {result.Translated} 条，已完成部分已保留。"
-                : "批量翻译完成：成功 " + result.Translated + " 条"
-                  + (result.Skipped > 0 ? $"，跳过 {result.Skipped} 条（排除规则或已是译文）" : string.Empty)
-                  + (result.Failed > 0
-                      ? $"，失败 {result.Failed} 条（{result.FailureReason ?? "原因未知"}）"
-                      : string.Empty)
-                  + "。");
-            Reload();
-        }
-        catch (OperationCanceledException)
-        {
-            Status("批量翻译已取消，已完成部分已保留。");
-        }
-        catch (Exception failure)
-        {
-            // A dead backend must cost nothing but this one sentence —
-            // 以及一行日志（O-24）：批量失败的实际原因只在日志里看得全。
-            Log.Event(LogEvent.BatchTranslationFailed, failure, ("selected", selected.Count));
-            Status($"翻译服务不可用：{failure.Message}");
-        }
-        finally
-        {
-            _translateBatch.Dispose();
-            _translateBatch = null;
-            TranslateBatchButton.IsEnabled = true;
-            TranslateCancelButton.Visibility = Visibility.Collapsed;
-            SetWriteButtonsEnabled(true);
-        }
+        var files = new System.Collections.Specialized.StringCollection { item.OriginalPath! };
+        var payload = new DataObject();
+        payload.SetFileDropList(files);
+
+        DragDrop.DoDragDrop(EntryList, payload, DragDropEffects.Copy);
     }
 
-    private void OnCancelTranslateBatch(object sender, RoutedEventArgs e)
-        => _translateBatch?.Cancel();
+    // --- 行视图模型 --------------------------------------------------------------------------
 
-    /// <summary>Write buttons that would race a running batch over the store.</summary>
-    private void SetWriteButtonsEnabled(bool enabled)
+}
+
+/// <summary>
+/// A row's read-only view of an entry（命名空间级：列表控件与窗口都要按它分派
+/// 行高/分组）。GroupKey drives the date grouping; the rest is what the row
+/// template binds.
+/// </summary>
+internal sealed record EntryItem(
+    long Id,
+    string Text,
+    string? SourceApp,
+    string Preview,
+    string Meta,
+    ImageSource? Thumbnail,
+    ImageSource? Icon,
+    string? OriginalPath,
+    bool IsPinned,
+    EntryKind Kind = EntryKind.Text,
+    long? TranslatedFrom = null)
+{
+    public bool Favorite { get; init; }
+
+    public EntrySubtype Subtype { get; init; }
+
+    public DateTimeOffset CreatedAt { get; init; }
+
+    /// <summary>置顶条目先于一切日期（页游标先排 pinned）。</summary>
+    public string GroupKey { get; init; } = HistoryGroups.Earlier;
+
+    public Visibility PinVisibility => IsPinned ? Visibility.Visible : Visibility.Collapsed;
+
+    public Visibility StarVisibility => Favorite ? Visibility.Visible : Visibility.Collapsed;
+
+    public Visibility ThumbnailVisibility =>
+        Thumbnail is null ? Visibility.Collapsed : Visibility.Visible;
+
+    /// <summary>An application with no findable icon gets Shiyu's own mark, never a hole.</summary>
+    public Visibility IconVisibility =>
+        Icon is null ? Visibility.Collapsed : Visibility.Visible;
+
+    public Visibility FallbackIconVisibility =>
+        Icon is null ? Visibility.Visible : Visibility.Collapsed;
+
+    /// <summary>True while the full-size image is still on disk.</summary>
+    public bool CanDrag => OriginalPath is { Length: > 0 } path && File.Exists(path);
+
+    public static EntryItem From(Entry entry, EntryBlobs? payload, Func<string?, ImageSource?> iconOf)
     {
-        DeleteSelectedButton.IsEnabled = enabled;
-        ClearAllButton.IsEnabled = enabled;
-        PinButton.IsEnabled = enabled;
-        AddTagButton.IsEnabled = enabled;
-        RemoveTagButton.IsEnabled = enabled;
-    }
+        var collapsed = string.Join(' ', entry.Text.Split(
+            ['\r', '\n', '\t'],
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
 
-    private sealed record EntryItem(
-        long Id,
-        string Text,
-        string? SourceApp,
-        string Preview,
-        string Meta,
-        ImageSource? Thumbnail,
-        ImageSource? Icon,
-        string? OriginalPath,
-        bool IsPinned,
-        EntryKind Kind = EntryKind.Text,
-        long? TranslatedFrom = null)
-    {
-        public Visibility PinVisibility => IsPinned ? Visibility.Visible : Visibility.Collapsed;
+        var preview = collapsed.Length > 300 ? collapsed[..300] + "…" : collapsed;
+        var source = string.IsNullOrEmpty(entry.SourceApp) ? "未知来源" : entry.SourceApp;
 
-        public Visibility ThumbnailVisibility =>
-            Thumbnail is null ? Visibility.Collapsed : Visibility.Visible;
-
-        /// <summary>An application with no findable icon gets Shiyu's own mark, never a hole.</summary>
-        public Visibility IconVisibility =>
-            Icon is null ? Visibility.Collapsed : Visibility.Visible;
-
-        public Visibility FallbackIconVisibility =>
-            Icon is null ? Visibility.Visible : Visibility.Collapsed;
-
-        /// <summary>True while the full-size image is still on disk.</summary>
-        public bool CanDrag => OriginalPath is { Length: > 0 } path && File.Exists(path);
-
-        public static EntryItem From(Entry entry, EntryBlobs? payload, Func<string?, ImageSource?> iconOf)
+        // 元信息行（§6.4）：相对时间 · 来源 · 字数；图片"宽×高"、文件"N 个"。
+        var now = DateTimeOffset.UtcNow;
+        var when = RelativeTime.For(entry.CreatedAt, now);
+        var tail = entry.Kind switch
         {
-            var collapsed = string.Join(' ', entry.Text.Split(
-                ['\r', '\n', '\t'],
-                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+            EntryKind.Image when entry.ImageWidth > 0 => $"{entry.ImageWidth}×{entry.ImageHeight}",
+            EntryKind.Files => $"{entry.Files.Count} 个",
+            _ => $"{entry.Text.Length} 字",
+        };
 
-            var preview = collapsed.Length > 300 ? collapsed[..300] + "…" : collapsed;
-            var source = string.IsNullOrEmpty(entry.SourceApp) ? "未知来源" : entry.SourceApp;
-
-            var tags = entry.Tags.Count == 0 ? string.Empty : "  ·  " + string.Join(" ", entry.Tags.Select(t => "#" + t));
-
-            var tail = entry.Kind == EntryKind.Image
-                ? entry.HasOriginal ? "可拖出另存" : "原图已过期清理"
-                : $"{entry.Text.Length} 字";
-
-            return new EntryItem(
-                entry.Id,
-                entry.Text,
-                entry.SourceApp,
-                preview,
-                $"{entry.CreatedAt.ToLocalTime():yyyy-MM-dd HH:mm}  ·  {source}  ·  {tail}{tags}",
-                Decode(payload?.ThumbnailPng, pixelWidth: 240),
-                iconOf(entry.SourceApp),
-                entry.OriginalPath,
-                entry.IsPinned,
-                entry.Kind,
-                entry.TranslatedFrom);
-        }
-
-        private static ImageSource? Decode(byte[]? png, int pixelWidth)
-            => AppIconCache.Decode(png, pixelWidth);
+        return new EntryItem(
+            entry.Id,
+            entry.Text,
+            entry.SourceApp,
+            preview,
+            $"{when}  ·  {source}  ·  {tail}",
+            AppIconCache.Decode(payload?.ThumbnailPng, pixelWidth: 240),
+            iconOf(entry.SourceApp),
+            entry.OriginalPath,
+            entry.IsPinned,
+            entry.Kind,
+            entry.TranslatedFrom)
+        {
+            Favorite = entry.Favorite,
+            Subtype = entry.Subtype,
+            CreatedAt = entry.CreatedAt,
+            GroupKey = entry.IsPinned
+                ? HistoryGroups.Pinned
+                : HistoryGroups.DateKeyOf(entry.CreatedAt, now),
+        };
     }
 }

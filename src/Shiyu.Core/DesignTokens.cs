@@ -329,6 +329,8 @@ public static class DesignTokens
     /// <summary>两行列表行 / 单行列表行。</summary>
     public const double ListRowHeight = 56;
     public const double ListRowHeightSingle = 40;
+    /// <summary>带缩略图的列表行（管理窗图片行，§6.4）。</summary>
+    public const double ListRowHeightImage = 72;
     public const double SettingsCardMinHeight = 64;
 
     /// <summary>
