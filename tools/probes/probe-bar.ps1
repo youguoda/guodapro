@@ -67,8 +67,28 @@ try {
     }
 
     # --- defect: keycap "<- ->" clipped to a horizontal line ----------------
-    Send-ProbeKey $hwnd $VK_CONTROL
-    Start-Sleep -Milliseconds 600
+    # PostMessage'd Ctrl stopped reaching the unactivated probe window (same
+    # family as the letter-key finding); click a card once for real focus,
+    # then send a REAL keyboard event.
+    Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+public class BarKeycapInput {
+ [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+ [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint dx, uint dy, uint data, UIntPtr extra);
+ [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
+}
+'@ -ErrorAction SilentlyContinue
+    $firstCard = $cards | Select-Object -First 1
+    if ($firstCard) {
+        [void][BarKeycapInput]::SetCursorPos(($firstCard.L + 60), ($firstCard.T + [int]($firstCard.H / 2)))
+        Start-Sleep -Milliseconds 250
+        [BarKeycapInput]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+        [BarKeycapInput]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+        Start-Sleep -Milliseconds 400
+    }
+    [BarKeycapInput]::keybd_event(0x11, 0, 0, [UIntPtr]::Zero)
+    Start-Sleep -Milliseconds 700
     $shotCtrl = Get-WindowShot $hwnd
     if ($shotCtrl) { [void](Save-Shot $shotCtrl 'bar-ctrl') }
 
@@ -146,7 +166,8 @@ try {
             }
         }
     }
-    Send-ProbeKey $hwnd $VK_CONTROL -KeyUp
+    [BarKeycapInput]::keybd_event(0x11, 0, 2, [UIntPtr]::Zero)
+    [void][BarKeycapInput]::SetCursorPos(60, 60)
     Start-Sleep -Milliseconds 400
 
     # --- defect: hover tray delete colour ---------------------------------
