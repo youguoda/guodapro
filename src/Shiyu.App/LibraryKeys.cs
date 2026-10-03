@@ -29,29 +29,9 @@ public partial class LibraryWindow
 
     // --- 键位速查表（§5.2）-----------------------------------------------------------
     //
-    // 票 25 的 KeyMap 单一来源落地后，管理窗的 tooltip、⋯ 菜单加速键列与
-    // 本表全部由那张表渲染；在那之前这里是管理窗内唯一的一份静态表，别的
-    // 文件不读它，收编时只改这里。
-    private static readonly (string Action, string Keys)[] CheatSheetRows =
-    [
-        ("搜索", "Ctrl F"),
-        ("移动选择", "↑ ↓"),
-        ("连选", "Shift ↑ ↓"),
-        ("全选", "Ctrl A"),
-        ("复制", "Enter / C"),
-        ("置顶", "P"),
-        ("收藏", "S"),
-        ("备注", "N"),
-        ("归组", "G"),
-        ("标签", "T"),
-        ("删除", "D / Delete"),
-        ("撤销删除", "Z / Ctrl Z"),
-        ("预览（按住）", "Space"),
-        ("区域循环", "F6"),
-        ("键位速查", "F1 / ?"),
-        ("逐层退出", "Esc"),
-        ("关闭窗口", "Ctrl W"),
-    ];
+    // 全部行从 Core 的 KeyMap 渲染（键位即数据，票 25 收编）：管理窗速查 =
+    // ForSurface(Library)，键 = EffectiveKey。改键只改 KeyMap 一处，窄条/
+    // 设置/托盘/引导的速查同步变——这里不再有自己的静态表。
 
     private void ShowCheatSheet()
     {
@@ -73,17 +53,17 @@ public partial class LibraryWindow
         head.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
         list.Children.Add(head);
 
-        foreach (var (action, keys) in CheatSheetRows)
+        foreach (var row in KeyMap.ForSurface(KeySurface.Library))
         {
-            var row = new DockPanel { Margin = new Thickness(0, 0, 0, 6), LastChildFill = false };
+            var rowPanel = new DockPanel { Margin = new Thickness(0, 0, 0, 6), LastChildFill = false };
 
-            var label = new TextBlock { Text = action, VerticalAlignment = VerticalAlignment.Center };
+            var label = new TextBlock { Text = row.Name, VerticalAlignment = VerticalAlignment.Center };
             DockPanel.SetDock(label, Dock.Left);
-            row.Children.Add(label);
+            rowPanel.Children.Add(label);
 
             var cap = new TextBlock
             {
-                Text = keys,
+                Text = KeyMap.EffectiveKey(row, KeySurface.Library),
                 VerticalAlignment = VerticalAlignment.Center,
                 Padding = new Thickness(8, 2, 8, 2),
             };
@@ -91,9 +71,9 @@ public partial class LibraryWindow
             cap.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextSecondary");
             cap.SetResourceReference(TextBlock.BackgroundProperty, "Brush.SurfaceSubtle");
             DockPanel.SetDock(cap, Dock.Right);
-            row.Children.Add(cap);
+            rowPanel.Children.Add(cap);
 
-            list.Children.Add(row);
+            list.Children.Add(rowPanel);
         }
 
         var footnote = new TextBlock
@@ -123,7 +103,8 @@ public partial class LibraryWindow
 
     /// <summary>
     /// 按住 Ctrl：每个有快捷键的命令栏按钮原位把内容换成键帽——换内容不动
-    /// 布局（按钮尺寸固定），松手还原，零位移教学。
+    /// 布局（按钮尺寸固定），松手还原，零位移教学。键从 KeyMap 取（回落
+    /// 口径与速查/自动化名同一处），改键只改 Core 那张表。
     /// </summary>
     private void SetKeyHints(bool on)
     {
@@ -134,14 +115,22 @@ public partial class LibraryWindow
 
         _keyHintsOn = on;
 
-        _hintButtons ??=
+        // (按钮, 动作 Id)：键位运行时从 KeyMap 解析；无键的动作（理论上
+        // 不出现在命令栏）直接跳过，不硬编码字母。
+        (Button, string)[] slots =
         [
-            (CopyButton, "C", null, false),
-            (PinButton, "P", null, false),
-            (FavoriteButton, "S", null, false),
-            (TagButton, "T", null, false),
-            (DeleteButton, "D", null, false),
+            (CopyButton, "copy"),
+            (PinButton, "pin"),
+            (FavoriteButton, "favorite"),
+            (TagButton, "tag"),
+            (DeleteButton, "delete"),
         ];
+
+        _hintButtons ??= slots
+            .Select(slot => (slot.Item1, Key: KeyMap.HintKey(slot.Item2, KeySurface.Library) ?? string.Empty,
+                Content: (object?)null, Saved: false))
+            .Where(slot => slot.Key.Length > 0)
+            .ToArray();
 
         for (var i = 0; i < _hintButtons.Length; i++)
         {

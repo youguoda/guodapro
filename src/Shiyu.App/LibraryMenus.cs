@@ -480,7 +480,8 @@ public partial class LibraryWindow
         title.SetResourceReference(TextElement.FontWeightProperty, "Weight.Emphasis");
         body.Children.Add(title);
 
-        body.Children.Add(MenuRow("未分组", null, () => AssignGroup(null), keyHint: "G",
+        body.Children.Add(MenuRow("未分组", null, () => AssignGroup(null),
+            keyHint: KeyMap.HintKey("group", KeySurface.Library),
             toolTip: "移出所在分组"));
         foreach (var group in _store.Groups())
         {
@@ -542,14 +543,19 @@ public partial class LibraryWindow
     {
         var body = new StackPanel();
 
-        body.Children.Add(MenuRow("备注", "\uE70B", EditNoteSelection, keyHint: "N"));
-        body.Children.Add(MenuRow("归组", "\uE8EC", OpenGroupMenu, keyHint: "G"));
+        // 加速键列从 KeyMap 解析（键位即数据）：菜单、速查、键帽、自动化名
+        // 四处同源，改键只改 Core 那张表。HintKey 取第一等价键——菜单列
+        // 与键帽一样只装一个短形。
+        string? Key(string id) => KeyMap.HintKey(id, KeySurface.Library);
+
+        body.Children.Add(MenuRow("备注", "\uE70B", EditNoteSelection, keyHint: Key("note")));
+        body.Children.Add(MenuRow("归组", "\uE8EC", OpenGroupMenu, keyHint: Key("group")));
 
         var aiRow = MenuRow("AI 处理", "\uE945", OpenAiMenu);
         body.Children.Add(aiRow);
 
-        body.Children.Add(MenuRow("全选", "\uE8FD", () => EntryList.SelectAll(), keyHint: "Ctrl A"));
-        body.Children.Add(MenuRow("键位速查", "\uE8FD", ShowCheatSheet, keyHint: "F1"));
+        body.Children.Add(MenuRow("全选", "\uE8FD", () => EntryList.SelectAll(), keyHint: Key("select-all")));
+        body.Children.Add(MenuRow("键位速查", "\uE8FD", ShowCheatSheet, keyHint: Key("cheatsheet")));
 
         // 危险组（§6.4）：距离 + Danger 色 + 对话框，三重警告的第一重。
         body.Children.Add(new System.Windows.Controls.Border
