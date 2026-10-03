@@ -133,6 +133,9 @@ internal static class NativeMethods
     [DllImport("user32.dll", SetLastError = true)]
     internal static extern bool PostMessageW(IntPtr hWnd, uint message, IntPtr wParam, IntPtr lParam);
 
+    [DllImport("user32.dll")]
+    internal static extern IntPtr SendMessage(IntPtr hWnd, uint message, IntPtr wParam, IntPtr lParam);
+
     // --- 专用钩子线程的泵与停机（LowLevelHookThread，O-16）---
 
     [StructLayout(LayoutKind.Sequential)]

@@ -34,4 +34,19 @@ public static class WindowRects
     /// </summary>
     public static void Move(IntPtr handle, int x, int y, int width, int height)
         => NativeMethods.MoveWindow(handle, x, y, width, height, repaint: true);
+
+    /// <summary>
+    /// Enters the system's caption-drag loop and returns when it ends (the
+    /// button comes back up). Callers tell a click from a drag by comparing
+    /// the rectangle before and after: this HTCAPTION route instead of WPF's
+    /// DragMove because DragMove swallows the mouse-up, leaving no way to give
+    /// one grip both behaviours (user request 2026-10-05: the bar's brand
+    /// mark drags the window, a plain click still opens the library).
+    /// </summary>
+    public static void RunCaptionDrag(IntPtr handle, int screenX, int screenY)
+        => NativeMethods.SendMessage(
+            handle,
+            0x00A1,                       // WM_NCLBUTTONDOWN
+            (IntPtr)0x0002,               // HTCAPTION
+            (IntPtr)((screenY << 16) | (screenX & 0xFFFF)));
 }

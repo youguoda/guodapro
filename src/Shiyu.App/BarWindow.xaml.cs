@@ -279,6 +279,26 @@ internal partial class BarWindow : Window
 
     private void OnBrandClicked(object sender, RoutedEventArgs e) => LibraryRequested?.Invoke();
 
+    /// <summary>
+    /// 品牌钮两用（用户需求 2026-10-05）：按住即拖动整扇窄条；松手时窗口
+    /// 没有位移的这一次按点击算——打开管理窗。HTCAPTION 的系统移动循环
+    /// 而非 DragMove：DragMove 吞掉抬起，点击与拖动无法在同一枚钮上区分；
+    /// 这也不是第二条 DragMove（背景拖动仍是一处，见 OnBackgroundPressed）。
+    /// </summary>
+    private void OnBrandPressed(object sender, MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+        var handle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+        WindowRects.TryGet(handle, out var before);
+        var point = PointToScreen(e.GetPosition(this));
+        WindowRects.RunCaptionDrag(handle, (int)point.X, (int)point.Y);
+        if (!WindowRects.TryGet(handle, out var after)
+            || (after.Left == before.Left && after.Top == before.Top))
+        {
+            LibraryRequested?.Invoke();
+        }
+    }
+
     private void SyncFloatingLayers()
     {
         if (_preview is not null)
