@@ -1,8 +1,11 @@
 # 26 — 快速条并入窄条
 
 **来源：** UI 报告 §5.4；优化报告 O-38；ADR-0012 第 8 条
-**Blocked by:** 21
-**Status:** ready-for-agent
+**Blocked by:** 21（已完成）
+**Branch:** `v3/qb26`（两提交 8c82f57+0301799 已并 master，快进）
+**Status:** ready-for-human（余 Ctrl+Shift+V→打字→Enter 落插入符、Win+V 两态、轻量模式体感实机）
+
+实施+验收记录（2026-10-03）：**门槛实测达标**（measure-cold-summon.ps1 各 50 次两遍取后：快速条 P95 924ms、窄条 887ms，差 -37ms；预热遍 +21ms）→ 走合并路径：粘贴模式 Summon（粘贴/失焦即消失，常驻模式不变）、Win+V 挂粘贴模式、键盘呼出锚插入符 GetGUIThreadInfo、QuickBarWindow 删除（探针 quickbar 命令映射粘贴模式）、名词统一零残留（"快速条"退役为动作名"快速粘贴"）、窄条字母键 IME 归一（Key.ImeProcessed→真实键，票 24 留尾收口）。**934+3 绿、探针 22 PASS/0 FAIL/2 SKIP（真实实例在跑的互斥检查+连接层对齐态设计内 SKIP）、双静态绿**。
 
 **What to build:**
 - **先测门槛：** 开启轻量模式时，窄条冷呼出 P95 与快速条对比（各 50 次，结果记在本票）。
